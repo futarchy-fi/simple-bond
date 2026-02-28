@@ -19,4 +19,9 @@ module.exports = {
             chainId: 8453,
         },
     },
+    etherscan: {
+        apiKey: {
+            gnosis: process.env.ETHERSCAN_API_KEY || "",
+        },
+    },
 };
