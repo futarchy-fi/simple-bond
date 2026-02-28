@@ -578,7 +578,7 @@ const GNOSIS_RPC = "https://rpc.gnosischain.com";
 const GNOSISSCAN = "https://gnosisscan.io/address/";
 
 // ─── TODO: Register at dashboard.web3auth.io and paste your clientId ──
-const WEB3AUTH_CLIENT_ID = "YOUR_WEB3AUTH_CLIENT_ID";
+const WEB3AUTH_CLIENT_ID = "BNKsZatxbOQKhvr2Q10vDSn0_dDyUXdMgUVUE1xeixa1xKKjIOFZZC3Al0hsyfhwDb_A-rrPobh3sQYhnNfDkEY";
 
 // ─── TODO: Register at dashboard.transak.com and paste your API key ───
 const TRANSAK_API_KEY = "YOUR_TRANSAK_API_KEY";
@@ -852,7 +852,7 @@ async function initWeb3Auth() {
     }
     const web3auth = new Web3Auth({
       clientId: WEB3AUTH_CLIENT_ID,
-      web3AuthNetwork: "sapphire_mainnet",
+      web3AuthNetwork: "sapphire_devnet",
       chainConfig: {
         chainNamespace: "eip155",
         chainId: "0x64",
