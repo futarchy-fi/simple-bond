@@ -207,15 +207,9 @@
 
   /* ─── Funding Banner ─── */
   .funding-banner {
-    background: rgba(108,92,231,0.08); border: 1px solid rgba(108,92,231,0.25);
-    border-radius: 10px; padding: 16px; margin-bottom: 20px;
+    background: rgba(108,92,231,0.06); border: 1px solid rgba(108,92,231,0.15);
+    border-radius: 8px; padding: 10px 14px; margin-bottom: 16px; font-size: 13px; color: var(--muted);
   }
-  .funding-banner h3 { font-size: 14px; margin-bottom: 6px; }
-  .funding-banner p { font-size: 13px; color: var(--muted); margin-bottom: 10px; }
-  .funding-banner .funding-actions { display: flex; gap: 8px; }
-  .funding-banner .funding-actions button { font-size: 13px; padding: 8px 14px; }
-  .funding-state-none { border-color: rgba(231,76,60,0.3); background: rgba(231,76,60,0.06); }
-  .funding-state-convert { border-color: rgba(243,156,18,0.3); background: rgba(243,156,18,0.06); }
 
   /* ─── Transaction Stepper ─── */
   .tx-stepper {
@@ -301,10 +295,10 @@
   .funding-guide h3 { font-size: 18px; font-weight: 600; margin-bottom: 16px; }
   .funding-guide-close {
     position: absolute; top: 12px; right: 16px;
-    background: none; color: var(--muted); border: none; font-size: 22px;
-    cursor: pointer; padding: 0; width: auto;
+    background: none !important; color: var(--muted); border: none; font-size: 22px;
+    cursor: pointer; padding: 4px 8px; width: auto; line-height: 1;
   }
-  .funding-guide-close:hover { color: var(--text); }
+  .funding-guide-close:hover { color: var(--text); background: none !important; }
   .funding-option {
     background: var(--bg); border: 1px solid var(--border); border-radius: 10px;
     padding: 16px; margin-bottom: 12px;
@@ -657,39 +651,36 @@
       <div id="fundingGuideAddr" style="margin-bottom:16px;"></div>
 
       <div class="funding-option">
-        <h4>Send from a crypto exchange</h4>
-        <p>Withdraw xDAI (or DAI on Gnosis Chain) from Coinbase, Binance, or any exchange to your wallet address above.</p>
-        <div class="fo-fee fo-fee-free">Fee: ~$0 (just network fee, usually under $0.01)</div>
-        <ol class="fo-steps">
-          <li>Copy your wallet address above</li>
-          <li>Go to your exchange, select Withdraw</li>
-          <li>Choose DAI or XDAI, select Gnosis Chain network</li>
-          <li>Paste your address, send</li>
-          <li>Funds arrive in ~30 seconds</li>
-        </ol>
+        <h4>Ask someone to send you funds</h4>
+        <p>Share your wallet address with someone who already has xDAI on Gnosis Chain. They can send it in seconds for near-zero cost.</p>
+        <div class="fo-fee fo-fee-free">Fee: $0</div>
       </div>
 
       <div class="funding-option">
         <h4>Send from another wallet</h4>
-        <p>If you have xDAI or DAI in MetaMask, Rabby, or any wallet, send it to the address above on Gnosis Chain.</p>
-        <div class="fo-fee fo-fee-free">Fee: ~$0.001 (gas only)</div>
+        <p>If you have xDAI in MetaMask, Rabby, or any wallet on Gnosis Chain, send it to the address above.</p>
+        <div class="fo-fee fo-fee-free">Fee: &lt;$0.01 (gas only)</div>
       </div>
 
       <div class="funding-option">
         <h4>Bridge from Ethereum</h4>
-        <p>Have DAI or ETH on Ethereum mainnet? Use the official Gnosis bridge.</p>
+        <p>Have DAI on Ethereum? Bridge it to Gnosis Chain where it becomes xDAI.</p>
         <div class="fo-fee fo-fee-low">Fee: Ethereum gas (~$1-5)</div>
         <ol class="fo-steps">
           <li>Go to <a href="https://bridge.gnosischain.com" target="_blank" style="color:var(--accent)">bridge.gnosischain.com</a></li>
           <li>Connect your Ethereum wallet</li>
-          <li>Bridge DAI to Gnosis Chain</li>
+          <li>Bridge DAI &rarr; Gnosis Chain</li>
+          <li>Takes ~5 minutes</li>
         </ol>
       </div>
 
       <div class="funding-option">
-        <h4>Ask someone to send you funds</h4>
-        <p>Share your wallet address with someone who already has xDAI. They can send you funds in seconds.</p>
-        <div class="fo-fee fo-fee-free">Fee: $0</div>
+        <h4>Buy with fiat</h4>
+        <p>Purchase xDAI directly with a bank transfer or card through these services (fees vary).</p>
+        <ol class="fo-steps">
+          <li><a href="https://www.mtpelerin.com/buy-xdai" target="_blank" style="color:var(--accent)">Mt Pelerin</a> &mdash; bank transfer, low fees</li>
+          <li><a href="https://ramp.network" target="_blank" style="color:var(--accent)">Ramp Network</a> &mdash; card or bank transfer</li>
+        </ol>
       </div>
     </div>
   </div>
@@ -1162,31 +1153,28 @@ async function checkOnboardingState() {
     }
 
     if (hasNative || hasWxdai) {
-      // Has funds but not in sDAI
-      banner.className = "funding-banner funding-state-convert";
+      // Has funds but not in sDAI — subtle hint
+      banner.className = "funding-banner";
       banner.classList.remove("hidden");
       const wxdaiAmt = formatBal(wxdaiBal, 18);
       const nativeAmt = formatBal(nativeBal, 18);
+      const totalDesc = [hasWxdai ? wxdaiAmt + ' USD' : '', hasNative ? nativeAmt + ' xDAI' : ''].filter(Boolean).join(' + ');
       banner.innerHTML = `
-        <h3>Convert to earn yield!</h3>
-        <p>You have ${hasWxdai ? wxdaiAmt + ' WXDAI' : ''}${hasWxdai && hasNative ? ' + ' : ''}${hasNative ? nativeAmt + ' xDAI' : ''}.
-           Convert to USD Savings to earn ~8% APY while your bond is active.</p>
-        <div class="funding-actions">
-          <button onclick="convertAllToSdai()">Convert to USD Savings</button>
-        </div>`;
+        <p style="margin:0;">You have ${totalDesc}.
+          <span class="browse-link" onclick="convertAllToSdai()" style="font-size:inherit;">Convert to USD Savings (earns ~8% APY)</span>
+        </p>`;
       return;
     }
 
-    // No funds at all
-    banner.className = "funding-banner funding-state-none";
+    // No funds — show a subtle hint, don't block the form
+    banner.className = "funding-banner";
     banner.classList.remove("hidden");
     banner.innerHTML = `
-      <h3>You need funds to create bonds</h3>
-      <p>Send xDAI to your wallet, or see all your options.</p>
-      <div class="funding-actions">
-        <button onclick="openFundingGuide()">How to Get Funds</button>
-        <button class="copy-addr-btn" onclick="copyAddress()">Copy Wallet Address</button>
-      </div>`;
+      <p style="margin:0;">No funds yet.
+        <span class="browse-link" onclick="openFundingGuide()" style="font-size:inherit;">How to get funds</span>
+        &nbsp;&middot;&nbsp;
+        <span class="browse-link" onclick="copyAddress()" style="font-size:inherit;">Copy wallet address</span>
+      </p>`;
   } catch (err) {
     console.warn("Onboarding check failed:", err);
     banner.classList.add("hidden");
