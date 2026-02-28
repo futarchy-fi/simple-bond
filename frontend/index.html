@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SimpleBond — Futarchy</title>
+<title>SimpleBond v3 — Futarchy</title>
 <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.4/dist/ethers.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@web3auth/modal@9/dist/modal.umd.min.js"></script>
 <style>
@@ -287,26 +287,74 @@
   .risk-item .rr-value { font-size: 20px; font-weight: 700; color: var(--red); margin-top: 4px; }
   .risk-reward-card .rr-note { font-size: 12px; color: var(--muted); margin-bottom: 14px; }
 
-  /* ─── Transak Overlay ─── */
-  .transak-overlay {
+  /* ─── Funding Guide Overlay ─── */
+  .funding-overlay {
     position: fixed; top: 0; left: 0; right: 0; bottom: 0;
     background: rgba(0,0,0,0.75); z-index: 1000;
     display: flex; align-items: center; justify-content: center;
   }
-  .transak-iframe-container {
-    background: #fff; border-radius: 16px; overflow: hidden;
-    width: 420px; max-width: 95vw; height: 620px; max-height: 90vh;
-    position: relative;
+  .funding-guide {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
+    width: 480px; max-width: 95vw; max-height: 90vh; overflow-y: auto;
+    padding: 28px; position: relative;
   }
-  .transak-iframe-container iframe {
-    width: 100%; height: 100%; border: none;
+  .funding-guide h3 { font-size: 18px; font-weight: 600; margin-bottom: 16px; }
+  .funding-guide-close {
+    position: absolute; top: 12px; right: 16px;
+    background: none; color: var(--muted); border: none; font-size: 22px;
+    cursor: pointer; padding: 0; width: auto;
   }
-  .transak-close {
-    position: absolute; top: 8px; right: 12px; z-index: 10;
-    background: rgba(0,0,0,0.6); color: #fff; border: none; border-radius: 50%;
-    width: 32px; height: 32px; font-size: 18px; cursor: pointer; display: flex;
-    align-items: center; justify-content: center;
+  .funding-guide-close:hover { color: var(--text); }
+  .funding-option {
+    background: var(--bg); border: 1px solid var(--border); border-radius: 10px;
+    padding: 16px; margin-bottom: 12px;
   }
+  .funding-option h4 { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+  .funding-option p { font-size: 13px; color: var(--muted); margin: 0; }
+  .funding-option .fo-fee { font-size: 12px; margin-top: 6px; }
+  .funding-option .fo-fee-free { color: var(--green); }
+  .funding-option .fo-fee-low { color: var(--orange); }
+  .funding-option .fo-steps { font-size: 12px; color: var(--muted); margin-top: 8px; padding-left: 16px; }
+  .funding-option .fo-steps li { margin-bottom: 4px; }
+
+  /* ─── Concession Display ─── */
+  .concession-card {
+    background: rgba(231,76,60,0.06); border: 1px solid rgba(231,76,60,0.25);
+    border-radius: 10px; padding: 16px; margin-top: 16px;
+  }
+  .concession-card h3 { font-size: 14px; font-weight: 600; color: var(--red); margin-bottom: 8px; }
+  .concession-card .concession-text { font-size: 13px; color: var(--text); white-space: pre-wrap; }
+  .status-conceded { background: rgba(231,76,60,0.15); color: var(--red); }
+
+  /* ─── Belief Thresholds ─── */
+  .belief-card {
+    background: var(--bg); border: 1px solid var(--border); border-radius: 10px;
+    padding: 16px; margin-top: 12px;
+  }
+  .belief-card h3 { font-size: 13px; font-weight: 600; margin-bottom: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+  .belief-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .belief-item { padding: 10px; border-radius: 8px; text-align: center; }
+  .belief-challenger { background: rgba(52,152,219,0.08); border: 1px solid rgba(52,152,219,0.2); }
+  .belief-poster { background: rgba(243,156,18,0.08); border: 1px solid rgba(243,156,18,0.2); }
+  .belief-item .belief-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .belief-challenger .belief-label { color: var(--blue); }
+  .belief-poster .belief-label { color: var(--orange); }
+  .belief-item .belief-value { font-size: 22px; font-weight: 700; margin-top: 2px; }
+  .belief-challenger .belief-value { color: var(--blue); }
+  .belief-poster .belief-value { color: var(--orange); }
+  .belief-item .belief-desc { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+  /* ─── Challenge Metadata ─── */
+  .challenge-item .ci-meta { font-size: 11px; color: var(--muted); margin-top: 2px; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* ─── Concede Button ─── */
+  button.concede { background: var(--orange); }
+  button.concede:hover { background: #e67e22; }
+
+  /* ─── Fee Waiver ─── */
+  .fee-waiver-group { margin-top: 8px; }
+  .fee-waiver-group label { font-size: 12px; color: var(--muted); }
+  .fee-waiver-group input { max-width: 120px; display: inline-block; padding: 6px 10px; font-size: 13px; }
 
   /* ─── Copy Address Button ─── */
   .copy-addr-btn {
@@ -319,7 +367,7 @@
 <body>
 <div class="container">
   <header>
-    <h1>SimpleBond <span>by Futarchy</span></h1>
+    <h1>SimpleBond <span>v3 — by Futarchy</span></h1>
     <div>
       <div id="walletInfo" class="wallet-info hidden">
         <div class="address" id="walletAddr"></div>
@@ -419,6 +467,17 @@
           <div class="hint">Fixed fee paid to the judge per ruling. Default: 5% of bond.</div>
         </div>
 
+        <div class="form-group advanced-field" id="advAcceptanceDelayField">
+          <label>Acceptance Delay</label>
+          <div class="preset-row">
+            <button type="button" class="preset acceptance-preset" data-adelay="1" onclick="setAcceptanceDelay(1)">1 day</button>
+            <button type="button" class="preset acceptance-preset active" data-adelay="3" onclick="setAcceptanceDelay(3)">3 days</button>
+            <button type="button" class="preset acceptance-preset" data-adelay="7" onclick="setAcceptanceDelay(7)">7 days</button>
+            <button type="button" class="preset acceptance-preset" data-adelay="14" onclick="setAcceptanceDelay(14)">14 days</button>
+          </div>
+          <div class="hint">Time for the poster to concede after a challenge, before the judge can rule. Default: 3 days.</div>
+        </div>
+
         <div class="form-group advanced-field" id="advRulingBufferField">
           <label>Ruling Buffer</label>
           <div class="preset-row">
@@ -426,7 +485,7 @@
             <button type="button" class="preset ruling-preset" data-buffer="14" onclick="setRulingBuffer(14)">14 days</button>
             <button type="button" class="preset ruling-preset active" data-buffer="30" onclick="setRulingBuffer(30)">30 days</button>
           </div>
-          <div class="hint">Time after deadline for the judge to rule. Default: 30 days.</div>
+          <div class="hint">Time after ruling window opens for the judge to rule. Default: 30 days.</div>
         </div>
 
         <div id="createStepper"></div>
@@ -513,13 +572,44 @@
             <div class="value" id="bDeadline"></div>
           </div>
           <div class="bond-field">
+            <div class="label">Acceptance Delay</div>
+            <div class="value" id="bAcceptanceDelay"></div>
+          </div>
+          <div class="bond-field">
+            <div class="label">Ruling Window Opens</div>
+            <div class="value" id="bRulingStart"></div>
+          </div>
+          <div class="bond-field">
             <div class="label">Ruling Deadline</div>
             <div class="value" id="bRulingDeadline"></div>
           </div>
           <div class="bond-field full" id="bMetadataRow">
-            <div class="label">Description</div>
+            <div class="label">Claim</div>
             <div class="value" id="bMetadata" style="white-space:pre-wrap;"></div>
           </div>
+        </div>
+
+        <!-- Belief Thresholds -->
+        <div id="beliefCard" class="belief-card hidden">
+          <h3>Implied Belief Thresholds</h3>
+          <div class="belief-grid">
+            <div class="belief-item belief-challenger">
+              <div class="belief-label">Challenger signals</div>
+              <div class="belief-value" id="beliefChallenger"></div>
+              <div class="belief-desc">chance poster is wrong</div>
+            </div>
+            <div class="belief-item belief-poster">
+              <div class="belief-label">Poster signals</div>
+              <div class="belief-value" id="beliefPoster"></div>
+              <div class="belief-desc">chance they're wrong</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Concession Display -->
+        <div id="concessionCard" class="concession-card hidden">
+          <h3>Poster Conceded</h3>
+          <div class="concession-text" id="concessionText"></div>
         </div>
 
         <!-- Risk/Reward Card (for challengers) -->
@@ -536,6 +626,10 @@
             </div>
           </div>
           <div class="rr-note" id="rrNote"></div>
+          <div class="form-group" style="margin-top:12px;">
+            <label>Your reasoning (stored on-chain)</label>
+            <textarea id="challengeMetadata" placeholder="Explain why you think the poster is wrong..." rows="2"></textarea>
+          </div>
           <div id="challengeStepper"></div>
           <button id="challengeBtn" onclick="smartChallengeBond()" style="width:100%;">Challenge This Bond</button>
           <div id="challengeMsg"></div>
@@ -555,11 +649,48 @@
     </div>
   </div>
 
-  <!-- Transak Overlay -->
-  <div id="transakOverlay" class="transak-overlay hidden">
-    <div class="transak-iframe-container">
-      <button class="transak-close" onclick="closeTransak()">&times;</button>
-      <iframe id="transakIframe"></iframe>
+  <!-- Funding Guide Overlay -->
+  <div id="fundingOverlay" class="funding-overlay hidden" onclick="if(event.target===this)closeFundingGuide()">
+    <div class="funding-guide">
+      <button class="funding-guide-close" onclick="closeFundingGuide()">&times;</button>
+      <h3>How to get funds</h3>
+      <div id="fundingGuideAddr" style="margin-bottom:16px;"></div>
+
+      <div class="funding-option">
+        <h4>Send from a crypto exchange</h4>
+        <p>Withdraw xDAI (or DAI on Gnosis Chain) from Coinbase, Binance, or any exchange to your wallet address above.</p>
+        <div class="fo-fee fo-fee-free">Fee: ~$0 (just network fee, usually under $0.01)</div>
+        <ol class="fo-steps">
+          <li>Copy your wallet address above</li>
+          <li>Go to your exchange, select Withdraw</li>
+          <li>Choose DAI or XDAI, select Gnosis Chain network</li>
+          <li>Paste your address, send</li>
+          <li>Funds arrive in ~30 seconds</li>
+        </ol>
+      </div>
+
+      <div class="funding-option">
+        <h4>Send from another wallet</h4>
+        <p>If you have xDAI or DAI in MetaMask, Rabby, or any wallet, send it to the address above on Gnosis Chain.</p>
+        <div class="fo-fee fo-fee-free">Fee: ~$0.001 (gas only)</div>
+      </div>
+
+      <div class="funding-option">
+        <h4>Bridge from Ethereum</h4>
+        <p>Have DAI or ETH on Ethereum mainnet? Use the official Gnosis bridge.</p>
+        <div class="fo-fee fo-fee-low">Fee: Ethereum gas (~$1-5)</div>
+        <ol class="fo-steps">
+          <li>Go to <a href="https://bridge.gnosischain.com" target="_blank" style="color:var(--accent)">bridge.gnosischain.com</a></li>
+          <li>Connect your Ethereum wallet</li>
+          <li>Bridge DAI to Gnosis Chain</li>
+        </ol>
+      </div>
+
+      <div class="funding-option">
+        <h4>Ask someone to send you funds</h4>
+        <p>Share your wallet address with someone who already has xDAI. They can send you funds in seconds.</p>
+        <div class="fo-fee fo-fee-free">Fee: $0</div>
+      </div>
     </div>
   </div>
 
@@ -580,8 +711,6 @@ const GNOSISSCAN = "https://gnosisscan.io/address/";
 // ─── TODO: Register at dashboard.web3auth.io and paste your clientId ──
 const WEB3AUTH_CLIENT_ID = "BPt1ahKWn4CSezBP6MhIZQQICRcOjt6epWT9jQ45M4sGQyO3jimvzjdBN93ukw2tBR_4PyRBI94FsFLZBfYQFWo";
 
-// ─── TODO: Register at dashboard.transak.com and paste your API key ───
-const TRANSAK_API_KEY = "YOUR_TRANSAK_API_KEY";
 
 // ─── Token Addresses ──────────────────────────────────────────────────
 const SDAI_ADDRESS  = "0xaf204776c7245bF4147c2612BF6e5972Ee483701";
@@ -604,20 +733,27 @@ function friendlyTokenName(addr, symbol) {
 
 // ─── ABIs ─────────────────────────────────────────────────────────────
 const BOND_ABI = [
-  "function createBond(address token, uint256 bondAmount, uint256 challengeAmount, uint256 judgeFee, address judge, uint256 deadline, uint256 rulingBuffer, string metadata) returns (uint256)",
-  "function challenge(uint256 bondId)",
+  // v3 functions
+  "function createBond(address token, uint256 bondAmount, uint256 challengeAmount, uint256 judgeFee, address judge, uint256 deadline, uint256 acceptanceDelay, uint256 rulingBuffer, string metadata) returns (uint256)",
+  "function challenge(uint256 bondId, string metadata)",
+  "function concede(uint256 bondId, string metadata)",
   "function withdrawBond(uint256 bondId)",
-  "function ruleForChallenger(uint256 bondId)",
-  "function ruleForPoster(uint256 bondId)",
+  "function ruleForChallenger(uint256 bondId, uint256 feeCharged)",
+  "function ruleForPoster(uint256 bondId, uint256 feeCharged)",
   "function claimTimeout(uint256 bondId)",
-  "function bonds(uint256) view returns (address poster, address judge, address token, uint256 bondAmount, uint256 challengeAmount, uint256 judgeFee, uint256 deadline, uint256 rulingDeadline, string metadata, bool settled, uint256 currentChallenge)",
+  // v3 views
+  "function bonds(uint256) view returns (address poster, address judge, address token, uint256 bondAmount, uint256 challengeAmount, uint256 judgeFee, uint256 deadline, uint256 acceptanceDelay, uint256 rulingBuffer, string metadata, bool settled, bool conceded, uint256 currentChallenge, uint256 lastChallengeTime)",
   "function nextBondId() view returns (uint256)",
   "function getChallengeCount(uint256 bondId) view returns (uint256)",
-  "function getChallenge(uint256 bondId, uint256 index) view returns (address challenger, uint8 status)",
-  "event BondCreated(uint256 indexed bondId, address indexed poster, address indexed judge, address token, uint256 bondAmount, uint256 challengeAmount, uint256 judgeFee, uint256 deadline, uint256 rulingDeadline, string metadata)",
-  "event Challenged(uint256 indexed bondId, uint256 challengeIndex, address indexed challenger)",
-  "event RuledForChallenger(uint256 indexed bondId, uint256 challengeIndex, address indexed challenger)",
-  "event RuledForPoster(uint256 indexed bondId, uint256 challengeIndex, address indexed challenger)",
+  "function getChallenge(uint256 bondId, uint256 index) view returns (address challenger, uint8 status, string metadata)",
+  "function rulingWindowStart(uint256 bondId) view returns (uint256)",
+  "function rulingDeadline(uint256 bondId) view returns (uint256)",
+  // v3 events
+  "event BondCreated(uint256 indexed bondId, address indexed poster, address indexed judge, address token, uint256 bondAmount, uint256 challengeAmount, uint256 judgeFee, uint256 deadline, uint256 acceptanceDelay, uint256 rulingBuffer, string metadata)",
+  "event Challenged(uint256 indexed bondId, uint256 challengeIndex, address indexed challenger, string metadata)",
+  "event ClaimConceded(uint256 indexed bondId, address indexed poster, string metadata)",
+  "event RuledForChallenger(uint256 indexed bondId, uint256 challengeIndex, address indexed challenger, uint256 feeCharged)",
+  "event RuledForPoster(uint256 indexed bondId, uint256 challengeIndex, address indexed challenger, uint256 feeCharged)",
   "event ChallengeRefunded(uint256 indexed bondId, uint256 challengeIndex, address indexed challenger)",
   "event BondWithdrawn(uint256 indexed bondId)",
   "event BondTimedOut(uint256 indexed bondId)",
@@ -653,6 +789,7 @@ let connectionType = null; // 'web3auth' | 'injected'
 let tokenCache = {};
 let approvalCheckTimer = null;
 let rulingBufferDays = 30;
+let acceptanceDelayDays = 3;
 let currentMode = 'simple';
 let currentViewBondId = null;
 let currentViewBondData = null;
@@ -1045,9 +1182,9 @@ async function checkOnboardingState() {
     banner.classList.remove("hidden");
     banner.innerHTML = `
       <h3>You need funds to create bonds</h3>
-      <p>Buy USD with a credit card, or send xDAI to your wallet address.</p>
+      <p>Send xDAI to your wallet, or see all your options.</p>
       <div class="funding-actions">
-        <button onclick="openTransak()">Buy with Credit Card</button>
+        <button onclick="openFundingGuide()">How to Get Funds</button>
         <button class="copy-addr-btn" onclick="copyAddress()">Copy Wallet Address</button>
       </div>`;
   } catch (err) {
@@ -1128,38 +1265,29 @@ async function convertAllToSdai() {
   }
 }
 
-// ─── Transak On-Ramp ──────────────────────────────────────────────────
-function openTransak() {
-  if (TRANSAK_API_KEY === "YOUR_TRANSAK_API_KEY") {
-    alert("Transak is not configured yet. Set TRANSAK_API_KEY in the page source.");
-    return;
+// ─── Funding Guide ────────────────────────────────────────────────────
+function openFundingGuide() {
+  const overlay = document.getElementById("fundingOverlay");
+  const addrEl = document.getElementById("fundingGuideAddr");
+  if (userAddr) {
+    addrEl.innerHTML = `
+      <div style="font-size:13px;color:var(--muted);margin-bottom:4px;">Your wallet address:</div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <code style="font-size:13px;color:var(--accent);word-break:break-all;flex:1;">${userAddr}</code>
+        <button class="copy-addr-btn" onclick="copyAddress()">Copy</button>
+      </div>`;
+  } else {
+    addrEl.innerHTML = `<div style="font-size:13px;color:var(--muted);">Sign in first to see your wallet address.</div>`;
   }
-  const overlay = document.getElementById("transakOverlay");
-  const iframe = document.getElementById("transakIframe");
-  const addr = userAddr || "";
-  iframe.src = `https://global.transak.com/?apiKey=${TRANSAK_API_KEY}&cryptoCurrencyCode=XDAI&network=gnosis&walletAddress=${addr}&themeColor=6c5ce7&hideMenu=true`;
   overlay.classList.remove("hidden");
-
-  // Listen for Transak events
-  window.addEventListener("message", handleTransakMessage);
 }
 
-function closeTransak() {
-  const overlay = document.getElementById("transakOverlay");
-  const iframe = document.getElementById("transakIframe");
-  iframe.src = "";
-  overlay.classList.add("hidden");
-  window.removeEventListener("message", handleTransakMessage);
-  // Refresh balances after closing
+function closeFundingGuide() {
+  document.getElementById("fundingOverlay").classList.add("hidden");
+  // Refresh balances in case user funded while guide was open
   if (userAddr) {
     tokenCache = {};
     refreshAllBalances().then(() => checkOnboardingState());
-  }
-}
-
-function handleTransakMessage(event) {
-  if (event.data && event.data.event_id === "TRANSAK_ORDER_SUCCESSFUL") {
-    closeTransak();
   }
 }
 
@@ -1289,6 +1417,7 @@ async function smartCreateBond() {
     const challengeAmount = ethers.parseUnits(challengeAmountStr, decimals);
     const judgeFee = ethers.parseUnits(judgeFeeStr, decimals);
     const deadline = BigInt(Math.floor(new Date(deadlineStr + "T23:59:59Z").getTime() / 1000));
+    const acceptanceDelay = BigInt(acceptanceDelayDays * 86400);
     const rulingBuffer = BigInt(rulingBufferDays * 86400);
 
     if (deadline <= BigInt(Math.floor(Date.now() / 1000))) {
@@ -1371,7 +1500,7 @@ async function smartCreateBond() {
         await ensureApproval(tokenAddr, approveAmt, CONTRACT_ADDRESS);
       } else if (step.action === "createBond") {
         const metadata = document.getElementById("bondMetadata").value.trim();
-        const tx = await bondContract.createBond(tokenAddr, bondAmount, challengeAmount, judgeFee, judgeAddr, deadline, rulingBuffer, metadata);
+        const tx = await bondContract.createBond(tokenAddr, bondAmount, challengeAmount, judgeFee, judgeAddr, deadline, acceptanceDelay, rulingBuffer, metadata);
         await tx.wait();
 
         // Parse bond ID from receipt
@@ -1444,7 +1573,7 @@ async function loadBond() {
     if (BigInt(bondId) >= nextId) { showMsg(msg, `Bond #${bondId} does not exist yet (next ID: ${nextId})`, "error"); return; }
 
     const b = await readContract.bonds(bondId);
-    const [poster, judge, token, bondAmount, challengeAmount, judgeFee, deadline, rulingDeadline, metadata, settled, currentChallenge] = b;
+    const [poster, judge, token, bondAmount, challengeAmount, judgeFee, deadline, acceptanceDelay, rulingBuffer, metadata, settled, conceded, currentChallenge, lastChallengeTime] = b;
 
     const tokenContract = new ethers.Contract(token, ERC20_ABI, readProvider);
     let decimals = 18, symbol = "???";
@@ -1455,9 +1584,24 @@ async function loadBond() {
     const challengeCount = Number(await readContract.getChallengeCount(bondId));
     const currentIdx = Number(currentChallenge);
 
+    // Get ruling window from contract
+    let rwStart = 0n, rwEnd = 0n;
+    try {
+      rwStart = await readContract.rulingWindowStart(bondId);
+      rwEnd = await readContract.rulingDeadline(bondId);
+    } catch (_) {
+      // Fallback: compute locally
+      const afterDeadline = deadline;
+      const afterAcceptance = lastChallengeTime + acceptanceDelay;
+      rwStart = afterDeadline > afterAcceptance ? afterDeadline : afterAcceptance;
+      rwEnd = rwStart + rulingBuffer;
+    }
+
     // Determine status
     let status, statusClass;
-    if (settled) {
+    if (conceded) {
+      status = "Conceded"; statusClass = "status-conceded";
+    } else if (settled) {
       const filter1 = readContract.filters.RuledForChallenger(bondId);
       const filter2 = readContract.filters.BondWithdrawn(bondId);
       const filter3 = readContract.filters.BondTimedOut(bondId);
@@ -1470,20 +1614,20 @@ async function loadBond() {
       else if (evW.length > 0) { status = "Withdrawn"; statusClass = "status-withdrawn"; }
       else if (evT.length > 0) { status = "Timed Out"; statusClass = "status-timedout"; }
       else { status = "Settled"; statusClass = "status-settled"; }
-    } else if (now > rulingDeadline && currentIdx < challengeCount) {
+    } else if (now > rwEnd && currentIdx < challengeCount) {
       status = "Timeout (claimable)"; statusClass = "status-expired";
-    } else if (now > deadline) {
-      if (currentIdx < challengeCount) {
-        status = "Ruling Period"; statusClass = "status-active";
-      } else {
-        status = "Expired (withdrawable)"; statusClass = "status-expired";
-      }
+    } else if (now >= rwStart && currentIdx < challengeCount) {
+      status = "Ruling Period"; statusClass = "status-active";
+    } else if (now > deadline && currentIdx >= challengeCount) {
+      status = "Withdrawable"; statusClass = "status-expired";
+    } else if (currentIdx < challengeCount && now < rwStart) {
+      status = "Acceptance Period"; statusClass = "status-pending";
     } else {
       status = "Active"; statusClass = "status-active";
     }
 
     currentViewBondId = bondId;
-    currentViewBondData = { poster, judge, token, bondAmount, challengeAmount, judgeFee, deadline, rulingDeadline, metadata, settled, currentChallenge, decimals, symbol, challengeCount, currentIdx, status };
+    currentViewBondData = { poster, judge, token, bondAmount, challengeAmount, judgeFee, deadline, acceptanceDelay, rulingBuffer, metadata, settled, conceded, currentChallenge, lastChallengeTime, decimals, symbol, challengeCount, currentIdx, status, rwStart, rwEnd };
 
     document.getElementById("bondDisplay").classList.remove("hidden");
     document.getElementById("bId").textContent = bondId;
@@ -1499,7 +1643,15 @@ async function loadBond() {
     document.getElementById("bChallengeAmount").textContent = `$${fmtChallengeAmt}`;
     document.getElementById("bJudgeFee").textContent = `$${fmtJudgeFee}`;
     document.getElementById("bDeadline").textContent = new Date(Number(deadline) * 1000).toLocaleString();
-    document.getElementById("bRulingDeadline").textContent = new Date(Number(rulingDeadline) * 1000).toLocaleString();
+    const delayDays = Number(acceptanceDelay) / 86400;
+    document.getElementById("bAcceptanceDelay").textContent = delayDays >= 1 ? `${delayDays} day${delayDays !== 1 ? 's' : ''}` : `${Number(acceptanceDelay) / 3600} hours`;
+    if (challengeCount > 0 && Number(rwStart) > 0) {
+      document.getElementById("bRulingStart").textContent = new Date(Number(rwStart) * 1000).toLocaleString();
+      document.getElementById("bRulingDeadline").textContent = new Date(Number(rwEnd) * 1000).toLocaleString();
+    } else {
+      document.getElementById("bRulingStart").textContent = "After first challenge";
+      document.getElementById("bRulingDeadline").textContent = "After first challenge";
+    }
 
     const metaRow = document.getElementById("bMetadataRow");
     const metaEl = document.getElementById("bMetadata");
@@ -1510,25 +1662,58 @@ async function loadBond() {
       metaRow.style.display = "none";
     }
 
+    // ─── Belief Thresholds ────────────────────────────────────────
+    const beliefCard = document.getElementById("beliefCard");
+    const netPot = bondAmount + challengeAmount - judgeFee;
+    if (netPot > 0n) {
+      const challengerPct = (Number(challengeAmount) * 100 / Number(netPot)).toFixed(1);
+      const posterPct = ((1 - Number(bondAmount) / Number(netPot)) * 100).toFixed(1);
+      document.getElementById("beliefChallenger").textContent = `>${challengerPct}%`;
+      document.getElementById("beliefPoster").textContent = `<${posterPct}%`;
+      beliefCard.classList.remove("hidden");
+    } else {
+      beliefCard.classList.add("hidden");
+    }
+
+    // ─── Concession Display ──────────────────────────────────────
+    const concessionCard = document.getElementById("concessionCard");
+    if (conceded) {
+      // Fetch concession metadata from event
+      try {
+        const concedeFilter = readContract.filters.ClaimConceded(bondId);
+        const concedeEvents = await readContract.queryFilter(concedeFilter, CONTRACT_DEPLOY_BLOCK).catch(() => []);
+        if (concedeEvents.length > 0) {
+          const concedeMeta = concedeEvents[0].args.metadata || concedeEvents[0].args[2] || "";
+          document.getElementById("concessionText").textContent = concedeMeta || "The poster conceded this claim.";
+        } else {
+          document.getElementById("concessionText").textContent = "The poster conceded this claim.";
+        }
+      } catch (_) {
+        document.getElementById("concessionText").textContent = "The poster conceded this claim.";
+      }
+      concessionCard.classList.remove("hidden");
+    } else {
+      concessionCard.classList.add("hidden");
+    }
+
     const url = new URL(window.location);
     url.searchParams.set("bond", bondId);
     history.replaceState(null, "", url);
 
     // ─── Risk/Reward Card ────────────────────────────────────────
     const rrCard = document.getElementById("riskRewardCard");
-    if (!settled && now <= deadline) {
-      // Challenger can still challenge
-      // Win: poster loses bond, challenger gets bond + challenge - judgeFee
-      // Net profit = bondAmount - judgeFee (since challenge amount is returned + bond - fee)
+    if (!settled && !conceded && now <= deadline) {
       const netProfit = bondAmount - judgeFee;
       const netProfitFmt = parseFloat(ethers.formatUnits(netProfit, decimals)).toLocaleString(undefined, { maximumFractionDigits: 2 });
       const riskFmt = fmtChallengeAmt;
+      const challengerBeliefPct = (Number(challengeAmount) * 100 / Number(netPot)).toFixed(0);
 
       document.getElementById("rrWinAmount").textContent = `+$${netProfitFmt}`;
       document.getElementById("rrRiskAmount").textContent = `$${riskFmt}`;
-      document.getElementById("rrNote").textContent = `If you lose, you forfeit your $${riskFmt} deposit. The judge decides the outcome.`;
+      document.getElementById("rrNote").textContent = `By challenging, you signal >${challengerBeliefPct}% belief the poster is wrong. If you lose, you forfeit your $${riskFmt} deposit.`;
       document.getElementById("challengeStepper").innerHTML = "";
       document.getElementById("challengeMsg").innerHTML = "";
+      document.getElementById("challengeMetadata").value = "";
       rrCard.classList.remove("hidden");
     } else {
       rrCard.classList.add("hidden");
@@ -1545,8 +1730,8 @@ async function loadBond() {
       const statusClasses = ["status-pending", "status-won", "status-lost", "status-refunded"];
 
       for (let i = 0; i < challengeCount; i++) {
-        const [cAddr, cStatus] = await readContract.getChallenge(bondId, i);
-        const isCurrent = (i === currentIdx && !settled);
+        const [cAddr, cStatus, cMeta] = await readContract.getChallenge(bondId, i);
+        const isCurrent = (i === currentIdx && !settled && !conceded);
         const item = document.createElement("div");
         item.className = "challenge-item" + (isCurrent ? " current" : "");
         item.innerHTML = `
@@ -1554,6 +1739,7 @@ async function loadBond() {
             <span class="ci-idx">#${i}</span>
             <span class="ci-addr">${short(cAddr)}</span>
             ${isCurrent ? ' <span style="color:var(--accent);font-size:11px;">(current)</span>' : ''}
+            ${cMeta ? `<div class="ci-meta" title="${escapeHtml(cMeta)}">${escapeHtml(cMeta)}</div>` : ''}
           </div>
           <span class="status-badge ${statusClasses[cStatus]}">${statusLabels[cStatus]}</span>`;
         challengeList.appendChild(item);
@@ -1567,26 +1753,42 @@ async function loadBond() {
     const btnsDiv = document.getElementById("actionBtns");
     btnsDiv.innerHTML = "";
 
-    if (!settled && signer) {
+    if (!settled && !conceded && signer) {
       const ua = userAddr.toLowerCase();
       const hasPendingChallenge = currentIdx < challengeCount;
+      const inRulingWindow = now >= rwStart && now <= rwEnd;
 
-      // Judge actions on current challenge
-      if (ua === judge.toLowerCase() && hasPendingChallenge && now <= rulingDeadline) {
+      // Poster concede (only before any ruling)
+      if (ua === poster.toLowerCase() && hasPendingChallenge && currentIdx === 0) {
+        const concedeBtn = document.createElement("button");
+        concedeBtn.className = "concede";
+        concedeBtn.textContent = "Concede Claim";
+        concedeBtn.onclick = () => doConcede(bondId);
+        btnsDiv.appendChild(concedeBtn);
+      }
+
+      // Judge actions on current challenge (only in ruling window)
+      if (ua === judge.toLowerCase() && hasPendingChallenge && inRulingWindow) {
+        // Fee waiver input
+        const feeGroup = document.createElement("div");
+        feeGroup.className = "fee-waiver-group";
+        feeGroup.innerHTML = `<label>Judge fee to charge: </label><input type="text" id="feeChargedInput" value="${parseFloat(ethers.formatUnits(judgeFee, decimals)).toFixed(2)}" style="max-width:100px;display:inline-block;padding:6px 10px;font-size:13px;"> <span style="font-size:12px;color:var(--muted);">max: $${fmtJudgeFee} (enter 0 to waive)</span>`;
+        btnsDiv.parentNode.insertBefore(feeGroup, btnsDiv);
+
         const ruleForCBtn = document.createElement("button");
         ruleForCBtn.className = "danger";
         ruleForCBtn.textContent = "Rule for Challenger";
-        ruleForCBtn.onclick = () => doRuleForChallenger(bondId);
+        ruleForCBtn.onclick = () => doRuleForChallenger(bondId, decimals, judgeFee);
         btnsDiv.appendChild(ruleForCBtn);
 
         const ruleForPBtn = document.createElement("button");
         ruleForPBtn.className = "success";
         ruleForPBtn.textContent = "Rule for Poster";
-        ruleForPBtn.onclick = () => doRuleForPoster(bondId);
+        ruleForPBtn.onclick = () => doRuleForPoster(bondId, decimals, judgeFee);
         btnsDiv.appendChild(ruleForPBtn);
       }
 
-      // Poster withdraw
+      // Poster withdraw (no pending challenges)
       if (ua === poster.toLowerCase() && !hasPendingChallenge) {
         const wdBtn = document.createElement("button");
         wdBtn.className = "success";
@@ -1596,7 +1798,7 @@ async function loadBond() {
       }
 
       // Timeout claim
-      if (now > rulingDeadline && hasPendingChallenge) {
+      if (now > rwEnd && hasPendingChallenge) {
         const toBtn = document.createElement("button");
         toBtn.className = "secondary";
         toBtn.textContent = "Claim Timeout (Refund All)";
@@ -1692,7 +1894,8 @@ async function smartChallengeBond() {
       } else if (step.action === "approveToken") {
         await ensureApproval(tokenAddr, challengeAmount, CONTRACT_ADDRESS);
       } else if (step.action === "challenge") {
-        const tx = await bondContract.challenge(bondId);
+        const challengeMeta = document.getElementById("challengeMetadata").value.trim();
+        const tx = await bondContract.challenge(bondId, challengeMeta);
         await tx.wait();
       }
 
@@ -1712,29 +1915,53 @@ async function smartChallengeBond() {
 
 function showFundingOptions(msgEl) {
   const fundingHtml = `<div style="margin-top:8px;">
-    <button onclick="openTransak()" style="font-size:12px;padding:6px 12px;">Buy with Credit Card</button>
+    <button onclick="openFundingGuide()" style="font-size:12px;padding:6px 12px;">How to Get Funds</button>
     <button class="copy-addr-btn" onclick="copyAddress()" style="margin-left:6px;">Copy Wallet Address</button>
   </div>`;
   msgEl.innerHTML += fundingHtml;
 }
 
 // ─── Bond actions ─────────────────────────────────────────────────────
-async function doRuleForChallenger(bondId) {
+async function doConcede(bondId) {
+  const msg = document.getElementById("viewMsg");
+  const concedeMeta = prompt("Why are you conceding? (stored on-chain)") || "";
+  if (concedeMeta === null) return; // user cancelled
+  try {
+    showMsg(msg, "Processing concession...", "info");
+    const tx = await bondContract.concede(bondId, concedeMeta);
+    await tx.wait();
+    showMsg(msg, "Claim conceded. Everyone has been refunded.", "success");
+    loadBond();
+  } catch (err) { showMsg(msg, err.reason || err.message, "error"); }
+}
+
+function _parseFeeCharged(decimals, maxFee) {
+  const input = document.getElementById("feeChargedInput");
+  const val = input ? input.value.trim() : "";
+  if (!val || isNaN(val)) return maxFee; // default to max fee
+  const parsed = ethers.parseUnits(val, decimals);
+  if (parsed > maxFee) return maxFee;
+  return parsed;
+}
+
+async function doRuleForChallenger(bondId, decimals, maxFee) {
   const msg = document.getElementById("viewMsg");
   try {
+    const feeCharged = _parseFeeCharged(decimals, maxFee);
     showMsg(msg, "Processing... this takes about 5 seconds", "info");
-    const tx = await bondContract.ruleForChallenger(bondId);
+    const tx = await bondContract.ruleForChallenger(bondId, feeCharged);
     await tx.wait();
     showMsg(msg, "Ruled for challenger. Bond settled.", "success");
     loadBond();
   } catch (err) { showMsg(msg, err.reason || err.message, "error"); }
 }
 
-async function doRuleForPoster(bondId) {
+async function doRuleForPoster(bondId, decimals, maxFee) {
   const msg = document.getElementById("viewMsg");
   try {
+    const feeCharged = _parseFeeCharged(decimals, maxFee);
     showMsg(msg, "Processing... this takes about 5 seconds", "info");
-    const tx = await bondContract.ruleForPoster(bondId);
+    const tx = await bondContract.ruleForPoster(bondId, feeCharged);
     await tx.wait();
     showMsg(msg, "Ruled for poster. Queue advanced.", "success");
     loadBond();
@@ -1791,8 +2018,8 @@ async function loadBrowseBonds() {
       const bondId = Number(ev.args.bondId);
       try {
         const b = await readContract.bonds(bondId);
-        const [, , token, bondAmount, challengeAmount, , deadline, , metadata, settled] = b;
-        if (!settled && deadline > now) {
+        const [, , token, bondAmount, challengeAmount, , deadline, , , metadata, settled, conceded] = b;
+        if (!settled && !conceded && deadline > now) {
           let symbol = "???", decimals = 18;
           try {
             const tc = new ethers.Contract(token, ERC20_ABI, readProvider);
@@ -1865,6 +2092,11 @@ function setDeadline(days) {
 function setRulingBuffer(days) {
   rulingBufferDays = days;
   document.querySelectorAll(".ruling-preset").forEach(b => b.classList.toggle("active", b.dataset.buffer == days));
+}
+
+function setAcceptanceDelay(days) {
+  acceptanceDelayDays = days;
+  document.querySelectorAll(".acceptance-preset").forEach(b => b.classList.toggle("active", b.dataset.adelay == days));
 }
 
 function short(addr) { return addr.slice(0, 6) + "..." + addr.slice(-4); }
@@ -1976,7 +2208,7 @@ async function loadMyBonds() {
 
     for (const id of allBondIds) {
       const b = await readContract.bonds(id);
-      const [poster, judge, token, bondAmount, challengeAmount, judgeFee, deadline, rulingDeadline, metadata, settled, currentChallenge] = b;
+      const [poster, judge, token, bondAmount, challengeAmount, judgeFee, deadline, acceptanceDelay, rulingBuffer, metadata, settled, conceded, currentChallenge, lastChallengeTime] = b;
 
       let symbol = "???", decimals = 18;
       const tokenContract = new ethers.Contract(token, ERC20_ABI, readProvider);
@@ -1984,9 +2216,13 @@ async function loadMyBonds() {
       try { decimals = Number(await tokenContract.decimals()); } catch (_) {}
 
       const now = BigInt(Math.floor(Date.now() / 1000));
+      let rwEnd = 0n;
+      try { rwEnd = await readContract.rulingDeadline(id); } catch (_) {}
+
       let status, statusClass;
-      if (settled) { status = "Settled"; statusClass = "status-settled"; }
-      else if (now > rulingDeadline) { status = "Timeout"; statusClass = "status-expired"; }
+      if (conceded) { status = "Conceded"; statusClass = "status-conceded"; }
+      else if (settled) { status = "Settled"; statusClass = "status-settled"; }
+      else if (rwEnd > 0n && now > rwEnd) { status = "Timeout"; statusClass = "status-expired"; }
       else if (now > deadline) { status = "Ruling"; statusClass = "status-active"; }
       else { status = "Active"; statusClass = "status-active"; }
 
@@ -2042,6 +2278,7 @@ function saveForm() {
     if (el) data[id] = el.value;
   }
   data._rulingBuffer = rulingBufferDays;
+  data._acceptanceDelay = acceptanceDelayDays;
   data._mode = currentMode;
   const activeTab = document.querySelector(".tab.active");
   if (activeTab) data._tab = activeTab.dataset.tab;
@@ -2058,6 +2295,7 @@ function restoreForm() {
       if (el && data[id]) el.value = data[id];
     }
     if (data._rulingBuffer) setRulingBuffer(data._rulingBuffer);
+    if (data._acceptanceDelay) setAcceptanceDelay(data._acceptanceDelay);
     if (data._mode) setMode(data._mode);
     if (data._tab) switchTab(data._tab);
   } catch (_) {}
