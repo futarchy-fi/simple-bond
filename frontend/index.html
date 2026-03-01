@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>SimpleBond v3 — Futarchy</title>
 <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.4/dist/ethers.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@web3auth/modal@9/dist/modal.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@web3auth/modal@8/dist/modal.umd.min.js"></script>
 <style>
   :root {
     --bg: #0a0a0f;
@@ -356,13 +356,32 @@
     padding: 6px 12px; font-size: 12px; border-radius: 6px; cursor: pointer;
   }
   .copy-addr-btn:hover { border-color: var(--accent); color: var(--text); }
+
+  /* ─── Chain Selector ─── */
+  .chain-select {
+    background: var(--bg); color: var(--text); border: 1px solid var(--border);
+    border-radius: 20px; padding: 5px 12px; font-size: 12px; cursor: pointer;
+    outline: none; appearance: none; -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%238888a0'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 10px center;
+    padding-right: 26px;
+  }
+  .chain-select:hover { border-color: var(--accent); }
+  .chain-select:focus { border-color: var(--accent); }
+  .header-right { display: flex; align-items: center; gap: 10px; }
+  .chain-note { font-size: 12px; color: var(--muted); text-align: center; margin-bottom: 12px; }
 </style>
 </head>
 <body>
 <div class="container">
   <header>
     <h1>SimpleBond <span>v3 — by Futarchy</span></h1>
-    <div>
+    <div class="header-right">
+      <select id="chainSelect" class="chain-select" onchange="switchChain(this.value)">
+        <option value="100">Gnosis</option>
+        <option value="137">Polygon</option>
+        <option value="1">Ethereum</option>
+      </select>
       <div id="walletInfo" class="wallet-info hidden">
         <div class="address" id="walletAddr"></div>
         <div class="chain" id="chainName"></div>
@@ -492,6 +511,7 @@
     <!-- BROWSE BONDS -->
     <div id="tab-browse" class="card hidden">
       <h2>Active Bonds</h2>
+      <div id="browseChainNote" class="chain-note"></div>
       <div id="browseLoading" style="color:var(--muted);text-align:center;padding:20px;">
         <span class="spinner"></span> Loading active bonds...
       </div>
@@ -649,78 +669,101 @@
       <button class="funding-guide-close" onclick="closeFundingGuide()">&times;</button>
       <h3>How to get funds</h3>
       <div id="fundingGuideAddr" style="margin-bottom:16px;"></div>
-
-      <div class="funding-option">
-        <h4>Ask someone to send you funds</h4>
-        <p>Share your wallet address with someone who already has xDAI on Gnosis Chain. They can send it in seconds for near-zero cost.</p>
-        <div class="fo-fee fo-fee-free">Fee: $0</div>
-      </div>
-
-      <div class="funding-option">
-        <h4>Send from another wallet</h4>
-        <p>If you have xDAI in MetaMask, Rabby, or any wallet on Gnosis Chain, send it to the address above.</p>
-        <div class="fo-fee fo-fee-free">Fee: &lt;$0.01 (gas only)</div>
-      </div>
-
-      <div class="funding-option">
-        <h4>Bridge from Ethereum</h4>
-        <p>Have DAI on Ethereum? Bridge it to Gnosis Chain where it becomes xDAI.</p>
-        <div class="fo-fee fo-fee-low">Fee: Ethereum gas (~$1-5)</div>
-        <ol class="fo-steps">
-          <li>Go to <a href="https://bridge.gnosischain.com" target="_blank" style="color:var(--accent)">bridge.gnosischain.com</a></li>
-          <li>Connect your Ethereum wallet</li>
-          <li>Bridge DAI &rarr; Gnosis Chain</li>
-          <li>Takes ~5 minutes</li>
-        </ol>
-      </div>
-
-      <div class="funding-option">
-        <h4>Buy with fiat</h4>
-        <p>Purchase xDAI directly with a bank transfer or card through these services (fees vary).</p>
-        <ol class="fo-steps">
-          <li><a href="https://www.mtpelerin.com/buy-xdai" target="_blank" style="color:var(--accent)">Mt Pelerin</a> &mdash; bank transfer, low fees</li>
-          <li><a href="https://ramp.network" target="_blank" style="color:var(--accent)">Ramp Network</a> &mdash; card or bank transfer</li>
-        </ol>
-      </div>
+      <div id="fundingGuideContent"></div>
     </div>
   </div>
 
   <footer>
     <a href="https://github.com/futarchy-fi/simple-bond" target="_blank">GitHub</a>
-    &nbsp;&middot;&nbsp; Gnosis Chain
+    &nbsp;&middot;&nbsp; <span id="footerChain">Gnosis Chain</span>
   </footer>
 </div>
 
 <script>
-// ─── Config ───────────────────────────────────────────────────────────
-const CONTRACT_ADDRESS = "0x90b8d22456E8b6d8Dea3DDc28E025940335ffC02";
-const CONTRACT_DEPLOY_BLOCK = 44917222;
-const GNOSIS_CHAIN_ID = 100n;
-const GNOSIS_RPC = "https://rpc.gnosischain.com";
-const GNOSISSCAN = "https://gnosisscan.io/address/";
+// ─── Multi-Chain Config ───────────────────────────────────────────────
+const CHAINS = {
+  100: {
+    name: "Gnosis",
+    rpc: "https://rpc.gnosischain.com",
+    explorer: "https://gnosisscan.io",
+    contract: "0x90b8d22456E8b6d8Dea3DDc28E025940335ffC02",
+    deployBlock: 44917222,
+    nativeCurrency: { name: "xDAI", symbol: "xDAI", decimals: 18 },
+    defaultToken: { address: "0xaf204776c7245bF4147c2612BF6e5972Ee483701", symbol: "sDAI", decimals: 18, displayName: "USD Savings (earns ~8% APY)" },
+    wrappedNative: { address: "0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d", symbol: "WXDAI", decimals: 18 },
+    yieldType: "erc4626",
+    tokens: [
+      { address: "0xaf204776c7245bF4147c2612BF6e5972Ee483701", symbol: "sDAI", decimals: 18 },
+      { address: "0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d", symbol: "WXDAI", decimals: 18 },
+    ],
+    fundingGuide: "gnosis",
+    addChainParams: {
+      chainId: "0x64",
+      chainName: "Gnosis Chain",
+      nativeCurrency: { name: "xDAI", symbol: "XDAI", decimals: 18 },
+      rpcUrls: ["https://rpc.gnosischain.com"],
+      blockExplorerUrls: ["https://gnosisscan.io"],
+    },
+  },
+  137: {
+    name: "Polygon",
+    rpc: "https://polygon-rpc.com",
+    explorer: "https://polygonscan.com",
+    contract: "0x43915f98Ce38116a8C93484Dc8c1ba568Cf13E65",
+    deployBlock: 83597247,
+    nativeCurrency: { name: "POL", symbol: "POL", decimals: 18 },
+    defaultToken: { address: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359", symbol: "USDC", decimals: 6, displayName: "USD Coin" },
+    wrappedNative: null,
+    yieldType: "none",
+    tokens: [
+      { address: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359", symbol: "USDC", decimals: 6 },
+      { address: "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174", symbol: "USDC.e", decimals: 6 },
+    ],
+    fundingGuide: "polygon",
+    addChainParams: {
+      chainId: "0x89",
+      chainName: "Polygon",
+      nativeCurrency: { name: "POL", symbol: "POL", decimals: 18 },
+      rpcUrls: ["https://polygon-rpc.com"],
+      blockExplorerUrls: ["https://polygonscan.com"],
+    },
+  },
+  1: {
+    name: "Ethereum",
+    rpc: "https://eth.llamarpc.com",
+    explorer: "https://etherscan.io",
+    contract: "0x43915f98Ce38116a8C93484Dc8c1ba568Cf13E65",
+    deployBlock: 24558150,
+    nativeCurrency: { name: "ETH", symbol: "ETH", decimals: 18 },
+    defaultToken: { address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", symbol: "USDC", decimals: 6, displayName: "USD Coin" },
+    wrappedNative: null,
+    yieldType: "none",
+    tokens: [
+      { address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", symbol: "USDC", decimals: 6 },
+      { address: "0x6B175474E89094C44Da98b954EedeAC495271d0F", symbol: "DAI", decimals: 18 },
+    ],
+    fundingGuide: "ethereum",
+    addChainParams: null, // Ethereum is always available in wallets
+  },
+};
 
-// ─── TODO: Register at dashboard.web3auth.io and paste your clientId ──
+let activeChainId = 100;
+function chain() { return CHAINS[activeChainId]; }
+
 const WEB3AUTH_CLIENT_ID = "BPt1ahKWn4CSezBP6MhIZQQICRcOjt6epWT9jQ45M4sGQyO3jimvzjdBN93ukw2tBR_4PyRBI94FsFLZBfYQFWo";
 
-
-// ─── Token Addresses ──────────────────────────────────────────────────
+// Gnosis-specific addresses (kept for wrapping logic)
 const SDAI_ADDRESS  = "0xaf204776c7245bF4147c2612BF6e5972Ee483701";
 const WXDAI_ADDRESS = "0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d";
 
-const DEFAULT_TOKENS = [
-  { address: SDAI_ADDRESS, symbol: "sDAI", decimals: 18 },
-  { address: WXDAI_ADDRESS, symbol: "WXDAI", decimals: 18 },
-];
-
-// Human-friendly token names
-const TOKEN_DISPLAY_NAMES = {
-  [SDAI_ADDRESS.toLowerCase()]:  "USD Savings (earns ~8% APY)",
-  [WXDAI_ADDRESS.toLowerCase()]: "USD",
-};
-
 function friendlyTokenName(addr, symbol) {
-  return TOKEN_DISPLAY_NAMES[addr.toLowerCase()] || symbol || "???";
+  const c = chain();
+  if (addr.toLowerCase() === c.defaultToken.address.toLowerCase()) return c.defaultToken.displayName || c.defaultToken.symbol;
+  if (c.wrappedNative && addr.toLowerCase() === c.wrappedNative.address.toLowerCase()) return "USD";
+  return symbol || "???";
 }
+
+function getDefaultTokens() { return chain().tokens; }
 
 // ─── ABIs ─────────────────────────────────────────────────────────────
 const BOND_ABI = [
@@ -801,7 +844,7 @@ function saveCustomToken(token) {
 }
 
 function getAllTokens() {
-  return [...DEFAULT_TOKENS, ...getCustomTokens()];
+  return [...getDefaultTokens(), ...getCustomTokens()];
 }
 
 function buildTokenSelect() {
@@ -835,14 +878,14 @@ async function addCustomToken() {
   if (getAllTokens().find(t => t.address.toLowerCase() === addr.toLowerCase())) {
     alert("Token already in list"); return;
   }
-  const readProvider = provider || new ethers.JsonRpcProvider(GNOSIS_RPC);
+  const readProvider = provider || new ethers.JsonRpcProvider(chain().rpc);
   const token = new ethers.Contract(addr, ERC20_ABI, readProvider);
   let symbol, decimals;
   try {
     [symbol, decimals] = await Promise.all([token.symbol(), token.decimals()]);
     decimals = Number(decimals);
   } catch (_) {
-    alert("Could not read token info. Is this a valid ERC-20 on Gnosis Chain?"); return;
+    alert("Could not read token info. Is this a valid ERC-20 on " + chain().name + "?"); return;
   }
   saveCustomToken({ address: addr, symbol, decimals });
   buildTokenSelect();
@@ -867,10 +910,10 @@ async function updateBalanceDisplay(tokenAddr) {
   const key = tokenAddr.toLowerCase();
   el.innerHTML = "Loading balance...";
   try {
-    const token = new ethers.Contract(tokenAddr, ERC20_ABI, signer || new ethers.JsonRpcProvider(GNOSIS_RPC));
+    const token = new ethers.Contract(tokenAddr, ERC20_ABI, signer || new ethers.JsonRpcProvider(chain().rpc));
     const [balance, allowance, decimals, symbol] = await Promise.all([
       token.balanceOf(userAddr),
-      token.allowance(userAddr, CONTRACT_ADDRESS),
+      token.allowance(userAddr, chain().contract),
       token.decimals(),
       token.symbol(),
     ]);
@@ -906,10 +949,10 @@ async function _doCheckApproval() {
 
   if (!cached) {
     try {
-      const token = new ethers.Contract(tokenAddr, ERC20_ABI, signer || new ethers.JsonRpcProvider(GNOSIS_RPC));
+      const token = new ethers.Contract(tokenAddr, ERC20_ABI, signer || new ethers.JsonRpcProvider(chain().rpc));
       const [balance, allowance, decimals, symbol] = await Promise.all([
         token.balanceOf(userAddr),
-        token.allowance(userAddr, CONTRACT_ADDRESS),
+        token.allowance(userAddr, chain().contract),
         token.decimals(),
         token.symbol(),
       ]);
@@ -921,13 +964,18 @@ async function _doCheckApproval() {
   try {
     const amount = ethers.parseUnits(amountStr, cached.decimals);
     if (cached.balance < amount) {
-      // Check if user has WXDAI or xDAI that can be wrapped
-      const totalAvailable = await getTotalAvailableFunds();
-      if (totalAvailable >= amount) {
-        statusEl.innerHTML = `<span class="approval-ok">Funds available (will auto-convert)</span>`;
+      if (activeChainId === 100) {
+        // Check if user has WXDAI or xDAI that can be wrapped (Gnosis only)
+        const totalAvailable = await getTotalAvailableFunds();
+        if (totalAvailable >= amount) {
+          statusEl.innerHTML = `<span class="approval-ok">Funds available (will auto-convert)</span>`;
+        } else {
+          const need = ethers.formatUnits(amount - totalAvailable, 18);
+          statusEl.innerHTML = `<span class="approval-need">Need ${parseFloat(need).toLocaleString(undefined, {maximumFractionDigits: 2})} more USD — <span class="browse-link" onclick="openFundingGuide()" style="font-size:inherit;">How to get funds</span></span>`;
+        }
       } else {
-        const need = ethers.formatUnits(amount - totalAvailable, 18);
-        statusEl.innerHTML = `<span class="approval-need">Need ${parseFloat(need).toLocaleString(undefined, {maximumFractionDigits: 2})} more USD</span>`;
+        const need = ethers.formatUnits(amount - cached.balance, cached.decimals);
+        statusEl.innerHTML = `<span class="approval-need">Need ${parseFloat(need).toLocaleString(undefined, {maximumFractionDigits: 2})} more ${cached.symbol} — <span class="browse-link" onclick="openFundingGuide()" style="font-size:inherit;">How to get funds</span></span>`;
       }
       return;
     }
@@ -941,13 +989,13 @@ async function _doCheckApproval() {
   }
 }
 
-// ─── Get total available funds across xDAI/WXDAI/sDAI ──────────────
+// ─── Get total available funds across xDAI/WXDAI/sDAI (Gnosis only) ─
 async function getTotalAvailableFunds() {
-  if (!userAddr) return 0n;
-  const readProv = signer || new ethers.JsonRpcProvider(GNOSIS_RPC);
+  if (!userAddr || activeChainId !== 100) return 0n;
+  const readProv = signer || new ethers.JsonRpcProvider(chain().rpc);
   try {
     const [nativeBalance, wxdaiContract, sdaiContract] = [
-      await (provider || new ethers.JsonRpcProvider(GNOSIS_RPC)).getBalance(userAddr),
+      await (provider || new ethers.JsonRpcProvider(chain().rpc)).getBalance(userAddr),
       new ethers.Contract(WXDAI_ADDRESS, ERC20_ABI, readProv),
       new ethers.Contract(SDAI_ADDRESS, SDAI_ABI, readProv),
     ];
@@ -978,17 +1026,18 @@ async function initWeb3Auth() {
       console.warn("Web3Auth Modal not loaded from CDN");
       return null;
     }
+    const c = chain();
     const web3auth = new Web3Auth({
       clientId: WEB3AUTH_CLIENT_ID,
       web3AuthNetwork: "sapphire_mainnet",
       chainConfig: {
         chainNamespace: "eip155",
-        chainId: "0x64",
-        rpcTarget: GNOSIS_RPC,
-        displayName: "Gnosis Chain",
-        blockExplorerUrl: "https://gnosisscan.io",
-        ticker: "XDAI",
-        tickerName: "xDAI",
+        chainId: "0x" + activeChainId.toString(16),
+        rpcTarget: c.rpc,
+        displayName: c.name,
+        blockExplorerUrl: c.explorer,
+        ticker: c.nativeCurrency.symbol,
+        tickerName: c.nativeCurrency.name,
       },
       uiConfig: {
         theme: "dark",
@@ -1020,7 +1069,7 @@ async function connectWeb3Auth() {
     provider = new ethers.BrowserProvider(w3aProvider);
     signer = await provider.getSigner();
     userAddr = await signer.getAddress();
-    bondContract = new ethers.Contract(CONTRACT_ADDRESS, BOND_ABI, signer);
+    bondContract = new ethers.Contract(chain().contract, BOND_ABI, signer);
     onWalletConnected();
   } catch (err) {
     console.error("Web3Auth connect error:", err);
@@ -1039,36 +1088,112 @@ async function connectInjectedWallet() {
     await window.ethereum.request({ method: "eth_requestAccounts" });
     provider = new ethers.BrowserProvider(window.ethereum);
     const network = await provider.getNetwork();
-    if (network.chainId !== GNOSIS_CHAIN_ID) {
-      try {
-        await window.ethereum.request({
-          method: "wallet_switchEthereumChain",
-          params: [{ chainId: "0x64" }],
-        });
-      } catch (switchErr) {
-        if (switchErr.code === 4902) {
-          await window.ethereum.request({
-            method: "wallet_addEthereumChain",
-            params: [{
-              chainId: "0x64",
-              chainName: "Gnosis Chain",
-              nativeCurrency: { name: "xDAI", symbol: "XDAI", decimals: 18 },
-              rpcUrls: [GNOSIS_RPC],
-              blockExplorerUrls: ["https://gnosisscan.io"],
-            }],
-          });
-        } else { throw switchErr; }
-      }
+    const walletChainId = Number(network.chainId);
+
+    // Auto-detect: if wallet is on a supported chain, switch to it
+    if (CHAINS[walletChainId]) {
+      activeChainId = walletChainId;
+      document.getElementById("chainSelect").value = String(activeChainId);
+    } else {
+      // Wallet on unsupported chain — switch to active chain
+      await switchWalletChain(activeChainId);
       provider = new ethers.BrowserProvider(window.ethereum);
     }
+
     signer = await provider.getSigner();
     userAddr = await signer.getAddress();
     connectionType = 'injected';
-    bondContract = new ethers.Contract(CONTRACT_ADDRESS, BOND_ABI, signer);
+    bondContract = new ethers.Contract(chain().contract, BOND_ABI, signer);
     onWalletConnected();
   } catch (err) {
     console.error("Injected wallet error:", err);
     alert("Connection failed: " + (err.message || err));
+  }
+}
+
+async function switchWalletChain(chainId) {
+  const c = CHAINS[chainId];
+  const hexId = "0x" + chainId.toString(16);
+  try {
+    await window.ethereum.request({
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId: hexId }],
+    });
+  } catch (switchErr) {
+    if (switchErr.code === 4902 && c.addChainParams) {
+      await window.ethereum.request({
+        method: "wallet_addEthereumChain",
+        params: [c.addChainParams],
+      });
+    } else { throw switchErr; }
+  }
+}
+
+async function switchChain(chainIdStr) {
+  const newChainId = Number(chainIdStr);
+  if (!CHAINS[newChainId]) return;
+  activeChainId = newChainId;
+
+  // Update read provider for non-connected browsing
+  tokenCache = {};
+  myBondsLoaded = false;
+  browseBondsLoaded = false;
+
+  // Update footer
+  document.getElementById("footerChain").textContent = chain().name;
+
+  if (signer && connectionType === 'injected' && window.ethereum) {
+    try {
+      await switchWalletChain(newChainId);
+      provider = new ethers.BrowserProvider(window.ethereum);
+      signer = await provider.getSigner();
+      bondContract = new ethers.Contract(chain().contract, BOND_ABI, signer);
+      refreshAllBalances();
+    } catch (err) {
+      console.warn("Chain switch failed:", err);
+      // Revert selector
+      document.getElementById("chainSelect").value = String(activeChainId);
+    }
+  } else if (signer && connectionType === 'web3auth' && web3authInstance) {
+    try {
+      const c = chain();
+      await web3authInstance.addChain({
+        chainNamespace: "eip155",
+        chainId: "0x" + newChainId.toString(16),
+        rpcTarget: c.rpc,
+        displayName: c.name,
+        blockExplorerUrl: c.explorer,
+        ticker: c.nativeCurrency.symbol,
+        tickerName: c.nativeCurrency.name,
+      });
+      await web3authInstance.switchChain({ chainId: "0x" + newChainId.toString(16) });
+      provider = new ethers.BrowserProvider(web3authInstance.provider);
+      signer = await provider.getSigner();
+      bondContract = new ethers.Contract(chain().contract, BOND_ABI, signer);
+      refreshAllBalances();
+    } catch (err) {
+      console.warn("Web3Auth chain switch failed:", err);
+    }
+  }
+
+  // Update UI elements
+  document.getElementById("chainName").textContent = chain().name;
+  buildTokenSelect();
+  const sel = document.getElementById("tokenSelect");
+  sel.value = chain().defaultToken.address;
+  onTokenChange();
+
+  // Update URL
+  const url = new URL(window.location);
+  const chainParam = Object.entries({gnosis: 100, polygon: 137, ethereum: 1}).find(([,v]) => v === newChainId);
+  if (chainParam) url.searchParams.set("chain", chainParam[0]);
+  history.replaceState(null, "", url);
+
+  // Reload browse/my tabs if visible
+  const activeTab = document.querySelector(".tab.active");
+  if (activeTab) {
+    if (activeTab.dataset.tab === "browse") loadBrowseBonds();
+    if (activeTab.dataset.tab === "my" && userAddr) loadMyBonds();
   }
 }
 
@@ -1078,7 +1203,7 @@ function onWalletConnected() {
   document.getElementById("connectBtn").classList.add("hidden");
   document.getElementById("walletInfo").classList.remove("hidden");
   document.getElementById("walletAddr").textContent = short(userAddr);
-  document.getElementById("chainName").textContent = "Gnosis Chain";
+  document.getElementById("chainName").textContent = chain().name;
   document.getElementById("createConnectPrompt").classList.add("hidden");
   document.getElementById("createForm").classList.remove("hidden");
   document.getElementById("myBondsConnect").classList.add("hidden");
@@ -1090,14 +1215,31 @@ function onWalletConnected() {
   }
 
   tokenCache = {};
-  refreshAllBalances().then(() => {
-    checkOnboardingState();
-  });
+  refreshAllBalances();
 
   // Set up injected wallet event listeners
   if (connectionType === 'injected' && window.ethereum) {
     window.ethereum.on("accountsChanged", () => { saveForm(); window.location.reload(); });
-    window.ethereum.on("chainChanged", () => { saveForm(); window.location.reload(); });
+    window.ethereum.on("chainChanged", (hexChainId) => {
+      const newId = parseInt(hexChainId, 16);
+      if (CHAINS[newId]) {
+        activeChainId = newId;
+        document.getElementById("chainSelect").value = String(newId);
+        document.getElementById("chainName").textContent = chain().name;
+        document.getElementById("footerChain").textContent = chain().name;
+        tokenCache = {};
+        myBondsLoaded = false;
+        browseBondsLoaded = false;
+        provider = new ethers.BrowserProvider(window.ethereum);
+        provider.getSigner().then(s => {
+          signer = s;
+          bondContract = new ethers.Contract(chain().contract, BOND_ABI, signer);
+          buildTokenSelect();
+          document.getElementById("tokenSelect").value = chain().defaultToken.address;
+          refreshAllBalances();
+        });
+      }
+    });
   }
 }
 
@@ -1133,44 +1275,50 @@ async function checkOnboardingState() {
   const banner = document.getElementById("fundingBanner");
 
   try {
-    const readProv = provider || new ethers.JsonRpcProvider(GNOSIS_RPC);
-    const nativeBal = await readProv.getBalance(userAddr);
-    const wxdai = new ethers.Contract(WXDAI_ADDRESS, ERC20_ABI, signer || readProv);
-    const sdai = new ethers.Contract(SDAI_ADDRESS, ERC20_ABI, signer || readProv);
-    const [wxdaiBal, sdaiBal] = await Promise.all([
-      wxdai.balanceOf(userAddr),
-      sdai.balanceOf(userAddr),
-    ]);
+    const readProv = provider || new ethers.JsonRpcProvider(chain().rpc);
+    const c = chain();
 
-    const hasNative = nativeBal > ethers.parseEther("0.01");
-    const hasWxdai = wxdaiBal > ethers.parseEther("0.01");
-    const hasSdai = sdaiBal > ethers.parseEther("0.01");
+    if (activeChainId === 100) {
+      // Gnosis: check sDAI/WXDAI/xDAI
+      const nativeBal = await readProv.getBalance(userAddr);
+      const wxdai = new ethers.Contract(WXDAI_ADDRESS, ERC20_ABI, signer || readProv);
+      const sdai = new ethers.Contract(SDAI_ADDRESS, ERC20_ABI, signer || readProv);
+      const [wxdaiBal, sdaiBal] = await Promise.all([
+        wxdai.balanceOf(userAddr),
+        sdai.balanceOf(userAddr),
+      ]);
 
-    if (hasSdai) {
-      // Ready to go
-      banner.classList.add("hidden");
-      return;
+      const hasNative = nativeBal > ethers.parseEther("0.01");
+      const hasWxdai = wxdaiBal > ethers.parseEther("0.01");
+      const hasSdai = sdaiBal > ethers.parseEther("0.01");
+
+      if (hasSdai) { banner.classList.add("hidden"); return; }
+
+      if (hasNative || hasWxdai) {
+        banner.className = "funding-banner";
+        banner.classList.remove("hidden");
+        const wxdaiAmt = formatBal(wxdaiBal, 18);
+        const nativeAmt = formatBal(nativeBal, 18);
+        const totalDesc = [hasWxdai ? wxdaiAmt + ' USD' : '', hasNative ? nativeAmt + ' xDAI' : ''].filter(Boolean).join(' + ');
+        banner.innerHTML = `
+          <p style="margin:0;">You have ${totalDesc}.
+            <span class="browse-link" onclick="convertAllToSdai()" style="font-size:inherit;">Convert to USD Savings (earns ~8% APY)</span>
+          </p>`;
+        return;
+      }
+    } else {
+      // Polygon/Ethereum: check default token balance
+      const tokenContract = new ethers.Contract(c.defaultToken.address, ERC20_ABI, signer || readProv);
+      const tokenBal = await tokenContract.balanceOf(userAddr);
+      const threshold = c.defaultToken.decimals === 6 ? 10000n : ethers.parseEther("0.01"); // $0.01 for 6-decimal
+      if (tokenBal > threshold) { banner.classList.add("hidden"); return; }
     }
 
-    if (hasNative || hasWxdai) {
-      // Has funds but not in sDAI — subtle hint
-      banner.className = "funding-banner";
-      banner.classList.remove("hidden");
-      const wxdaiAmt = formatBal(wxdaiBal, 18);
-      const nativeAmt = formatBal(nativeBal, 18);
-      const totalDesc = [hasWxdai ? wxdaiAmt + ' USD' : '', hasNative ? nativeAmt + ' xDAI' : ''].filter(Boolean).join(' + ');
-      banner.innerHTML = `
-        <p style="margin:0;">You have ${totalDesc}.
-          <span class="browse-link" onclick="convertAllToSdai()" style="font-size:inherit;">Convert to USD Savings (earns ~8% APY)</span>
-        </p>`;
-      return;
-    }
-
-    // No funds — show a subtle hint, don't block the form
+    // No funds — show a subtle hint
     banner.className = "funding-banner";
     banner.classList.remove("hidden");
     banner.innerHTML = `
-      <p style="margin:0;">No funds yet.
+      <p style="margin:0;">No ${c.defaultToken.symbol} yet.
         <span class="browse-link" onclick="openFundingGuide()" style="font-size:inherit;">How to get funds</span>
         &nbsp;&middot;&nbsp;
         <span class="browse-link" onclick="copyAddress()" style="font-size:inherit;">Copy wallet address</span>
@@ -1199,7 +1347,7 @@ async function convertAllToSdai() {
   banner.appendChild(stepperEl);
 
   try {
-    const readProv = provider || new ethers.JsonRpcProvider(GNOSIS_RPC);
+    const readProv = provider || new ethers.JsonRpcProvider(chain().rpc);
     const nativeBal = await readProv.getBalance(userAddr);
     const wxdaiContract = new ethers.Contract(WXDAI_ADDRESS, WXDAI_ABI, signer);
     const sdaiContract = new ethers.Contract(SDAI_ADDRESS, SDAI_ABI, signer);
@@ -1257,9 +1405,10 @@ async function convertAllToSdai() {
 function openFundingGuide() {
   const overlay = document.getElementById("fundingOverlay");
   const addrEl = document.getElementById("fundingGuideAddr");
+  const contentEl = document.getElementById("fundingGuideContent");
   if (userAddr) {
     addrEl.innerHTML = `
-      <div style="font-size:13px;color:var(--muted);margin-bottom:4px;">Your wallet address:</div>
+      <div style="font-size:13px;color:var(--muted);margin-bottom:4px;">Your wallet address (${chain().name}):</div>
       <div style="display:flex;gap:8px;align-items:center;">
         <code style="font-size:13px;color:var(--accent);word-break:break-all;flex:1;">${userAddr}</code>
         <button class="copy-addr-btn" onclick="copyAddress()">Copy</button>
@@ -1267,6 +1416,90 @@ function openFundingGuide() {
   } else {
     addrEl.innerHTML = `<div style="font-size:13px;color:var(--muted);">Sign in first to see your wallet address.</div>`;
   }
+
+  // Chain-specific funding content
+  const guides = {
+    gnosis: `
+      <div class="funding-option">
+        <h4>Ask someone to send you funds</h4>
+        <p>Share your wallet address with someone who already has xDAI on Gnosis Chain.</p>
+        <div class="fo-fee fo-fee-free">Fee: $0</div>
+      </div>
+      <div class="funding-option">
+        <h4>Send from another wallet</h4>
+        <p>If you have xDAI in MetaMask, Rabby, or any wallet on Gnosis Chain, send it to the address above.</p>
+        <div class="fo-fee fo-fee-free">Fee: &lt;$0.01 (gas only)</div>
+      </div>
+      <div class="funding-option">
+        <h4>Bridge from Ethereum</h4>
+        <p>Have DAI on Ethereum? Bridge it to Gnosis Chain where it becomes xDAI.</p>
+        <div class="fo-fee fo-fee-low">Fee: Ethereum gas (~$1-5)</div>
+        <ol class="fo-steps">
+          <li>Go to <a href="https://bridge.gnosischain.com" target="_blank" style="color:var(--accent)">bridge.gnosischain.com</a></li>
+          <li>Connect your Ethereum wallet</li>
+          <li>Bridge DAI &rarr; Gnosis Chain</li>
+          <li>Takes ~5 minutes</li>
+        </ol>
+      </div>
+      <div class="funding-option">
+        <h4>Buy with fiat</h4>
+        <p>Purchase xDAI directly with a bank transfer or card.</p>
+        <ol class="fo-steps">
+          <li><a href="https://www.mtpelerin.com/buy-xdai" target="_blank" style="color:var(--accent)">Mt Pelerin</a> &mdash; bank transfer, low fees</li>
+          <li><a href="https://ramp.network" target="_blank" style="color:var(--accent)">Ramp Network</a> &mdash; card or bank transfer</li>
+        </ol>
+      </div>`,
+    polygon: `
+      <div class="funding-option">
+        <h4>Send USDC from an exchange</h4>
+        <p>Most major exchanges (Coinbase, Binance, Kraken) support direct USDC withdrawal to Polygon.</p>
+        <div class="fo-fee fo-fee-free">Fee: varies by exchange</div>
+        <ol class="fo-steps">
+          <li>Buy USDC on your exchange</li>
+          <li>Withdraw to Polygon network</li>
+          <li>Paste the wallet address shown above</li>
+        </ol>
+      </div>
+      <div class="funding-option">
+        <h4>Send from another wallet</h4>
+        <p>If you have USDC in MetaMask or any wallet on Polygon, send it to the address above.</p>
+        <div class="fo-fee fo-fee-free">Fee: &lt;$0.01 (gas only)</div>
+      </div>
+      <div class="funding-option">
+        <h4>Bridge from Ethereum</h4>
+        <p>Bridge USDC from Ethereum to Polygon via the official Polygon Bridge.</p>
+        <div class="fo-fee fo-fee-low">Fee: Ethereum gas (~$1-5)</div>
+        <ol class="fo-steps">
+          <li>Go to <a href="https://portal.polygon.technology/bridge" target="_blank" style="color:var(--accent)">portal.polygon.technology/bridge</a></li>
+          <li>Bridge USDC from Ethereum &rarr; Polygon</li>
+        </ol>
+      </div>`,
+    ethereum: `
+      <div class="funding-option">
+        <h4>Send USDC from an exchange</h4>
+        <p>All major exchanges support direct USDC withdrawal on Ethereum.</p>
+        <div class="fo-fee fo-fee-free">Fee: varies by exchange</div>
+        <ol class="fo-steps">
+          <li>Buy USDC on your exchange</li>
+          <li>Withdraw on Ethereum network</li>
+          <li>Paste the wallet address shown above</li>
+        </ol>
+      </div>
+      <div class="funding-option">
+        <h4>Send from another wallet</h4>
+        <p>If you have USDC in MetaMask or any Ethereum wallet, send it to the address above.</p>
+        <div class="fo-fee fo-fee-low">Fee: Ethereum gas (~$1-5)</div>
+      </div>
+      <div class="funding-option">
+        <h4>Buy with debit card</h4>
+        <p>Purchase USDC directly with a card.</p>
+        <ol class="fo-steps">
+          <li><a href="https://ramp.network" target="_blank" style="color:var(--accent)">Ramp Network</a> &mdash; card or bank transfer</li>
+          <li><a href="https://www.moonpay.com" target="_blank" style="color:var(--accent)">MoonPay</a> &mdash; card purchase</li>
+        </ol>
+      </div>`,
+  };
+  contentEl.innerHTML = guides[chain().fundingGuide] || guides.ethereum;
   overlay.classList.remove("hidden");
 }
 
@@ -1275,7 +1508,7 @@ function closeFundingGuide() {
   // Refresh balances in case user funded while guide was open
   if (userAddr) {
     tokenCache = {};
-    refreshAllBalances().then(() => checkOnboardingState());
+    refreshAllBalances();
   }
 }
 
@@ -1286,17 +1519,17 @@ function setMode(mode) {
   document.querySelectorAll(".advanced-field").forEach(el => {
     el.classList.toggle("show", mode === "advanced");
   });
-  // In simple mode, default token to sDAI
+  // In simple mode, default token to chain's default
   if (mode === 'simple') {
-    document.getElementById("tokenSelect").value = SDAI_ADDRESS;
+    document.getElementById("tokenSelect").value = chain().defaultToken.address;
     onTokenChange();
   }
   sessionStorage.setItem("bondMode", mode);
 }
 
 function getSelectedToken() {
-  if (currentMode === 'simple') return SDAI_ADDRESS;
-  return document.getElementById("tokenSelect").value || SDAI_ADDRESS;
+  if (currentMode === 'simple') return chain().defaultToken.address;
+  return document.getElementById("tokenSelect").value || chain().defaultToken.address;
 }
 
 // ─── Transaction Stepper ──────────────────────────────────────────────
@@ -1348,8 +1581,12 @@ async function ensureApproval(tokenAddr, amount, spender) {
 }
 
 async function getBalance(tokenAddr) {
-  const token = new ethers.Contract(tokenAddr, ERC20_ABI, signer || new ethers.JsonRpcProvider(GNOSIS_RPC));
+  const token = new ethers.Contract(tokenAddr, ERC20_ABI, signer || new ethers.JsonRpcProvider(chain().rpc));
   return await token.balanceOf(userAddr);
+}
+
+function needsWrapping(tokenAddr) {
+  return activeChainId === 100 && tokenAddr.toLowerCase() === SDAI_ADDRESS.toLowerCase();
 }
 
 function buildTxSteps(tokenAddr, amountWei) {
@@ -1423,20 +1660,16 @@ async function smartCreateBond() {
 
     // Build dynamic steps based on user's balance state
     const steps = [];
-    const isSdai = tokenAddr.toLowerCase() === SDAI_ADDRESS.toLowerCase();
+    const isSdai = needsWrapping(tokenAddr);
     let sdaiBal = 0n, wxdaiBal = 0n, nativeBal = 0n;
 
     if (isSdai) {
       sdaiBal = await getBalance(SDAI_ADDRESS);
       if (sdaiBal < bondAmount) {
         wxdaiBal = await getBalance(WXDAI_ADDRESS);
-        nativeBal = await (provider || new ethers.JsonRpcProvider(GNOSIS_RPC)).getBalance(userAddr);
+        nativeBal = await (provider || new ethers.JsonRpcProvider(chain().rpc)).getBalance(userAddr);
 
-        // Apply 0.1% buffer for sDAI conversion rounding
         const sdaiDeficit = bondAmount - sdaiBal;
-        const sdaiVault = new ethers.Contract(SDAI_ADDRESS, SDAI_ABI, signer);
-        // convertToAssets gives us the underlying value; we need the reverse
-        // Add a small buffer (0.1%) to handle rounding
         const wxdaiNeeded = sdaiDeficit + (sdaiDeficit / 1000n);
 
         if (wxdaiBal < wxdaiNeeded) {
@@ -1457,7 +1690,7 @@ async function smartCreateBond() {
     }
 
     // Check if token needs approval for the bond contract
-    const currentAllowance = await tokenContract.allowance(userAddr, CONTRACT_ADDRESS);
+    const currentAllowance = await tokenContract.allowance(userAddr, chain().contract);
     const currentBal = isSdai ? await getBalance(SDAI_ADDRESS) : await getBalance(tokenAddr);
     if (currentAllowance < bondAmount || (isSdai && sdaiBal < bondAmount)) {
       steps.push({ label: `Approve ${friendlyTokenName(tokenAddr, '')}`, action: "approveToken" });
@@ -1485,14 +1718,14 @@ async function smartCreateBond() {
         // Re-read balance after potential wrapping
         const bal = await getBalance(tokenAddr);
         const approveAmt = bal > bondAmount ? bondAmount : bal;
-        await ensureApproval(tokenAddr, approveAmt, CONTRACT_ADDRESS);
+        await ensureApproval(tokenAddr, approveAmt, chain().contract);
       } else if (step.action === "createBond") {
         const metadata = document.getElementById("bondMetadata").value.trim();
         const tx = await bondContract.createBond(tokenAddr, bondAmount, challengeAmount, judgeFee, judgeAddr, deadline, acceptanceDelay, rulingBuffer, metadata);
         await tx.wait();
 
         // Parse bond ID from receipt
-        const receipt = await (provider || new ethers.JsonRpcProvider(GNOSIS_RPC)).getTransactionReceipt(tx.hash);
+        const receipt = await (provider || new ethers.JsonRpcProvider(chain().rpc)).getTransactionReceipt(tx.hash);
         const iface = new ethers.Interface(BOND_ABI);
         let bondId = null;
         for (const log of receipt.logs) {
@@ -1554,11 +1787,11 @@ async function loadBond() {
   const msg = document.getElementById("viewMsg");
 
   try {
-    const readProvider = provider || new ethers.JsonRpcProvider(GNOSIS_RPC);
-    const readContract = new ethers.Contract(CONTRACT_ADDRESS, BOND_ABI, readProvider);
+    const readProvider = provider || new ethers.JsonRpcProvider(chain().rpc);
+    const readContract = new ethers.Contract(chain().contract, BOND_ABI, readProvider);
 
     const nextId = await readContract.nextBondId();
-    if (BigInt(bondId) >= nextId) { showMsg(msg, `Bond #${bondId} does not exist yet (next ID: ${nextId})`, "error"); return; }
+    if (BigInt(bondId) >= nextId) { showMsg(msg, `Bond #${bondId} does not exist yet on ${chain().name} (next ID: ${nextId})`, "error"); return; }
 
     const b = await readContract.bonds(bondId);
     const [poster, judge, token, bondAmount, challengeAmount, judgeFee, deadline, acceptanceDelay, rulingBuffer, metadata, settled, conceded, currentChallenge, lastChallengeTime] = b;
@@ -1594,9 +1827,9 @@ async function loadBond() {
       const filter2 = readContract.filters.BondWithdrawn(bondId);
       const filter3 = readContract.filters.BondTimedOut(bondId);
       const [evC, evW, evT] = await Promise.all([
-        readContract.queryFilter(filter1, CONTRACT_DEPLOY_BLOCK).catch(() => []),
-        readContract.queryFilter(filter2, CONTRACT_DEPLOY_BLOCK).catch(() => []),
-        readContract.queryFilter(filter3, CONTRACT_DEPLOY_BLOCK).catch(() => []),
+        readContract.queryFilter(filter1, chain().deployBlock).catch(() => []),
+        readContract.queryFilter(filter2, chain().deployBlock).catch(() => []),
+        readContract.queryFilter(filter3, chain().deployBlock).catch(() => []),
       ]);
       if (evC.length > 0) { status = "Challenger Won"; statusClass = "status-forfeited"; }
       else if (evW.length > 0) { status = "Withdrawn"; statusClass = "status-withdrawn"; }
@@ -1669,7 +1902,7 @@ async function loadBond() {
       // Fetch concession metadata from event
       try {
         const concedeFilter = readContract.filters.ClaimConceded(bondId);
-        const concedeEvents = await readContract.queryFilter(concedeFilter, CONTRACT_DEPLOY_BLOCK).catch(() => []);
+        const concedeEvents = await readContract.queryFilter(concedeFilter, chain().deployBlock).catch(() => []);
         if (concedeEvents.length > 0) {
           const concedeMeta = concedeEvents[0].args.metadata || concedeEvents[0].args[2] || "";
           document.getElementById("concessionText").textContent = concedeMeta || "The poster conceded this claim.";
@@ -1685,6 +1918,8 @@ async function loadBond() {
     }
 
     const url = new URL(window.location);
+    const chainParamEntry = Object.entries({gnosis: 100, polygon: 137, ethereum: 1}).find(([,v]) => v === activeChainId);
+    if (chainParamEntry) url.searchParams.set("chain", chainParamEntry[0]);
     url.searchParams.set("bond", bondId);
     history.replaceState(null, "", url);
 
@@ -1821,21 +2056,21 @@ async function smartChallengeBond() {
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner"></span>Processing...';
 
-    const readContract = new ethers.Contract(CONTRACT_ADDRESS, BOND_ABI, signer);
+    const readContract = new ethers.Contract(chain().contract, BOND_ABI, signer);
     const b = await readContract.bonds(bondId);
     const tokenAddr = b[2];
     const challengeAmount = b[4];
 
-    const isSdai = tokenAddr.toLowerCase() === SDAI_ADDRESS.toLowerCase();
+    const isSdai = needsWrapping(tokenAddr);
     const steps = [];
 
     // Check if user has enough of the challenge token
     const tokenBal = await getBalance(tokenAddr);
 
     if (tokenBal < challengeAmount && isSdai) {
-      // Try wrapping
+      // Try wrapping (Gnosis only)
       const wxdaiBal = await getBalance(WXDAI_ADDRESS);
-      const nativeBal = await (provider || new ethers.JsonRpcProvider(GNOSIS_RPC)).getBalance(userAddr);
+      const nativeBal = await (provider || new ethers.JsonRpcProvider(chain().rpc)).getBalance(userAddr);
       const sdaiDeficit = challengeAmount - tokenBal;
       const wxdaiNeeded = sdaiDeficit + (sdaiDeficit / 1000n);
 
@@ -1859,7 +2094,7 @@ async function smartChallengeBond() {
 
     // Approve + Challenge
     const tokenContract = new ethers.Contract(tokenAddr, ERC20_ABI, signer);
-    const currentAllowance = await tokenContract.allowance(userAddr, CONTRACT_ADDRESS);
+    const currentAllowance = await tokenContract.allowance(userAddr, chain().contract);
     if (currentAllowance < challengeAmount) {
       steps.push({ label: "Approve currency", action: "approveToken" });
     }
@@ -1880,7 +2115,7 @@ async function smartChallengeBond() {
         const wxdaiBal2 = await getBalance(WXDAI_ADDRESS);
         await wrapWxdaiToSdai(wxdaiBal2);
       } else if (step.action === "approveToken") {
-        await ensureApproval(tokenAddr, challengeAmount, CONTRACT_ADDRESS);
+        await ensureApproval(tokenAddr, challengeAmount, chain().contract);
       } else if (step.action === "challenge") {
         const challengeMeta = document.getElementById("challengeMetadata").value.trim();
         const tx = await bondContract.challenge(bondId, challengeMeta);
@@ -1985,18 +2220,19 @@ async function loadBrowseBonds() {
   const listEl = document.getElementById("browseBondsList");
   const loadingEl = document.getElementById("browseLoading");
   const emptyEl = document.getElementById("browseEmpty");
+  document.getElementById("browseChainNote").textContent = `Showing bonds on ${chain().name}. Switch chains to see bonds on other networks.`;
 
   loadingEl.classList.remove("hidden");
   listEl.innerHTML = "";
   emptyEl.classList.add("hidden");
 
   try {
-    const readProvider = provider || new ethers.JsonRpcProvider(GNOSIS_RPC);
-    const readContract = new ethers.Contract(CONTRACT_ADDRESS, BOND_ABI, readProvider);
+    const readProvider = provider || new ethers.JsonRpcProvider(chain().rpc);
+    const readContract = new ethers.Contract(chain().contract, BOND_ABI, readProvider);
 
     // Get all BondCreated events
     const filter = readContract.filters.BondCreated();
-    const events = await readContract.queryFilter(filter, CONTRACT_DEPLOY_BLOCK).catch(() => []);
+    const events = await readContract.queryFilter(filter, chain().deployBlock).catch(() => []);
 
     const now = BigInt(Math.floor(Date.now() / 1000));
     const activeBonds = [];
@@ -2091,7 +2327,7 @@ function short(addr) { return addr.slice(0, 6) + "..." + addr.slice(-4); }
 
 function setAddrLink(elId, addr, label) {
   const el = document.getElementById(elId);
-  el.href = GNOSISSCAN + addr;
+  el.href = chain().explorer + "/address/" + addr;
   el.textContent = label ? `${label} (${short(addr)})` : short(addr);
 }
 
@@ -2106,7 +2342,9 @@ function viewBondById(id) {
 }
 
 function copyBondLink(id) {
-  const url = `${window.location.origin}${window.location.pathname}?bond=${id}`;
+  const chainParam = Object.entries({gnosis: 100, polygon: 137, ethereum: 1}).find(([,v]) => v === activeChainId);
+  const chainStr = chainParam ? chainParam[0] : "gnosis";
+  const url = `${window.location.origin}${window.location.pathname}?chain=${chainStr}&bond=${id}`;
   navigator.clipboard.writeText(url).then(() => {
     const btn = event.target;
     btn.textContent = "Copied!";
@@ -2128,7 +2366,7 @@ async function refreshAllBalances() {
       const token = new ethers.Contract(t.address, ERC20_ABI, signer);
       const [balance, allowance, decimals, symbol] = await Promise.all([
         token.balanceOf(userAddr),
-        token.allowance(userAddr, CONTRACT_ADDRESS),
+        token.allowance(userAddr, chain().contract),
         token.decimals(),
         token.symbol(),
       ]);
@@ -2138,7 +2376,7 @@ async function refreshAllBalances() {
   await Promise.all(promises);
   buildTokenSelect();
   const sel = document.getElementById("tokenSelect");
-  if (!sel.value) sel.value = SDAI_ADDRESS;
+  if (!sel.value) sel.value = chain().defaultToken.address;
   updateBalanceDisplay(getSelectedToken());
 }
 
@@ -2161,17 +2399,17 @@ async function loadMyBonds() {
   emptyEl.classList.add("hidden");
 
   try {
-    const readProvider = provider || new ethers.JsonRpcProvider(GNOSIS_RPC);
-    const readContract = new ethers.Contract(CONTRACT_ADDRESS, BOND_ABI, readProvider);
+    const readProvider = provider || new ethers.JsonRpcProvider(chain().rpc);
+    const readContract = new ethers.Contract(chain().contract, BOND_ABI, readProvider);
 
     const posterFilter = readContract.filters.BondCreated(null, userAddr);
     const judgeFilter = readContract.filters.BondCreated(null, null, userAddr);
     const challengerFilter = readContract.filters.Challenged(null, null, userAddr);
 
     const [posterEvents, judgeEvents, challengerEvents] = await Promise.all([
-      readContract.queryFilter(posterFilter, CONTRACT_DEPLOY_BLOCK).catch(() => []),
-      readContract.queryFilter(judgeFilter, CONTRACT_DEPLOY_BLOCK).catch(() => []),
-      readContract.queryFilter(challengerFilter, CONTRACT_DEPLOY_BLOCK).catch(() => []),
+      readContract.queryFilter(posterFilter, chain().deployBlock).catch(() => []),
+      readContract.queryFilter(judgeFilter, chain().deployBlock).catch(() => []),
+      readContract.queryFilter(challengerFilter, chain().deployBlock).catch(() => []),
     ]);
 
     const seen = new Set();
@@ -2290,13 +2528,25 @@ function restoreForm() {
 }
 
 // ─── Init ─────────────────────────────────────────────────────────────
+function getChainIdFromParam(param) {
+  const map = { gnosis: 100, polygon: 137, ethereum: 1 };
+  return map[param.toLowerCase()] || 100;
+}
+
 window.addEventListener("DOMContentLoaded", async () => {
+  // Parse chain from URL
+  const params = new URLSearchParams(window.location.search);
+  const chainParam = params.get("chain");
+  if (chainParam) {
+    activeChainId = getChainIdFromParam(chainParam);
+    document.getElementById("chainSelect").value = String(activeChainId);
+  }
+  document.getElementById("footerChain").textContent = chain().name;
+
   buildTokenSelect();
-  // Default to sDAI in simple mode
-  document.getElementById("tokenSelect").value = SDAI_ADDRESS;
+  document.getElementById("tokenSelect").value = chain().defaultToken.address;
   restoreForm();
 
-  const params = new URLSearchParams(window.location.search);
   const bondParam = params.get("bond");
   if (bondParam !== null) {
     // Deep link: show main app and go to view tab
@@ -2321,7 +2571,7 @@ window.addEventListener("DOMContentLoaded", async () => {
         provider = new ethers.BrowserProvider(w3a.provider);
         signer = await provider.getSigner();
         userAddr = await signer.getAddress();
-        bondContract = new ethers.Contract(CONTRACT_ADDRESS, BOND_ABI, signer);
+        bondContract = new ethers.Contract(chain().contract, BOND_ABI, signer);
         onWalletConnected();
         autoConnected = true;
       }

@@ -19,10 +19,22 @@ module.exports = {
             accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
             chainId: 8453,
         },
+        polygon: {
+            url: process.env.POLYGON_RPC_URL || "https://polygon-rpc.com",
+            accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
+            chainId: 137,
+        },
+        ethereum: {
+            url: process.env.ETH_RPC_URL || "https://eth.llamarpc.com",
+            accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
+            chainId: 1,
+        },
     },
     etherscan: {
         apiKey: {
             gnosis: process.env.ETHERSCAN_API_KEY || "",
+            polygon: process.env.POLYGONSCAN_API_KEY || "",
+            mainnet: process.env.ETHERSCAN_API_KEY || "",
         },
     },
 };
