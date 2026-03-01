@@ -979,13 +979,31 @@ async function onTokenChange() {
   onJudgeSelectChange();
 }
 
+function getJudgeMinFeeFloat() {
+  // Returns the selected judge's minimum fee for the current token, as a float in token units
+  const judgeAddr = document.getElementById("judgeSelect").value;
+  if (!judgeAddr || judgeAddr === "__custom__") return 0;
+  const j = judgesList.find(j => j.address.toLowerCase() === judgeAddr.toLowerCase());
+  if (!j) return 0;
+  const currentToken = getSelectedTokenAddr().toLowerCase();
+  const fee = j.tokenFees.get(currentToken);
+  if (!fee || fee === 0n) return 0;
+  const tok = getAllTokens().find(t => t.address.toLowerCase() === currentToken);
+  const dec = tok ? (tok.decimals || 18) : 18;
+  return parseFloat(ethers.formatUnits(fee, dec));
+}
+
 function onAmountChange() {
   const val = parseFloat(document.getElementById("bondAmount").value);
   if (val > 0) {
     const challengeEl = document.getElementById("challengeAmount");
     const feeEl = document.getElementById("judgeFee");
     if (!challengeEl.dataset.userEdited) challengeEl.value = (val * 0.5).toFixed(2);
-    if (!feeEl.dataset.userEdited) feeEl.value = (val * 0.05).toFixed(2);
+    if (!feeEl.dataset.userEdited) {
+      const defaultFee = val * 0.05;
+      const judgeMin = getJudgeMinFeeFloat();
+      feeEl.value = Math.max(defaultFee, judgeMin).toFixed(2);
+    }
   }
   checkApproval();
 }
@@ -1842,9 +1860,19 @@ async function smartCreateBond() {
     if (judgeFee > challengeAmount) {
       showMsg(msg, "Judge fee can't exceed the challenge amount", "error"); return;
     }
-    if (judgeFee > challengeAmount) {
-      showMsg(msg, "Judge fee must be <= challenge amount", "error"); return;
-    }
+    // Check judge's per-token minimum fee
+    try {
+      const readProvider = new ethers.JsonRpcProvider(chain().rpc);
+      const readContract = new ethers.Contract(chain().contract, BOND_ABI, readProvider);
+      const judgeMinFee = await readContract.getJudgeMinFee(judgeAddr, tokenAddr);
+      if (judgeFee < judgeMinFee) {
+        const tok = getAllTokens().find(t => t.address.toLowerCase() === tokenAddr.toLowerCase());
+        const dec = tok ? (tok.decimals || 18) : 18;
+        const minStr = parseFloat(ethers.formatUnits(judgeMinFee, dec)).toFixed(2);
+        const sym = tok ? tok.symbol : "tokens";
+        showMsg(msg, `Judge fee must be at least ${minStr} ${sym} (judge's minimum for this token)`, "error"); return;
+      }
+    } catch (_) {}
 
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner"></span>Processing...';
@@ -3070,9 +3098,9 @@ function buildJudgeSelect() {
     const feeStr = formatJudgeFeeForToken(j);
     const tok = getAllTokens().find(t => t.address.toLowerCase() === currentToken);
     const symbol = tok ? tok.symbol : "token";
-    opt.textContent = `${short(j.address)} — ${symbol} fee: ${feeStr}`;
+    opt.textContent = `${short(j.address)} — fee: ${feeStr} ${symbol}`;
     resolveEns(j.address).then(name => {
-      if (name) opt.textContent = `${name} — ${symbol} fee: ${feeStr}`;
+      if (name) opt.textContent = `${name} — fee: ${feeStr} ${symbol}`;
     });
     sel.appendChild(opt);
   }
@@ -3142,17 +3170,15 @@ function onJudgeSelectChange() {
       const currentToken = getSelectedTokenAddr().toLowerCase();
       const tok = getAllTokens().find(t => t.address.toLowerCase() === currentToken);
       const symbol = tok ? tok.symbol : "token";
-      hintEl.textContent = `Minimum ${symbol} fee: ${feeStr} per ruling.`;
-      // Auto-set judge fee if user hasn't edited
+      hintEl.textContent = `Minimum fee: ${feeStr} ${symbol} per ruling.`;
+      // Auto-set judge fee: use max(5% of bond, judge minimum)
       const feeEl = document.getElementById("judgeFee");
       if (!feeEl.dataset.userEdited) {
         const fee = j.tokenFees.get(currentToken);
-        if (fee && fee > 0n) {
-          const dec = tok ? (tok.decimals || 18) : 18;
-          feeEl.value = parseFloat(ethers.formatUnits(fee, dec)).toFixed(2);
-        } else {
-          // No fee set for this token — use default 5% of bond
-        }
+        const judgeMin = (fee && fee > 0n) ? parseFloat(ethers.formatUnits(fee, tok ? (tok.decimals || 18) : 18)) : 0;
+        const bondVal = parseFloat(document.getElementById("bondAmount").value) || 0;
+        const defaultFee = bondVal * 0.05;
+        feeEl.value = Math.max(defaultFee, judgeMin).toFixed(2);
       }
     }
   } else {
