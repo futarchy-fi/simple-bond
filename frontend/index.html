@@ -1661,13 +1661,14 @@ async function smartCreateBond() {
     // Build dynamic steps based on user's balance state
     const steps = [];
     const isSdai = needsWrapping(tokenAddr);
-    let sdaiBal = 0n, wxdaiBal = 0n, nativeBal = 0n;
+    let sdaiBal = 0n;
 
     if (isSdai) {
+      // Gnosis sDAI: auto-wrap from xDAI/WXDAI if needed
       sdaiBal = await getBalance(SDAI_ADDRESS);
       if (sdaiBal < bondAmount) {
-        wxdaiBal = await getBalance(WXDAI_ADDRESS);
-        nativeBal = await (provider || new ethers.JsonRpcProvider(chain().rpc)).getBalance(userAddr);
+        const wxdaiBal = await getBalance(WXDAI_ADDRESS);
+        const nativeBal = await (provider || new ethers.JsonRpcProvider(chain().rpc)).getBalance(userAddr);
 
         const sdaiDeficit = bondAmount - sdaiBal;
         const wxdaiNeeded = sdaiDeficit + (sdaiDeficit / 1000n);
@@ -1687,12 +1688,19 @@ async function smartCreateBond() {
         steps.push({ label: "Approve WXDAI for vault", action: "approveWxdai" });
         steps.push({ label: "Deposit to USD Savings", action: "depositSdai" });
       }
+    } else {
+      // Non-Gnosis or non-sDAI: just check balance directly
+      const tokenBal = await getBalance(tokenAddr);
+      if (tokenBal < bondAmount) {
+        const need = ethers.formatUnits(bondAmount - tokenBal, decimals);
+        showMsg(msg, `Insufficient ${friendlyTokenName(tokenAddr, '')} balance. Need ${parseFloat(need).toLocaleString(undefined, {maximumFractionDigits: 2})} more.`, "error");
+        btn.disabled = false; btn.textContent = "Create Bond"; return;
+      }
     }
 
     // Check if token needs approval for the bond contract
     const currentAllowance = await tokenContract.allowance(userAddr, chain().contract);
-    const currentBal = isSdai ? await getBalance(SDAI_ADDRESS) : await getBalance(tokenAddr);
-    if (currentAllowance < bondAmount || (isSdai && sdaiBal < bondAmount)) {
+    if (currentAllowance < bondAmount) {
       steps.push({ label: `Approve ${friendlyTokenName(tokenAddr, '')}`, action: "approveToken" });
     }
 
