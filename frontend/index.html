@@ -1649,12 +1649,25 @@ async function smartCreateBond() {
       showMsg(msg, "Enter a valid judge fee", "error"); return;
     }
 
-    // Determine decimals
+    // Determine decimals and convert amounts
     const tokenContract = new ethers.Contract(tokenAddr, ERC20_ABI, signer);
     const decimals = Number(await tokenContract.decimals());
-    const bondAmount = ethers.parseUnits(bondAmountStr, decimals);
-    const challengeAmount = ethers.parseUnits(challengeAmountStr, decimals);
-    const judgeFee = ethers.parseUnits(judgeFeeStr, decimals);
+    let bondAmount, challengeAmount, judgeFee;
+
+    if (needsWrapping(tokenAddr)) {
+      // sDAI: user enters USD value, convert to sDAI shares
+      const sdaiVault = new ethers.Contract(SDAI_ADDRESS, SDAI_ABI, signer);
+      const bondAssets = ethers.parseUnits(bondAmountStr, 18); // USD value in WXDAI terms
+      const challengeAssets = ethers.parseUnits(challengeAmountStr, 18);
+      const feeAssets = ethers.parseUnits(judgeFeeStr, 18);
+      bondAmount = await sdaiVault.convertToShares(bondAssets);
+      challengeAmount = await sdaiVault.convertToShares(challengeAssets);
+      judgeFee = await sdaiVault.convertToShares(feeAssets);
+    } else {
+      bondAmount = ethers.parseUnits(bondAmountStr, decimals);
+      challengeAmount = ethers.parseUnits(challengeAmountStr, decimals);
+      judgeFee = ethers.parseUnits(judgeFeeStr, decimals);
+    }
     const deadline = BigInt(Math.floor(new Date(deadlineStr + "T23:59:59Z").getTime() / 1000));
     const acceptanceDelay = BigInt(acceptanceDelayDays * 86400);
     const rulingBuffer = BigInt(rulingBufferDays * 86400);
@@ -1684,8 +1697,11 @@ async function smartCreateBond() {
         const wxdaiBal = await getBalance(WXDAI_ADDRESS);
         const nativeBal = await (provider || new ethers.JsonRpcProvider(chain().rpc)).getBalance(userAddr);
 
-        const sdaiDeficit = bondAmount - sdaiBal;
-        const wxdaiNeeded = sdaiDeficit + (sdaiDeficit / 1000n);
+        // Convert sDAI share deficit to WXDAI (assets) needed
+        const sdaiVault = new ethers.Contract(SDAI_ADDRESS, SDAI_ABI, signer);
+        const sdaiShareDeficit = bondAmount - sdaiBal;
+        const wxdaiNeededRaw = await sdaiVault.convertToAssets(sdaiShareDeficit);
+        const wxdaiNeeded = wxdaiNeededRaw + (wxdaiNeededRaw / 500n); // 0.2% buffer for rounding
 
         if (wxdaiBal < wxdaiNeeded) {
           const wxdaiDeficit = wxdaiNeeded - wxdaiBal;
