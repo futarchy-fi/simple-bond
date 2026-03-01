@@ -1722,10 +1722,7 @@ async function smartCreateBond() {
       } else if (step.action === "createBond") {
         const metadata = document.getElementById("bondMetadata").value.trim();
         const tx = await bondContract.createBond(tokenAddr, bondAmount, challengeAmount, judgeFee, judgeAddr, deadline, acceptanceDelay, rulingBuffer, metadata);
-        await tx.wait();
-
-        // Parse bond ID from receipt
-        const receipt = await (provider || new ethers.JsonRpcProvider(chain().rpc)).getTransactionReceipt(tx.hash);
+        const receipt = await tx.wait();
         const iface = new ethers.Interface(BOND_ABI);
         let bondId = null;
         for (const log of receipt.logs) {
