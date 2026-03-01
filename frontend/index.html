@@ -925,13 +925,20 @@ async function updateTokenExplainer() {
     // On Gnosis in simple mode, explain sDAI conversion
     el.textContent = 'Stored as sDAI (loading rate...)';
     try {
-      const provider = new ethers.JsonRpcProvider(chain().rpc);
-      const sdaiVault = new ethers.Contract(SDAI_ADDRESS, SDAI_ABI, provider);
+      const readProv = new ethers.JsonRpcProvider(chain().rpc);
+      const sdaiVault = new ethers.Contract(SDAI_ADDRESS, SDAI_ABI, readProv);
       const assetsPerShare = await sdaiVault.convertToAssets(ethers.parseUnits('1', 18));
       const rate = parseFloat(ethers.formatUnits(assetsPerShare, 18)).toFixed(4);
-      el.innerHTML = `Stored as <b>sDAI</b> — a savings token that earns yield. 1 sDAI = ${rate} xDAI = ${rate} USD. Your xDAI will be auto-converted.`;
+      let suffix = '';
+      if (userAddr) {
+        const sdaiKey = SDAI_ADDRESS.toLowerCase();
+        const cached = tokenCache[sdaiKey];
+        const hasSdai = cached && cached.balance > 0n;
+        suffix = hasSdai ? ' You have sDAI ready to use.' : ' Your xDAI will be auto-converted.';
+      }
+      el.innerHTML = `Stored as <b>sDAI</b> — a savings token that earns yield. 1 sDAI = ${rate} xDAI = ${rate} USD.${suffix}`;
     } catch {
-      el.textContent = 'Stored as sDAI (earns ~8% APY). Your xDAI will be auto-converted.';
+      el.textContent = 'Stored as sDAI (earns ~8% APY).';
     }
   } else if (activeChainId !== 100 && currentMode === 'simple') {
     const tok = chain().defaultToken;
