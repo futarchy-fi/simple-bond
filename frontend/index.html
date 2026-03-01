@@ -1373,7 +1373,7 @@ async function convertAllToSdai() {
     if (wrapAmount > 0n) {
       updateStepStatus(stepperEl, stepIdx, 'active');
       const wrapTx = await wxdaiContract.deposit({ value: wrapAmount });
-      await wrapTx.wait();
+      await waitForTx(wrapTx);
       wxdaiToDeposit += wrapAmount;
       updateStepStatus(stepperEl, stepIdx, 'done');
       stepIdx++;
@@ -1388,7 +1388,7 @@ async function convertAllToSdai() {
     // Step: Deposit to sDAI
     updateStepStatus(stepperEl, stepIdx, 'active');
     const depositTx = await sdaiContract.deposit(wxdaiToDeposit, userAddr);
-    await depositTx.wait();
+    await waitForTx(depositTx);
     updateStepStatus(stepperEl, stepIdx, 'done');
 
     // Refresh
@@ -1554,17 +1554,31 @@ function updateStepStatus(container, idx, status) {
   }
 }
 
+// ─── Robust tx.wait() — retries on null receipt ─────────────────────
+async function waitForTx(tx, retries = 5) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const receipt = await waitForTx(tx);
+      if (receipt) return receipt;
+    } catch (err) {
+      if (i === retries - 1) throw err;
+      // RPC returned null — wait and retry
+      await new Promise(r => setTimeout(r, 3000 * (i + 1)));
+    }
+  }
+}
+
 // ─── Token Wrapping Helpers ───────────────────────────────────────────
 async function wrapXdaiToWxdai(amount) {
   const wxdai = new ethers.Contract(WXDAI_ADDRESS, WXDAI_ABI, signer);
   const tx = await wxdai.deposit({ value: amount });
-  await tx.wait();
+  await waitForTx(tx);
 }
 
 async function wrapWxdaiToSdai(amount) {
   const sdai = new ethers.Contract(SDAI_ADDRESS, SDAI_ABI, signer);
   const tx = await sdai.deposit(amount, userAddr);
-  await tx.wait();
+  await waitForTx(tx);
 }
 
 async function ensureApproval(tokenAddr, amount, spender) {
@@ -1572,7 +1586,7 @@ async function ensureApproval(tokenAddr, amount, spender) {
   const allowance = await token.allowance(userAddr, spender);
   if (allowance >= amount) return;
   const tx = await token.approve(spender, amount);
-  await tx.wait();
+  await waitForTx(tx);
   // Update cache
   const key = tokenAddr.toLowerCase();
   if (tokenCache[key]) {
@@ -1730,7 +1744,7 @@ async function smartCreateBond() {
       } else if (step.action === "createBond") {
         const metadata = document.getElementById("bondMetadata").value.trim();
         const tx = await bondContract.createBond(tokenAddr, bondAmount, challengeAmount, judgeFee, judgeAddr, deadline, acceptanceDelay, rulingBuffer, metadata);
-        const receipt = await tx.wait();
+        const receipt = await waitForTx(tx);
         const iface = new ethers.Interface(BOND_ABI);
         let bondId = null;
         for (const log of receipt.logs) {
@@ -2136,7 +2150,7 @@ async function smartChallengeBond() {
       } else if (step.action === "challenge") {
         const challengeMeta = document.getElementById("challengeMetadata").value.trim();
         const tx = await bondContract.challenge(bondId, challengeMeta);
-        await tx.wait();
+        await waitForTx(tx);
       }
 
       updateStepStatus(stepperEl, stepIdx, 'done');
@@ -2169,7 +2183,7 @@ async function doConcede(bondId) {
   try {
     showMsg(msg, "Processing concession...", "info");
     const tx = await bondContract.concede(bondId, concedeMeta);
-    await tx.wait();
+    await waitForTx(tx);
     showMsg(msg, "Claim conceded. Everyone has been refunded.", "success");
     loadBond();
   } catch (err) { showMsg(msg, err.reason || err.message, "error"); }
@@ -2190,7 +2204,7 @@ async function doRuleForChallenger(bondId, decimals, maxFee) {
     const feeCharged = _parseFeeCharged(decimals, maxFee);
     showMsg(msg, "Processing... this takes about 5 seconds", "info");
     const tx = await bondContract.ruleForChallenger(bondId, feeCharged);
-    await tx.wait();
+    await waitForTx(tx);
     showMsg(msg, "Ruled for challenger. Bond settled.", "success");
     loadBond();
   } catch (err) { showMsg(msg, err.reason || err.message, "error"); }
@@ -2202,7 +2216,7 @@ async function doRuleForPoster(bondId, decimals, maxFee) {
     const feeCharged = _parseFeeCharged(decimals, maxFee);
     showMsg(msg, "Processing... this takes about 5 seconds", "info");
     const tx = await bondContract.ruleForPoster(bondId, feeCharged);
-    await tx.wait();
+    await waitForTx(tx);
     showMsg(msg, "Ruled for poster. Queue advanced.", "success");
     loadBond();
   } catch (err) { showMsg(msg, err.reason || err.message, "error"); }
@@ -2213,7 +2227,7 @@ async function doWithdrawBond(bondId) {
   try {
     showMsg(msg, "Processing... this takes about 5 seconds", "info");
     const tx = await bondContract.withdrawBond(bondId);
-    await tx.wait();
+    await waitForTx(tx);
     showMsg(msg, "Bond withdrawn.", "success");
     loadBond();
   } catch (err) { showMsg(msg, err.reason || err.message, "error"); }
@@ -2224,7 +2238,7 @@ async function doClaimTimeout(bondId) {
   try {
     showMsg(msg, "Processing... this takes about 5 seconds", "info");
     const tx = await bondContract.claimTimeout(bondId);
-    await tx.wait();
+    await waitForTx(tx);
     showMsg(msg, "Timeout claimed. All refunded.", "success");
     loadBond();
   } catch (err) { showMsg(msg, err.reason || err.message, "error"); }
