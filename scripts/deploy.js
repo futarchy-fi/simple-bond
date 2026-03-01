@@ -1,11 +1,11 @@
 const hre = require("hardhat");
 
 async function main() {
-    const SimpleBondV3 = await hre.ethers.getContractFactory("SimpleBondV3");
-    const bond = await SimpleBondV3.deploy();
+    const SimpleBondV4 = await hre.ethers.getContractFactory("SimpleBondV4");
+    const bond = await SimpleBondV4.deploy();
     await bond.waitForDeployment();
     const addr = await bond.getAddress();
-    console.log("SimpleBondV3 deployed to:", addr);
+    console.log("SimpleBondV4 deployed to:", addr);
 
     const deployTx = bond.deploymentTransaction();
     if (deployTx) {

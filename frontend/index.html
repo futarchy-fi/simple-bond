@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SimpleBond v0.3 — Futarchy</title>
+<title>SimpleBond v0.4 — Futarchy</title>
 <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.4/dist/ethers.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@web3auth/modal@7/dist/modal.umd.min.js"></script>
 <style>
@@ -362,12 +362,31 @@
   .mode-btn.active { background: var(--accent); color: #fff; }
   .advanced-field { display: none; }
   .advanced-field.show { display: block; }
+
+  /* --- Judge Registry --- */
+  .judge-item {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 12px 14px; border: 1px solid var(--border); border-radius: 8px;
+    margin-bottom: 8px; font-size: 13px;
+  }
+  .judge-item .ji-addr { font-family: monospace; font-weight: 500; }
+  .judge-item .ji-fee { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .judge-item .ji-bonds { color: var(--muted); font-size: 11px; }
+  .judge-item .ji-actions { display: flex; gap: 6px; }
+  .judge-item .ji-actions button { padding: 5px 10px; font-size: 12px; }
+  .register-judge-form { display: flex; gap: 8px; margin-bottom: 16px; align-items: flex-end; }
+  .register-judge-form .form-group { margin-bottom: 0; flex: 1; }
+  .register-judge-form button { flex-shrink: 0; height: 40px; }
+
+  /* --- Reject Bond Button --- */
+  button.reject { background: var(--orange); }
+  button.reject:hover { background: #e67e22; }
 </style>
 </head>
 <body>
 <div class="container">
   <header>
-    <h1>SimpleBond <span>v0.3 — by Futarchy</span></h1>
+    <h1>SimpleBond <span>v0.4 — by Futarchy</span></h1>
     <div class="header-right">
       <select id="chainSelect" class="chain-select" onchange="switchChain(this.value)">
         <option value="100">Gnosis</option>
@@ -400,9 +419,16 @@
 
   <!-- MAIN APP (hidden until connected or browsing) -->
   <div id="mainApp" class="hidden">
+    <div id="chainNotDeployed" class="hidden" style="text-align:center;padding:40px 20px;color:var(--muted);">
+      <h3 style="color:var(--text);margin-bottom:8px;">Not Available on This Chain</h3>
+      <p>SimpleBond v0.4 is not deployed on <span id="notDeployedChain">Ethereum</span> yet.</p>
+      <p style="margin-top:8px;">Switch to <strong>Gnosis</strong> or <strong>Polygon</strong> to use SimpleBond.</p>
+    </div>
+    <div id="mainAppContent">
     <div class="tabs">
       <div class="tab active" data-tab="create" onclick="switchTab('create')">Create Bond</div>
-      <div class="tab" data-tab="browse" onclick="switchTab('browse')">Browse Bonds</div>
+      <div class="tab" data-tab="browse" onclick="switchTab('browse')">Browse</div>
+      <div class="tab" data-tab="judges" onclick="switchTab('judges')">Judges</div>
       <div class="tab" data-tab="my" onclick="switchTab('my')">My Bonds</div>
       <div class="tab" data-tab="view" onclick="switchTab('view')">View Bond</div>
     </div>
@@ -435,9 +461,15 @@
         </div>
 
         <div class="form-group">
-          <label>Judge address</label>
-          <input type="text" id="judgeAddr" placeholder="0x... or name.eth" oninput="resolveJudgeEns()">
-          <div id="judgeEnsHint" class="hint">The judge rules on challenges. Pick someone both parties trust.</div>
+          <label>Judge</label>
+          <select id="judgeSelect" onchange="onJudgeSelectChange()">
+            <option value="">Select a registered judge...</option>
+          </select>
+          <div id="judgeMinFeeHint" class="hint">The judge rules on challenges. Pick someone both parties trust.</div>
+          <div id="judgeCustomField" class="hidden" style="margin-top:8px;">
+            <input type="text" id="judgeAddr" placeholder="0x... or name.eth" oninput="resolveJudgeEns()">
+            <div id="judgeEnsHint" class="hint"></div>
+          </div>
         </div>
 
         <div class="form-group">
@@ -512,6 +544,41 @@
       <div id="browseEmpty" class="hidden" style="text-align:center;padding:20px;color:var(--muted);">
         No active bonds found.
       </div>
+    </div>
+
+    <!-- JUDGES -->
+    <div id="tab-judges" class="card hidden">
+      <h2>Registered Judges</h2>
+      <div id="judgeRegisterSection">
+        <div id="judgeRegisterPrompt" class="connect-prompt">Sign in to register as a judge.</div>
+        <div id="judgeRegisterForm" class="register-judge-form hidden">
+          <button onclick="doRegisterJudge()">Register as Judge</button>
+          <div class="hint" style="margin-top:6px;">After registering, set per-token minimum fees below.</div>
+        </div>
+        <div id="judgeOwnStatus" class="hidden" style="margin-bottom:16px;padding:12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;font-size:13px;">
+          <div>You are registered as a judge</div>
+          <div id="judgeOwnFees" style="color:var(--muted);margin-top:4px;"></div>
+          <div style="margin-top:8px;">
+            <div class="form-group" style="margin-bottom:8px;">
+              <label>Set fee for token</label>
+              <select id="judgeTokenSelect" style="margin-bottom:4px;"></select>
+              <input type="text" id="judgeNewFee" placeholder="Min fee (in token units, 0 = free)" style="margin-top:4px;">
+            </div>
+            <div class="btn-row">
+              <button class="secondary" onclick="doSetJudgeFee()" style="font-size:12px;padding:6px 12px;">Set Fee</button>
+              <button class="danger" onclick="doDeregisterJudge()" style="font-size:12px;padding:6px 12px;">Deregister</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div id="judgesLoading" style="color:var(--muted);text-align:center;padding:20px;">
+        <span class="spinner"></span> Loading judges...
+      </div>
+      <div id="judgesList"></div>
+      <div id="judgesEmpty" class="hidden" style="text-align:center;padding:20px;color:var(--muted);">
+        No registered judges yet. Be the first!
+      </div>
+      <div id="judgesMsg"></div>
     </div>
 
     <!-- MY BONDS -->
@@ -667,6 +734,7 @@
     </div>
   </div>
 
+  </div><!-- /mainAppContent -->
   <footer>
     <a href="https://github.com/futarchy-fi/simple-bond" target="_blank">GitHub</a>
     &nbsp;&middot;&nbsp; <span id="footerChain">Gnosis Chain</span>
@@ -680,8 +748,8 @@ const CHAINS = {
     name: "Gnosis",
     rpc: "https://rpc.gnosischain.com",
     explorer: "https://gnosisscan.io",
-    contract: "0x90b8d22456E8b6d8Dea3DDc28E025940335ffC02",
-    deployBlock: 44917222,
+    contract: "0xCe8799303AeaEC861142470d754F74E09EfD1C45",
+    deployBlock: 44921914,
     nativeCurrency: { name: "xDAI", symbol: "xDAI", decimals: 18 },
     defaultToken: { address: "0xaf204776c7245bF4147c2612BF6e5972Ee483701", symbol: "sDAI", decimals: 18, displayName: "USD Savings (earns ~8% APY)" },
     wrappedNative: { address: "0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d", symbol: "WXDAI", decimals: 18 },
@@ -701,10 +769,10 @@ const CHAINS = {
   },
   137: {
     name: "Polygon",
-    rpc: "https://polygon-rpc.com",
+    rpc: "https://polygon.drpc.org",
     explorer: "https://polygonscan.com",
-    contract: "0x43915f98Ce38116a8C93484Dc8c1ba568Cf13E65",
-    deployBlock: 83597247,
+    contract: "0x6B24380B1980db3e2DfDd2b62f5ed3E7E88DFA43",
+    deployBlock: 83608546,
     nativeCurrency: { name: "POL", symbol: "POL", decimals: 18 },
     defaultToken: { address: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359", symbol: "USDC", decimals: 6, displayName: "USD Coin" },
     wrappedNative: null,
@@ -726,8 +794,8 @@ const CHAINS = {
     name: "Ethereum",
     rpc: "https://eth.llamarpc.com",
     explorer: "https://etherscan.io",
-    contract: "0x43915f98Ce38116a8C93484Dc8c1ba568Cf13E65",
-    deployBlock: 24558150,
+    contract: null, // v4 not deployed on Ethereum yet
+    deployBlock: 0,
     nativeCurrency: { name: "ETH", symbol: "ETH", decimals: 18 },
     defaultToken: { address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", symbol: "USDC", decimals: 6, displayName: "USD Coin" },
     wrappedNative: null,
@@ -762,7 +830,7 @@ function getDefaultTokens() { return chain().tokens; }
 
 // ─── ABIs ─────────────────────────────────────────────────────────────
 const BOND_ABI = [
-  // v3 functions
+  // v4 functions (includes all v3 + judge registry)
   "function createBond(address token, uint256 bondAmount, uint256 challengeAmount, uint256 judgeFee, address judge, uint256 deadline, uint256 acceptanceDelay, uint256 rulingBuffer, string metadata) returns (uint256)",
   "function challenge(uint256 bondId, string metadata)",
   "function concede(uint256 bondId, string metadata)",
@@ -770,14 +838,23 @@ const BOND_ABI = [
   "function ruleForChallenger(uint256 bondId, uint256 feeCharged)",
   "function ruleForPoster(uint256 bondId, uint256 feeCharged)",
   "function claimTimeout(uint256 bondId)",
-  // v3 views
+  // v4 judge registry functions
+  "function registerAsJudge()",
+  "function deregisterAsJudge()",
+  "function setJudgeFee(address token, uint256 minFee)",
+  "function setJudgeFees(address[] tokens, uint256[] minFees)",
+  "function rejectBond(uint256 bondId)",
+  // views
   "function bonds(uint256) view returns (address poster, address judge, address token, uint256 bondAmount, uint256 challengeAmount, uint256 judgeFee, uint256 deadline, uint256 acceptanceDelay, uint256 rulingBuffer, string metadata, bool settled, bool conceded, uint256 currentChallenge, uint256 lastChallengeTime)",
   "function nextBondId() view returns (uint256)",
   "function getChallengeCount(uint256 bondId) view returns (uint256)",
   "function getChallenge(uint256 bondId, uint256 index) view returns (address challenger, uint8 status, string metadata)",
   "function rulingWindowStart(uint256 bondId) view returns (uint256)",
   "function rulingDeadline(uint256 bondId) view returns (uint256)",
-  // v3 events
+  "function judges(address) view returns (bool registered)",
+  "function judgeMinFees(address judge, address token) view returns (uint256)",
+  "function getJudgeMinFee(address judge, address token) view returns (uint256)",
+  // events (v3 + v4)
   "event BondCreated(uint256 indexed bondId, address indexed poster, address indexed judge, address token, uint256 bondAmount, uint256 challengeAmount, uint256 judgeFee, uint256 deadline, uint256 acceptanceDelay, uint256 rulingBuffer, string metadata)",
   "event Challenged(uint256 indexed bondId, uint256 challengeIndex, address indexed challenger, string metadata)",
   "event ClaimConceded(uint256 indexed bondId, address indexed poster, string metadata)",
@@ -786,6 +863,11 @@ const BOND_ABI = [
   "event ChallengeRefunded(uint256 indexed bondId, uint256 challengeIndex, address indexed challenger)",
   "event BondWithdrawn(uint256 indexed bondId)",
   "event BondTimedOut(uint256 indexed bondId)",
+  // v4 judge registry events
+  "event JudgeRegistered(address indexed judge)",
+  "event JudgeDeregistered(address indexed judge)",
+  "event JudgeFeeUpdated(address indexed judge, address indexed token, uint256 newMinFee)",
+  "event BondRejectedByJudge(uint256 indexed bondId, address indexed judge)",
 ];
 
 const ERC20_ABI = [
@@ -892,6 +974,9 @@ async function onTokenChange() {
   const addr = document.getElementById("tokenSelect").value;
   if (!addr) return;
   updateBalanceDisplay(addr);
+  // Refresh judge dropdown to show fees for the new token
+  buildJudgeSelect();
+  onJudgeSelectChange();
 }
 
 function onAmountChange() {
@@ -1195,10 +1280,26 @@ async function switchChain(chainIdStr) {
   if (!CHAINS[newChainId]) return;
   activeChainId = newChainId;
 
+  // Check if chain has a deployed contract
+  const notDeployedEl = document.getElementById("chainNotDeployed");
+  const mainAppContent = document.getElementById("mainAppContent");
+  if (!chain().contract) {
+    if (notDeployedEl) {
+      notDeployedEl.classList.remove("hidden");
+      document.getElementById("notDeployedChain").textContent = chain().name;
+    }
+    if (mainAppContent) mainAppContent.classList.add("hidden");
+  } else {
+    if (notDeployedEl) notDeployedEl.classList.add("hidden");
+    if (mainAppContent) mainAppContent.classList.remove("hidden");
+  }
+
   // Update read provider for non-connected browsing
   tokenCache = {};
   myBondsLoaded = false;
   browseBondsLoaded = false;
+  judgesLoaded = false;
+  judgesList = [];
 
   // Update footer
   document.getElementById("footerChain").textContent = chain().name;
@@ -1244,6 +1345,7 @@ async function switchChain(chainIdStr) {
   sel.value = chain().defaultToken.address;
   onTokenChange();
   updateTokenExplainer();
+  loadJudgeSelectOnCreate();
 
   // Update URL
   const url = new URL(window.location);
@@ -1251,11 +1353,12 @@ async function switchChain(chainIdStr) {
   if (chainParam) url.searchParams.set("chain", chainParam[0]);
   history.replaceState(null, "", url);
 
-  // Reload browse/my tabs if visible
+  // Reload browse/my/judges tabs if visible
   const activeTab = document.querySelector(".tab.active");
   if (activeTab) {
     if (activeTab.dataset.tab === "browse") loadBrowseBonds();
     if (activeTab.dataset.tab === "my" && userAddr) loadMyBonds();
+    if (activeTab.dataset.tab === "judges") loadJudges();
   }
 }
 
@@ -1277,7 +1380,9 @@ function onWalletConnected() {
   }
 
   tokenCache = {};
+  judgesLoaded = false;
   refreshAllBalances();
+  loadJudgeSelectOnCreate();
 
   // Set up injected wallet event listeners
   if (connectionType === 'injected' && window.ethereum) {
@@ -1674,16 +1779,22 @@ async function smartCreateBond() {
       showMsg(msg, "Enter a valid amount", "error"); return;
     }
 
-    const judgeInput = document.getElementById("judgeAddr");
-    let judgeAddr = judgeInput.dataset.resolvedAddr || judgeInput.value.trim();
-    // Try ENS resolution if it looks like a name
-    if (!ethers.isAddress(judgeAddr) && (judgeAddr.endsWith('.eth') || judgeAddr.endsWith('.xyz') || judgeAddr.endsWith('.id'))) {
-      try {
-        const resolved = await ensProvider.resolveName(judgeAddr);
-        if (resolved) judgeAddr = resolved;
-      } catch (_) {}
+    // Get judge address from dropdown or custom input
+    const judgeSelectVal = document.getElementById("judgeSelect").value;
+    let judgeAddr;
+    if (judgeSelectVal === "__custom__") {
+      const judgeInput = document.getElementById("judgeAddr");
+      judgeAddr = judgeInput.dataset.resolvedAddr || judgeInput.value.trim();
+      if (!ethers.isAddress(judgeAddr) && (judgeAddr.endsWith('.eth') || judgeAddr.endsWith('.xyz') || judgeAddr.endsWith('.id'))) {
+        try {
+          const resolved = await ensProvider.resolveName(judgeAddr);
+          if (resolved) judgeAddr = resolved;
+        } catch (_) {}
+      }
+    } else {
+      judgeAddr = judgeSelectVal;
     }
-    if (!ethers.isAddress(judgeAddr)) { showMsg(msg, "Enter a valid judge address or ENS name", "error"); return; }
+    if (!ethers.isAddress(judgeAddr)) { showMsg(msg, "Select a judge or enter a valid address", "error"); return; }
 
     const deadlineStr = document.getElementById("deadline").value;
     if (!deadlineStr) { showMsg(msg, "Set a deadline", "error"); return; }
@@ -1869,12 +1980,13 @@ async function smartCreateBond() {
 // ─── Tabs ─────────────────────────────────────────────────────────────
 function switchTab(name) {
   document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.tab === name));
-  ["create", "browse", "my", "view"].forEach(t => {
+  ["create", "browse", "judges", "my", "view"].forEach(t => {
     const el = document.getElementById("tab-" + t);
     if (el) el.classList.toggle("hidden", t !== name);
   });
   if (name === "my" && userAddr) loadMyBonds();
   if (name === "browse") loadBrowseBonds();
+  if (name === "judges") loadJudges();
 }
 
 // ─── Load Bond ────────────────────────────────────────────────────────
@@ -1936,12 +2048,15 @@ async function loadBond() {
       const filter1 = readContract.filters.RuledForChallenger(bondId);
       const filter2 = readContract.filters.BondWithdrawn(bondId);
       const filter3 = readContract.filters.BondTimedOut(bondId);
-      const [evC, evW, evT] = await Promise.all([
+      const filter4 = readContract.filters.BondRejectedByJudge(bondId);
+      const [evC, evW, evT, evR] = await Promise.all([
         readContract.queryFilter(filter1, chain().deployBlock).catch(() => []),
         readContract.queryFilter(filter2, chain().deployBlock).catch(() => []),
         readContract.queryFilter(filter3, chain().deployBlock).catch(() => []),
+        readContract.queryFilter(filter4, chain().deployBlock).catch(() => []),
       ]);
-      if (evC.length > 0) { status = "Challenger Won"; statusClass = "status-forfeited"; }
+      if (evR.length > 0) { status = "Rejected by Judge"; statusClass = "status-timedout"; }
+      else if (evC.length > 0) { status = "Challenger Won"; statusClass = "status-forfeited"; }
       else if (evW.length > 0) { status = "Withdrawn"; statusClass = "status-withdrawn"; }
       else if (evT.length > 0) { status = "Timed Out"; statusClass = "status-timedout"; }
       else { status = "Settled"; statusClass = "status-settled"; }
@@ -2142,6 +2257,16 @@ async function loadBond() {
         wdBtn.textContent = "Withdraw Bond";
         wdBtn.onclick = () => doWithdrawBond(bondId);
         btnsDiv.appendChild(wdBtn);
+      }
+
+      // Judge reject bond (anytime bond isn't settled)
+      if (ua === judge.toLowerCase()) {
+        const rejectBtn = document.createElement("button");
+        rejectBtn.className = "reject";
+        rejectBtn.textContent = "Reject Bond";
+        rejectBtn.title = "Reject — all parties refunded, no fee charged";
+        rejectBtn.onclick = () => doRejectBond(bondId);
+        btnsDiv.appendChild(rejectBtn);
       }
 
       // Timeout claim
@@ -2750,8 +2875,350 @@ async function loadMyBonds() {
   }
 }
 
+// ─── Judge Registry ───────────────────────────────────────────────────
+let judgesLoaded = false;
+let judgesList = []; // cached list of {address, tokenFees: Map<tokenAddr, bigint>, bondCount}
+
+// Get the currently selected token address on the create bond form
+function getSelectedTokenAddr() {
+  const sel = document.getElementById("tokenSelect");
+  return sel ? sel.value : chain().defaultToken.address;
+}
+
+// Format a judge's per-token fee for the currently selected token
+function formatJudgeFeeForToken(j) {
+  const tokenAddr = getSelectedTokenAddr().toLowerCase();
+  const fee = j.tokenFees.get(tokenAddr);
+  if (!fee || fee === 0n) return "free";
+  const tok = getAllTokens().find(t => t.address.toLowerCase() === tokenAddr);
+  const decimals = tok ? (tok.decimals || 18) : 18;
+  return parseFloat(ethers.formatUnits(fee, decimals)).toLocaleString(undefined, { maximumFractionDigits: 6 });
+}
+
+async function loadJudges() {
+  const listEl = document.getElementById("judgesList");
+  const loadingEl = document.getElementById("judgesLoading");
+  const emptyEl = document.getElementById("judgesEmpty");
+
+  // Show/hide register form based on connection
+  if (userAddr) {
+    document.getElementById("judgeRegisterPrompt").classList.add("hidden");
+    // Check if current user is registered
+    try {
+      const readProvider = new ethers.JsonRpcProvider(chain().rpc);
+      const readContract = new ethers.Contract(chain().contract, BOND_ABI, readProvider);
+      const registered = await readContract.judges(userAddr);
+      if (registered) {
+        document.getElementById("judgeRegisterForm").classList.add("hidden");
+        const ownStatus = document.getElementById("judgeOwnStatus");
+        ownStatus.classList.remove("hidden");
+        // Build token select for setting fees
+        const tokenSel = document.getElementById("judgeTokenSelect");
+        tokenSel.innerHTML = "";
+        for (const t of getAllTokens()) {
+          const opt = document.createElement("option");
+          opt.value = t.address;
+          opt.textContent = t.symbol || short(t.address);
+          tokenSel.appendChild(opt);
+        }
+        // Show current per-token fees
+        await refreshOwnJudgeFees(readContract);
+      } else {
+        document.getElementById("judgeRegisterForm").classList.remove("hidden");
+        document.getElementById("judgeOwnStatus").classList.add("hidden");
+      }
+    } catch (_) {
+      document.getElementById("judgeRegisterForm").classList.remove("hidden");
+    }
+  } else {
+    document.getElementById("judgeRegisterPrompt").classList.remove("hidden");
+    document.getElementById("judgeRegisterForm").classList.add("hidden");
+    document.getElementById("judgeOwnStatus").classList.add("hidden");
+  }
+
+  if (judgesLoaded) return;
+
+  loadingEl.classList.remove("hidden");
+  listEl.innerHTML = "";
+  emptyEl.classList.add("hidden");
+
+  try {
+    const readProvider = new ethers.JsonRpcProvider(chain().rpc);
+    const readContract = new ethers.Contract(chain().contract, BOND_ABI, readProvider);
+
+    // Scan JudgeRegistered events to find all judge addresses
+    const regFilter = readContract.filters.JudgeRegistered();
+    const regEvents = await readContract.queryFilter(regFilter, chain().deployBlock).catch(() => []);
+
+    const judgeAddrs = new Set();
+    for (const ev of regEvents) {
+      judgeAddrs.add(ev.args.judge.toLowerCase());
+    }
+
+    // Scan JudgeFeeUpdated events to get per-token fees
+    const feeFilter = readContract.filters.JudgeFeeUpdated();
+    const feeEvents = await readContract.queryFilter(feeFilter, chain().deployBlock).catch(() => []);
+
+    // Build fee map: judge -> token -> fee (latest event wins)
+    const feeMap = new Map(); // judgeAddr -> Map<tokenAddr, bigint>
+    for (const ev of feeEvents) {
+      const judgeKey = ev.args.judge.toLowerCase();
+      const tokenKey = ev.args.token.toLowerCase();
+      if (!feeMap.has(judgeKey)) feeMap.set(judgeKey, new Map());
+      feeMap.get(judgeKey).set(tokenKey, ev.args.newMinFee);
+    }
+
+    // Filter to currently registered by checking contract state
+    judgesList = [];
+    for (const addr of judgeAddrs) {
+      try {
+        // Use checksummed address from events
+        const checksumAddr = regEvents.find(e => e.args.judge.toLowerCase() === addr)?.args.judge;
+        if (!checksumAddr) continue;
+        const registered = await readContract.judges(checksumAddr);
+        if (registered) {
+          const bondFilter = readContract.filters.BondCreated(null, null, checksumAddr);
+          const bondEvents = await readContract.queryFilter(bondFilter, chain().deployBlock).catch(() => []);
+          judgesList.push({
+            address: checksumAddr,
+            tokenFees: feeMap.get(addr) || new Map(),
+            bondCount: bondEvents.length,
+          });
+        }
+      } catch (_) {}
+    }
+
+    loadingEl.classList.add("hidden");
+
+    if (judgesList.length === 0) {
+      emptyEl.classList.remove("hidden");
+      judgesLoaded = true;
+      return;
+    }
+
+    // Sort by bond count descending
+    judgesList.sort((a, b) => b.bondCount - a.bondCount);
+
+    const currentToken = getSelectedTokenAddr().toLowerCase();
+    for (const j of judgesList) {
+      const feeStr = formatJudgeFeeForToken(j);
+      const tok = getAllTokens().find(t => t.address.toLowerCase() === currentToken);
+      const symbol = tok ? tok.symbol : "token";
+      const isMe = userAddr && j.address.toLowerCase() === userAddr.toLowerCase();
+      const item = document.createElement("div");
+      item.className = "judge-item";
+      const feesHtml = j.tokenFees.size > 0
+        ? [...j.tokenFees.entries()].map(([tAddr, fee]) => {
+            const t = getAllTokens().find(t => t.address.toLowerCase() === tAddr);
+            const sym = t ? t.symbol : short(tAddr);
+            const dec = t ? (t.decimals || 18) : 18;
+            const fStr = fee === 0n ? "free" : parseFloat(ethers.formatUnits(fee, dec)).toLocaleString(undefined, { maximumFractionDigits: 6 });
+            return `${sym}: ${fStr}`;
+          }).join(", ")
+        : "no fees set (free for all tokens)";
+      item.innerHTML = `
+        <div>
+          <div class="ji-addr">${short(j.address)}${isMe ? ' <span style="color:var(--accent);">(you)</span>' : ''}</div>
+          <div class="ji-fee">Min fees: ${feesHtml}</div>
+          <div class="ji-bonds">${j.bondCount} bond${j.bondCount !== 1 ? 's' : ''} judged</div>
+        </div>`;
+      resolveEns(j.address).then(name => {
+        if (name) {
+          item.querySelector('.ji-addr').innerHTML = `${name} (${short(j.address)})${isMe ? ' <span style="color:var(--accent);">(you)</span>' : ''}`;
+        }
+      });
+      listEl.appendChild(item);
+    }
+
+    judgesLoaded = true;
+    buildJudgeSelect();
+  } catch (err) {
+    loadingEl.classList.add("hidden");
+    listEl.innerHTML = `<div class="msg msg-error">Error loading judges: ${err.message}</div>`;
+  }
+}
+
+async function refreshOwnJudgeFees(readContract) {
+  const feesEl = document.getElementById("judgeOwnFees");
+  const tokens = getAllTokens();
+  const lines = [];
+  for (const t of tokens) {
+    try {
+      const fee = await readContract.getJudgeMinFee(userAddr, t.address);
+      const fStr = fee === 0n ? "free" : parseFloat(ethers.formatUnits(fee, t.decimals || 18)).toLocaleString(undefined, { maximumFractionDigits: 6 });
+      lines.push(`${t.symbol}: ${fStr}`);
+    } catch (_) {
+      lines.push(`${t.symbol}: free`);
+    }
+  }
+  feesEl.innerHTML = "Per-token min fees: " + (lines.length > 0 ? lines.join(" · ") : "none set");
+}
+
+function buildJudgeSelect() {
+  const sel = document.getElementById("judgeSelect");
+  const prev = sel.value;
+  sel.innerHTML = '<option value="">Select a registered judge...</option>';
+  const currentToken = getSelectedTokenAddr().toLowerCase();
+  for (const j of judgesList) {
+    const opt = document.createElement("option");
+    opt.value = j.address;
+    const feeStr = formatJudgeFeeForToken(j);
+    const tok = getAllTokens().find(t => t.address.toLowerCase() === currentToken);
+    const symbol = tok ? tok.symbol : "token";
+    opt.textContent = `${short(j.address)} — ${symbol} fee: ${feeStr}`;
+    resolveEns(j.address).then(name => {
+      if (name) opt.textContent = `${name} — ${symbol} fee: ${feeStr}`;
+    });
+    sel.appendChild(opt);
+  }
+  const customOpt = document.createElement("option");
+  customOpt.value = "__custom__";
+  customOpt.textContent = "Custom address...";
+  sel.appendChild(customOpt);
+
+  if (prev && [...sel.options].some(o => o.value === prev)) sel.value = prev;
+}
+
+async function loadJudgeSelectOnCreate() {
+  if (judgesList.length === 0) {
+    try {
+      const readProvider = new ethers.JsonRpcProvider(chain().rpc);
+      const readContract = new ethers.Contract(chain().contract, BOND_ABI, readProvider);
+
+      const regFilter = readContract.filters.JudgeRegistered();
+      const regEvents = await readContract.queryFilter(regFilter, chain().deployBlock).catch(() => []);
+      const feeFilter = readContract.filters.JudgeFeeUpdated();
+      const feeEvents = await readContract.queryFilter(feeFilter, chain().deployBlock).catch(() => []);
+
+      const judgeAddrs = new Map(); // addr -> checksumAddr
+      for (const ev of regEvents) {
+        judgeAddrs.set(ev.args.judge.toLowerCase(), ev.args.judge);
+      }
+
+      const feeMap = new Map();
+      for (const ev of feeEvents) {
+        const judgeKey = ev.args.judge.toLowerCase();
+        const tokenKey = ev.args.token.toLowerCase();
+        if (!feeMap.has(judgeKey)) feeMap.set(judgeKey, new Map());
+        feeMap.get(judgeKey).set(tokenKey, ev.args.newMinFee);
+      }
+
+      judgesList = [];
+      for (const [addr, checksumAddr] of judgeAddrs) {
+        try {
+          const registered = await readContract.judges(checksumAddr);
+          if (registered) {
+            judgesList.push({ address: checksumAddr, tokenFees: feeMap.get(addr) || new Map(), bondCount: 0 });
+          }
+        } catch (_) {}
+      }
+    } catch (_) {}
+  }
+  buildJudgeSelect();
+}
+
+function onJudgeSelectChange() {
+  const val = document.getElementById("judgeSelect").value;
+  const customField = document.getElementById("judgeCustomField");
+  const hintEl = document.getElementById("judgeMinFeeHint");
+
+  if (val === "__custom__") {
+    customField.classList.remove("hidden");
+    hintEl.textContent = "Enter a registered judge address. The judge must be registered on-chain.";
+  } else if (val) {
+    customField.classList.add("hidden");
+    const j = judgesList.find(j => j.address.toLowerCase() === val.toLowerCase());
+    if (j) {
+      const feeStr = formatJudgeFeeForToken(j);
+      const currentToken = getSelectedTokenAddr().toLowerCase();
+      const tok = getAllTokens().find(t => t.address.toLowerCase() === currentToken);
+      const symbol = tok ? tok.symbol : "token";
+      hintEl.textContent = `Minimum ${symbol} fee: ${feeStr} per ruling.`;
+      // Auto-set judge fee if user hasn't edited
+      const feeEl = document.getElementById("judgeFee");
+      if (!feeEl.dataset.userEdited) {
+        const fee = j.tokenFees.get(currentToken);
+        if (fee && fee > 0n) {
+          const dec = tok ? (tok.decimals || 18) : 18;
+          feeEl.value = parseFloat(ethers.formatUnits(fee, dec)).toFixed(2);
+        } else {
+          // No fee set for this token — use default 5% of bond
+        }
+      }
+    }
+  } else {
+    customField.classList.add("hidden");
+    hintEl.textContent = "The judge rules on challenges. Pick someone both parties trust.";
+  }
+}
+
+async function doRegisterJudge() {
+  if (!signer) return;
+  const msg = document.getElementById("judgesMsg");
+  try {
+    showMsg(msg, "Registering...", "info");
+    const tx = await bondContract.registerAsJudge();
+    await waitForTx(tx);
+    showMsg(msg, "Registered as judge! Now set per-token minimum fees.", "success");
+    judgesLoaded = false;
+    loadJudges();
+  } catch (err) {
+    showMsg(msg, err.reason || err.message, "error");
+  }
+}
+
+async function doSetJudgeFee() {
+  if (!signer) return;
+  const msg = document.getElementById("judgesMsg");
+  const tokenAddr = document.getElementById("judgeTokenSelect").value;
+  const feeStr = document.getElementById("judgeNewFee").value.trim() || "0";
+  if (!tokenAddr) { showMsg(msg, "Select a token", "error"); return; }
+  try {
+    const tok = getAllTokens().find(t => t.address.toLowerCase() === tokenAddr.toLowerCase());
+    const decimals = tok ? (tok.decimals || 18) : 18;
+    const fee = ethers.parseUnits(feeStr, decimals);
+    const symbol = tok ? tok.symbol : short(tokenAddr);
+    showMsg(msg, `Setting ${symbol} fee...`, "info");
+    const tx = await bondContract.setJudgeFee(tokenAddr, fee);
+    await waitForTx(tx);
+    showMsg(msg, `${symbol} fee updated!`, "success");
+    judgesLoaded = false;
+    loadJudges();
+  } catch (err) {
+    showMsg(msg, err.reason || err.message, "error");
+  }
+}
+
+async function doDeregisterJudge() {
+  if (!signer) return;
+  const msg = document.getElementById("judgesMsg");
+  if (!confirm("Deregister as judge? You must still rule on existing bonds.")) return;
+  try {
+    showMsg(msg, "Deregistering...", "info");
+    const tx = await bondContract.deregisterAsJudge();
+    await waitForTx(tx);
+    showMsg(msg, "Deregistered. Existing bonds are unaffected.", "success");
+    judgesLoaded = false;
+    loadJudges();
+  } catch (err) {
+    showMsg(msg, err.reason || err.message, "error");
+  }
+}
+
+async function doRejectBond(bondId) {
+  const msg = document.getElementById("viewMsg");
+  if (!confirm("Reject this bond? All parties will be refunded. You will not receive any fee.")) return;
+  try {
+    showMsg(msg, "Processing rejection...", "info");
+    const tx = await bondContract.rejectBond(bondId);
+    await waitForTx(tx);
+    showMsg(msg, "Bond rejected. All parties refunded.", "success");
+    loadBond();
+  } catch (err) { showMsg(msg, err.reason || err.message, "error"); }
+}
+
 // ─── Form persistence ─────────────────────────────────────────────────
-const FORM_FIELDS = ["tokenSelect", "bondAmount", "challengeAmount", "judgeFee", "judgeAddr", "bondMetadata", "deadline", "bondIdInput"];
+const FORM_FIELDS = ["tokenSelect", "bondAmount", "challengeAmount", "judgeFee", "judgeSelect", "judgeAddr", "bondMetadata", "deadline", "bondIdInput"];
 
 function saveForm() {
   const data = {};
@@ -2800,6 +3267,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   buildTokenSelect();
   document.getElementById("tokenSelect").value = chain().defaultToken.address;
   setMode('simple');
+  loadJudgeSelectOnCreate();
   restoreForm();
 
   const bondParam = params.get("bond");
