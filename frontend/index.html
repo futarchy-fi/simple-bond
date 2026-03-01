@@ -2155,12 +2155,47 @@ async function smartChallengeBond() {
 
   try {
     btn.disabled = true;
-    btn.innerHTML = '<span class="spinner"></span>Processing...';
+    btn.innerHTML = '<span class="spinner"></span>Checking...';
 
     const readContract = new ethers.Contract(chain().contract, BOND_ABI, signer);
     const b = await readContract.bonds(bondId);
     const tokenAddr = b[2];
     const challengeAmount = b[4];
+    const challengeCount = Number(await readContract.getChallengeCount(bondId));
+
+    // Check if user already challenged this bond
+    let userAlreadyChallenged = false;
+    for (let i = 0; i < challengeCount; i++) {
+      const ch = await readContract.getChallenge(bondId, i);
+      if (ch[0].toLowerCase() === userAddr.toLowerCase()) { userAlreadyChallenged = true; break; }
+    }
+
+    if (userAlreadyChallenged) {
+      btn.disabled = false; btn.textContent = "Challenge This Bond";
+      const proceed = confirm(
+        "⚠️ You have already challenged this bond!\n\n" +
+        "Submitting another challenge will:\n" +
+        "• Lock an additional deposit of the challenge amount\n" +
+        "• Join the back of the challenge queue\n" +
+        "• Each challenge is resolved independently — you could lose both deposits\n\n" +
+        "Are you sure you want to challenge again?"
+      );
+      if (!proceed) return;
+    } else if (challengeCount > 0) {
+      btn.disabled = false; btn.textContent = "Challenge This Bond";
+      const proceed = confirm(
+        `This bond already has ${challengeCount} challenge${challengeCount > 1 ? 's' : ''} in the queue.\n\n` +
+        "Your challenge will:\n" +
+        "• Join the back of the queue (position #" + challengeCount + ")\n" +
+        "• Lock your deposit until the judge resolves your challenge\n" +
+        "• Earlier challenges are resolved first — yours may take longer\n\n" +
+        "Continue?"
+      );
+      if (!proceed) return;
+    }
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span>Processing...';
 
     const isSdai = needsWrapping(tokenAddr);
     const steps = [];
