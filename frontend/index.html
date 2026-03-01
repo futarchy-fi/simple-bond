@@ -2328,7 +2328,8 @@ async function loadBrowseBonds() {
   emptyEl.classList.add("hidden");
 
   try {
-    const readProvider = provider || new ethers.JsonRpcProvider(chain().rpc);
+    // Always use dedicated RPC for event queries (wallet providers may reject large ranges)
+    const readProvider = new ethers.JsonRpcProvider(chain().rpc);
     const readContract = new ethers.Contract(chain().contract, BOND_ABI, readProvider);
 
     // Get all BondCreated events
@@ -2500,7 +2501,7 @@ async function loadMyBonds() {
   emptyEl.classList.add("hidden");
 
   try {
-    const readProvider = provider || new ethers.JsonRpcProvider(chain().rpc);
+    const readProvider = new ethers.JsonRpcProvider(chain().rpc);
     const readContract = new ethers.Contract(chain().contract, BOND_ABI, readProvider);
 
     const posterFilter = readContract.filters.BondCreated(null, userAddr);
