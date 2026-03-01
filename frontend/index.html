@@ -354,6 +354,14 @@
   .chain-select:focus { border-color: var(--accent); }
   .header-right { display: flex; align-items: center; gap: 10px; }
   .chain-note { font-size: 12px; color: var(--muted); text-align: center; margin-bottom: 12px; }
+
+  /* ─── Simple / Advanced Toggle ─── */
+  .mode-toggle { display: flex; gap: 0; margin-bottom: 18px; background: var(--bg); border-radius: 8px; overflow: hidden; border: 1px solid var(--border); }
+  .mode-btn { flex: 1; padding: 8px; text-align: center; font-size: 13px; font-weight: 500; background: transparent; color: var(--muted); border: none; border-radius: 0; cursor: pointer; transition: all 0.15s; }
+  .mode-btn:hover { color: var(--text); }
+  .mode-btn.active { background: var(--accent); color: #fff; }
+  .advanced-field { display: none; }
+  .advanced-field.show { display: block; }
 </style>
 </head>
 <body>
@@ -407,37 +415,23 @@
         <!-- Funding Banner -->
         <div id="fundingBanner" class="funding-banner hidden"></div>
 
-        <div class="form-group">
-          <label>What is this bond for?</label>
-          <textarea id="bondMetadata" placeholder="e.g. &quot;I bet $100 that Bitcoin hits $200k by June 2026&quot;" rows="2"></textarea>
+        <!-- Simple / Advanced Toggle -->
+        <div class="mode-toggle">
+          <button class="mode-btn active" data-mode="simple" onclick="setMode('simple')">Simple</button>
+          <button class="mode-btn" data-mode="advanced" onclick="setMode('advanced')">Advanced</button>
         </div>
 
         <div class="form-group">
-          <label>Currency</label>
-          <div class="token-row">
-            <select id="tokenSelect" onchange="onTokenChange()"></select>
-            <button type="button" class="secondary add-token-btn" onclick="addCustomToken()">+ Add Custom</button>
-          </div>
-          <div id="tokenBalanceInfo" class="token-balance"></div>
-        </div>
-
-        <div class="form-group">
-          <label>Bond Amount</label>
+          <label>Amount (USD)</label>
           <input type="text" id="bondAmount" placeholder="100.00" oninput="onAmountChange()">
-          <div class="hint">How much you're putting up to back your claim.</div>
+          <div id="tokenExplainer" class="hint"></div>
+          <div id="tokenBalanceInfo" class="token-balance"></div>
           <div id="approvalStatus" class="approval-status"></div>
         </div>
 
         <div class="form-group">
-          <label>Challenge Amount</label>
-          <input type="text" id="challengeAmount" placeholder="50.0" oninput="this.dataset.userEdited='1'">
-          <div class="hint">How much each challenger must deposit to dispute you. Default: 50% of bond.</div>
-        </div>
-
-        <div class="form-group">
-          <label>Judge Fee</label>
-          <input type="text" id="judgeFee" placeholder="10.0" oninput="this.dataset.userEdited='1'">
-          <div class="hint">Fee the judge receives for ruling. Default: 5% of bond. Enter 0 for no fee.</div>
+          <label>What is this bond for?</label>
+          <textarea id="bondMetadata" placeholder="e.g. &quot;I bet $100 that Bitcoin hits $200k by June 2026&quot;" rows="2"></textarea>
         </div>
 
         <div class="form-group">
@@ -447,7 +441,7 @@
         </div>
 
         <div class="form-group">
-          <label>Challenge Deadline</label>
+          <label>Deadline</label>
           <div class="preset-row">
             <button type="button" class="preset" data-days="30" onclick="setDeadline(30)">1 month</button>
             <button type="button" class="preset" data-days="90" onclick="setDeadline(90)">3 months</button>
@@ -458,7 +452,28 @@
           <div class="hint">Last date someone can challenge this bond.</div>
         </div>
 
-        <div class="form-group">
+        <!-- Advanced fields -->
+        <div class="form-group advanced-field" id="advTokenField">
+          <label>Currency</label>
+          <div class="token-row">
+            <select id="tokenSelect" onchange="onTokenChange()"></select>
+            <button type="button" class="secondary add-token-btn" onclick="addCustomToken()">+ Add Custom</button>
+          </div>
+        </div>
+
+        <div class="form-group advanced-field" id="advChallengeField">
+          <label>Challenge Amount</label>
+          <input type="text" id="challengeAmount" placeholder="50.0" oninput="this.dataset.userEdited='1'">
+          <div class="hint">Amount each challenger must deposit. Default: 50% of bond.</div>
+        </div>
+
+        <div class="form-group advanced-field" id="advJudgeFeeField">
+          <label>Judge Fee</label>
+          <input type="text" id="judgeFee" placeholder="10.0" oninput="this.dataset.userEdited='1'">
+          <div class="hint">Fee the judge receives per ruling. Default: 5% of bond.</div>
+        </div>
+
+        <div class="form-group advanced-field" id="advAcceptanceDelayField">
           <label>Acceptance Delay</label>
           <div class="preset-row">
             <button type="button" class="preset acceptance-preset" data-adelay="1" onclick="setAcceptanceDelay(1)">1 day</button>
@@ -466,17 +481,17 @@
             <button type="button" class="preset acceptance-preset" data-adelay="7" onclick="setAcceptanceDelay(7)">7 days</button>
             <button type="button" class="preset acceptance-preset" data-adelay="14" onclick="setAcceptanceDelay(14)">14 days</button>
           </div>
-          <div class="hint">Grace period after a challenge for you to concede before the judge can rule. Default: 3 days.</div>
+          <div class="hint">Grace period to concede before the judge can rule. Default: 3 days.</div>
         </div>
 
-        <div class="form-group">
+        <div class="form-group advanced-field" id="advRulingBufferField">
           <label>Ruling Window</label>
           <div class="preset-row">
             <button type="button" class="preset ruling-preset" data-buffer="7" onclick="setRulingBuffer(7)">7 days</button>
             <button type="button" class="preset ruling-preset" data-buffer="14" onclick="setRulingBuffer(14)">14 days</button>
             <button type="button" class="preset ruling-preset active" data-buffer="30" onclick="setRulingBuffer(30)">30 days</button>
           </div>
-          <div class="hint">How long the judge has to make a ruling. If they don't rule in time, everyone gets refunded. Default: 30 days.</div>
+          <div class="hint">Time for the judge to rule. If missed, everyone is refunded. Default: 30 days.</div>
         </div>
 
         <div id="createStepper"></div>
@@ -726,6 +741,7 @@ const CHAINS = {
 };
 
 let activeChainId = 100;
+let currentMode = 'simple';
 function chain() { return CHAINS[activeChainId]; }
 
 const WEB3AUTH_CLIENT_ID = "BPt1ahKWn4CSezBP6MhIZQQICRcOjt6epWT9jQ45M4sGQyO3jimvzjdBN93ukw2tBR_4PyRBI94FsFLZBfYQFWo";
@@ -886,6 +902,43 @@ function onAmountChange() {
     if (!feeEl.dataset.userEdited) feeEl.value = (val * 0.05).toFixed(2);
   }
   checkApproval();
+}
+
+// ─── Simple / Advanced toggle ─────────────────────────────────────────
+function setMode(mode) {
+  currentMode = mode;
+  document.querySelectorAll('.mode-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.mode === mode);
+  });
+  document.querySelectorAll('.advanced-field').forEach(el => {
+    el.classList.toggle('show', mode === 'advanced');
+  });
+  updateTokenExplainer();
+  // In simple mode, auto-fill challenge/fee from bond amount
+  if (mode === 'simple') onAmountChange();
+}
+
+async function updateTokenExplainer() {
+  const el = document.getElementById('tokenExplainer');
+  if (!el) return;
+  if (activeChainId === 100 && currentMode === 'simple') {
+    // On Gnosis in simple mode, explain sDAI conversion
+    el.textContent = 'Stored as sDAI (loading rate...)';
+    try {
+      const provider = new ethers.JsonRpcProvider(chain().rpc);
+      const sdaiVault = new ethers.Contract(SDAI_ADDRESS, SDAI_ABI, provider);
+      const assetsPerShare = await sdaiVault.convertToAssets(ethers.parseUnits('1', 18));
+      const rate = parseFloat(ethers.formatUnits(assetsPerShare, 18)).toFixed(4);
+      el.innerHTML = `Stored as <b>sDAI</b> — a savings token that earns yield. 1 sDAI = ${rate} xDAI. Your xDAI will be auto-converted.`;
+    } catch {
+      el.textContent = 'Stored as sDAI (earns ~8% APY). Your xDAI will be auto-converted.';
+    }
+  } else if (activeChainId !== 100 && currentMode === 'simple') {
+    const tok = chain().defaultToken;
+    el.textContent = `Stored as ${tok.displayName || tok.symbol} on ${chain().name}.`;
+  } else {
+    el.textContent = '';
+  }
 }
 
 async function updateBalanceDisplay(tokenAddr) {
@@ -1166,6 +1219,7 @@ async function switchChain(chainIdStr) {
   const sel = document.getElementById("tokenSelect");
   sel.value = chain().defaultToken.address;
   onTokenChange();
+  updateTokenExplainer();
 
   // Update URL
   const url = new URL(window.location);
@@ -1497,6 +1551,7 @@ function closeFundingGuide() {
 }
 
 function getSelectedToken() {
+  if (currentMode === 'simple') return chain().defaultToken.address;
   return document.getElementById("tokenSelect").value || chain().defaultToken.address;
 }
 
@@ -2554,6 +2609,7 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   buildTokenSelect();
   document.getElementById("tokenSelect").value = chain().defaultToken.address;
+  setMode('simple');
   restoreForm();
 
   const bondParam = params.get("bond");
