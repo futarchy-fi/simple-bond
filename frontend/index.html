@@ -503,7 +503,7 @@
 
     <!-- BROWSE BONDS -->
     <div id="tab-browse" class="card hidden">
-      <h2>Active Bonds</h2>
+      <h2>All Bonds</h2>
       <div id="browseChainNote" class="chain-note"></div>
       <div id="browseLoading" style="color:var(--muted);text-align:center;padding:20px;">
         <span class="spinner"></span> Loading active bonds...
@@ -617,6 +617,7 @@
         <div id="concessionCard" class="concession-card hidden">
           <h3>Poster Conceded</h3>
           <div class="concession-text" id="concessionText"></div>
+          <div class="concession-refund" style="margin-top:8px;font-size:13px;color:var(--green);">All funds have been returned — the poster's bond was refunded and all challengers' deposits were automatically sent back.</div>
         </div>
 
         <!-- Risk/Reward Card (for challengers) -->
@@ -2349,7 +2350,7 @@ async function doClaimTimeout(bondId) {
   } catch (err) { showMsg(msg, err.reason || err.message, "error"); }
 }
 
-// ─── Browse Active Bonds ──────────────────────────────────────────────
+// ─── Browse All Bonds ─────────────────────────────────────────────────
 async function loadBrowseBonds() {
   if (browseBondsLoaded) return;
 
@@ -2363,63 +2364,74 @@ async function loadBrowseBonds() {
   emptyEl.classList.add("hidden");
 
   try {
-    // Always use dedicated RPC for event queries (wallet providers may reject large ranges)
     const readProvider = new ethers.JsonRpcProvider(chain().rpc);
     const readContract = new ethers.Contract(chain().contract, BOND_ABI, readProvider);
 
-    // Get all BondCreated events
     const filter = readContract.filters.BondCreated();
     const events = await readContract.queryFilter(filter, chain().deployBlock).catch(() => []);
 
     const now = BigInt(Math.floor(Date.now() / 1000));
-    const activeBonds = [];
+    const allBonds = [];
 
-    // Check each bond
     for (const ev of events) {
       const bondId = Number(ev.args.bondId);
       try {
         const b = await readContract.bonds(bondId);
-        const [, , token, bondAmount, challengeAmount, , deadline, , , metadata, settled, conceded] = b;
-        if (!settled && !conceded && deadline > now) {
-          let symbol = "???", decimals = 18;
-          try {
-            const tc = new ethers.Contract(token, ERC20_ABI, readProvider);
-            [symbol, decimals] = await Promise.all([tc.symbol(), tc.decimals().then(Number)]);
-          } catch (_) {}
+        const [, , token, bondAmount, challengeAmount, , deadline, , , metadata, settled, conceded, , lastChallengeTime] = b;
 
-          activeBonds.push({ bondId, token, bondAmount, challengeAmount, deadline, metadata, symbol, decimals });
-        }
+        let symbol = "???", decimals = 18;
+        try {
+          const tc = new ethers.Contract(token, ERC20_ABI, readProvider);
+          [symbol, decimals] = await Promise.all([tc.symbol(), tc.decimals().then(Number)]);
+        } catch (_) {}
+
+        // Determine status
+        let status, statusClass;
+        if (conceded) { status = "Conceded"; statusClass = "status-conceded"; }
+        else if (settled) { status = "Settled"; statusClass = "status-settled"; }
+        else if (now > deadline) { status = "Expired"; statusClass = "status-expired"; }
+        else { status = "Active"; statusClass = "status-active"; }
+
+        // Sort key: most recent activity (challenge time or block timestamp)
+        const lastActivity = lastChallengeTime > 0n ? Number(lastChallengeTime) : Number(ev.blockNumber);
+
+        allBonds.push({ bondId, token, bondAmount, challengeAmount, deadline, metadata, symbol, decimals, status, statusClass, lastActivity, settled, conceded });
       } catch (_) {}
     }
 
     loadingEl.classList.add("hidden");
 
-    if (activeBonds.length === 0) {
+    if (allBonds.length === 0) {
       emptyEl.classList.remove("hidden");
       browseBondsLoaded = true;
       return;
     }
 
-    // Sort by deadline (soonest first)
-    activeBonds.sort((a, b) => Number(a.deadline - b.deadline));
+    // Sort: active bonds first, then by most recent activity
+    allBonds.sort((a, b) => {
+      const aActive = a.status === "Active" ? 1 : 0;
+      const bActive = b.status === "Active" ? 1 : 0;
+      if (aActive !== bActive) return bActive - aActive;
+      return b.lastActivity - a.lastActivity;
+    });
 
-    for (const bond of activeBonds) {
-      const displayName = friendlyTokenName(bond.token, bond.symbol);
+    for (const bond of allBonds) {
       const bondAmt = parseFloat(ethers.formatUnits(bond.bondAmount, bond.decimals)).toLocaleString(undefined, { maximumFractionDigits: 2 });
       const challengeAmt = parseFloat(ethers.formatUnits(bond.challengeAmount, bond.decimals)).toLocaleString(undefined, { maximumFractionDigits: 2 });
-      const deadlineDate = new Date(Number(bond.deadline) * 1000);
-      const countdown = formatCountdown(Number(bond.deadline));
       const desc = bond.metadata || "No description";
+      const isActive = bond.status === "Active";
+      const deadlineInfo = isActive ? `Deadline: <span class="countdown">${formatCountdown(Number(bond.deadline))}</span>` : `<span class="status-badge ${bond.statusClass}" style="font-size:10px;">${bond.status}</span>`;
 
       const card = document.createElement("div");
       card.className = "bond-browse-item";
+      if (!isActive) card.style.opacity = "0.7";
       card.onclick = () => viewBondById(bond.bondId);
       card.innerHTML = `
         <div class="bb-desc">${escapeHtml(desc)}</div>
         <div class="bond-browse-stats">
           <span>Bond: <span class="stat-val">$${bondAmt}</span></span>
           <span>Challenge: <span class="stat-val">$${challengeAmt}</span></span>
-          <span>Deadline: <span class="countdown">${countdown}</span></span>
+          <span>${deadlineInfo}</span>
         </div>`;
       listEl.appendChild(card);
     }
