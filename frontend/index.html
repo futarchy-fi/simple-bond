@@ -1786,12 +1786,24 @@ async function loadBond() {
   const bondId = parseInt(idStr);
   const msg = document.getElementById("viewMsg");
 
+  // Hide previous bond display and clear messages
+  document.getElementById("bondDisplay").classList.add("hidden");
+  document.getElementById("bondActions").classList.add("hidden");
+  msg.innerHTML = "";
+
   try {
     const readProvider = provider || new ethers.JsonRpcProvider(chain().rpc);
     const readContract = new ethers.Contract(chain().contract, BOND_ABI, readProvider);
 
     const nextId = await readContract.nextBondId();
-    if (BigInt(bondId) >= nextId) { showMsg(msg, `Bond #${bondId} does not exist yet on ${chain().name} (next ID: ${nextId})`, "error"); return; }
+    if (BigInt(bondId) >= nextId) {
+      if (nextId === 0n) {
+        showMsg(msg, `No bonds exist on ${chain().name} yet. Be the first to create one!`, "error");
+      } else {
+        showMsg(msg, `Bond #${bondId} does not exist on ${chain().name}. Latest bond is #${Number(nextId) - 1}.`, "error");
+      }
+      return;
+    }
 
     const b = await readContract.bonds(bondId);
     const [poster, judge, token, bondAmount, challengeAmount, judgeFee, deadline, acceptanceDelay, rulingBuffer, metadata, settled, conceded, currentChallenge, lastChallengeTime] = b;
