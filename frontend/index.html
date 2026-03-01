@@ -943,11 +943,23 @@ async function updateTokenExplainer() {
 
 async function updateBalanceDisplay(tokenAddr) {
   const el = document.getElementById("tokenBalanceInfo");
-  if (!userAddr || !tokenAddr) { el.innerHTML = ""; return; }
+  if (!tokenAddr) { el.innerHTML = ""; return; }
+  if (!userAddr) { el.innerHTML = ""; return; }
   const key = tokenAddr.toLowerCase();
+
+  // Use cached data if available (refreshAllBalances already fetched it)
+  if (tokenCache[key]) {
+    const c = tokenCache[key];
+    const bal = formatBal(c.balance, c.decimals);
+    const display = friendlyTokenName(tokenAddr, c.symbol);
+    el.innerHTML = `Balance: <span class="bal">${bal} ${display}</span>`;
+    return;
+  }
+
   el.innerHTML = "Loading balance...";
   try {
-    const token = new ethers.Contract(tokenAddr, ERC20_ABI, signer || new ethers.JsonRpcProvider(chain().rpc));
+    const p = signer || new ethers.JsonRpcProvider(chain().rpc);
+    const token = new ethers.Contract(tokenAddr, ERC20_ABI, p);
     const [balance, allowance, decimals, symbol] = await Promise.all([
       token.balanceOf(userAddr),
       token.allowance(userAddr, chain().contract),
