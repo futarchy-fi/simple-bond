@@ -188,22 +188,6 @@
   }
   .connect-screen .browse-link:hover { color: var(--text); }
 
-  /* ─── Simple/Advanced Mode Toggle ─── */
-  .mode-toggle {
-    display: flex; background: var(--bg); border-radius: 8px;
-    border: 1px solid var(--border); overflow: hidden; margin-bottom: 20px;
-  }
-  .mode-btn {
-    flex: 1; padding: 8px 16px; text-align: center; cursor: pointer;
-    font-size: 13px; font-weight: 500; color: var(--muted);
-    background: transparent; border: none; transition: all 0.15s;
-  }
-  .mode-btn.active {
-    background: var(--accent); color: #fff;
-  }
-  .mode-btn:hover:not(.active) { color: var(--text); }
-  .advanced-field { display: none; }
-  .advanced-field.show { display: block; }
 
   /* ─── Funding Banner ─── */
   .funding-banner {
@@ -423,22 +407,37 @@
         <!-- Funding Banner -->
         <div id="fundingBanner" class="funding-banner hidden"></div>
 
-        <!-- Simple / Advanced Toggle -->
-        <div class="mode-toggle">
-          <button class="mode-btn active" data-mode="simple" onclick="setMode('simple')">Simple</button>
-          <button class="mode-btn" data-mode="advanced" onclick="setMode('advanced')">Advanced</button>
+        <div class="form-group">
+          <label>What is this bond for?</label>
+          <textarea id="bondMetadata" placeholder="e.g. &quot;I bet $100 that Bitcoin hits $200k by June 2026&quot;" rows="2"></textarea>
         </div>
 
         <div class="form-group">
-          <label>Amount (USD)</label>
-          <input type="text" id="bondAmount" placeholder="100.00" oninput="onAmountChange()">
+          <label>Currency</label>
+          <div class="token-row">
+            <select id="tokenSelect" onchange="onTokenChange()"></select>
+            <button type="button" class="secondary add-token-btn" onclick="addCustomToken()">+ Add Custom</button>
+          </div>
           <div id="tokenBalanceInfo" class="token-balance"></div>
+        </div>
+
+        <div class="form-group">
+          <label>Bond Amount</label>
+          <input type="text" id="bondAmount" placeholder="100.00" oninput="onAmountChange()">
+          <div class="hint">How much you're putting up to back your claim.</div>
           <div id="approvalStatus" class="approval-status"></div>
         </div>
 
         <div class="form-group">
-          <label>What is this bond for?</label>
-          <textarea id="bondMetadata" placeholder="e.g. &quot;I bet $100 that Bitcoin hits $200k by June 2026&quot;" rows="2"></textarea>
+          <label>Challenge Amount</label>
+          <input type="text" id="challengeAmount" placeholder="50.0" oninput="this.dataset.userEdited='1'">
+          <div class="hint">How much each challenger must deposit to dispute you. Default: 50% of bond.</div>
+        </div>
+
+        <div class="form-group">
+          <label>Judge Fee</label>
+          <input type="text" id="judgeFee" placeholder="10.0" oninput="this.dataset.userEdited='1'">
+          <div class="hint">Fee the judge receives for ruling. Default: 5% of bond. Enter 0 for no fee.</div>
         </div>
 
         <div class="form-group">
@@ -448,7 +447,7 @@
         </div>
 
         <div class="form-group">
-          <label>Deadline</label>
+          <label>Challenge Deadline</label>
           <div class="preset-row">
             <button type="button" class="preset" data-days="30" onclick="setDeadline(30)">1 month</button>
             <button type="button" class="preset" data-days="90" onclick="setDeadline(90)">3 months</button>
@@ -456,31 +455,10 @@
             <button type="button" class="preset" data-days="365" onclick="setDeadline(365)">1 year</button>
           </div>
           <input type="date" id="deadline">
-          <div class="hint">Challenges accepted before this date.</div>
+          <div class="hint">Last date someone can challenge this bond.</div>
         </div>
 
-        <!-- Advanced fields -->
-        <div class="form-group advanced-field" id="advTokenField">
-          <label>Currency</label>
-          <div class="token-row">
-            <select id="tokenSelect" onchange="onTokenChange()"></select>
-            <button type="button" class="secondary add-token-btn" onclick="addCustomToken()">+ Add Custom</button>
-          </div>
-        </div>
-
-        <div class="form-group advanced-field" id="advChallengeField">
-          <label>Challenge Amount</label>
-          <input type="text" id="challengeAmount" placeholder="50.0">
-          <div class="hint">Amount each challenger must deposit. Default: 50% of bond.</div>
-        </div>
-
-        <div class="form-group advanced-field" id="advJudgeFeeField">
-          <label>Judge Fee</label>
-          <input type="text" id="judgeFee" placeholder="10.0">
-          <div class="hint">Fixed fee paid to the judge per ruling. Default: 5% of bond.</div>
-        </div>
-
-        <div class="form-group advanced-field" id="advAcceptanceDelayField">
+        <div class="form-group">
           <label>Acceptance Delay</label>
           <div class="preset-row">
             <button type="button" class="preset acceptance-preset" data-adelay="1" onclick="setAcceptanceDelay(1)">1 day</button>
@@ -488,17 +466,17 @@
             <button type="button" class="preset acceptance-preset" data-adelay="7" onclick="setAcceptanceDelay(7)">7 days</button>
             <button type="button" class="preset acceptance-preset" data-adelay="14" onclick="setAcceptanceDelay(14)">14 days</button>
           </div>
-          <div class="hint">Time for the poster to concede after a challenge, before the judge can rule. Default: 3 days.</div>
+          <div class="hint">Grace period after a challenge for you to concede before the judge can rule. Default: 3 days.</div>
         </div>
 
-        <div class="form-group advanced-field" id="advRulingBufferField">
-          <label>Ruling Buffer</label>
+        <div class="form-group">
+          <label>Ruling Window</label>
           <div class="preset-row">
             <button type="button" class="preset ruling-preset" data-buffer="7" onclick="setRulingBuffer(7)">7 days</button>
             <button type="button" class="preset ruling-preset" data-buffer="14" onclick="setRulingBuffer(14)">14 days</button>
             <button type="button" class="preset ruling-preset active" data-buffer="30" onclick="setRulingBuffer(30)">30 days</button>
           </div>
-          <div class="hint">Time after ruling window opens for the judge to rule. Default: 30 days.</div>
+          <div class="hint">How long the judge has to make a ruling. If they don't rule in time, everyone gets refunded. Default: 30 days.</div>
         </div>
 
         <div id="createStepper"></div>
@@ -824,7 +802,6 @@ let tokenCache = {};
 let approvalCheckTimer = null;
 let rulingBufferDays = 30;
 let acceptanceDelayDays = 3;
-let currentMode = 'simple';
 let currentViewBondId = null;
 let currentViewBondData = null;
 let myBondsLoaded = false;
@@ -901,6 +878,13 @@ async function onTokenChange() {
 }
 
 function onAmountChange() {
+  const val = parseFloat(document.getElementById("bondAmount").value);
+  if (val > 0) {
+    const challengeEl = document.getElementById("challengeAmount");
+    const feeEl = document.getElementById("judgeFee");
+    if (!challengeEl.dataset.userEdited) challengeEl.value = (val * 0.5).toFixed(2);
+    if (!feeEl.dataset.userEdited) feeEl.value = (val * 0.05).toFixed(2);
+  }
   checkApproval();
 }
 
@@ -1512,23 +1496,7 @@ function closeFundingGuide() {
   }
 }
 
-// ─── Simple/Advanced Mode ─────────────────────────────────────────────
-function setMode(mode) {
-  currentMode = mode;
-  document.querySelectorAll(".mode-btn").forEach(b => b.classList.toggle("active", b.dataset.mode === mode));
-  document.querySelectorAll(".advanced-field").forEach(el => {
-    el.classList.toggle("show", mode === "advanced");
-  });
-  // In simple mode, default token to chain's default
-  if (mode === 'simple') {
-    document.getElementById("tokenSelect").value = chain().defaultToken.address;
-    onTokenChange();
-  }
-  sessionStorage.setItem("bondMode", mode);
-}
-
 function getSelectedToken() {
-  if (currentMode === 'simple') return chain().defaultToken.address;
   return document.getElementById("tokenSelect").value || chain().defaultToken.address;
 }
 
@@ -1631,16 +1599,12 @@ async function smartCreateBond() {
     const deadlineStr = document.getElementById("deadline").value;
     if (!deadlineStr) { showMsg(msg, "Set a deadline", "error"); return; }
 
-    // Get or auto-calculate values
-    let challengeAmountStr, judgeFeeStr;
-    if (currentMode === 'simple') {
-      const bondVal = parseFloat(bondAmountStr);
-      challengeAmountStr = (bondVal * 0.5).toString();
-      judgeFeeStr = (bondVal * 0.05).toString();
-    } else {
-      challengeAmountStr = document.getElementById("challengeAmount").value.trim();
-      judgeFeeStr = document.getElementById("judgeFee").value.trim();
-    }
+    // Get challenge amount and judge fee — default to 50% and 5% of bond if empty
+    const bondVal = parseFloat(bondAmountStr);
+    let challengeAmountStr = document.getElementById("challengeAmount").value.trim();
+    let judgeFeeStr = document.getElementById("judgeFee").value.trim();
+    if (!challengeAmountStr) challengeAmountStr = (bondVal * 0.5).toFixed(2);
+    if (!judgeFeeStr) judgeFeeStr = (bondVal * 0.05).toFixed(2);
 
     if (!challengeAmountStr || isNaN(challengeAmountStr) || parseFloat(challengeAmountStr) <= 0) {
       showMsg(msg, "Enter a valid challenge amount", "error"); return;
@@ -2552,7 +2516,6 @@ function saveForm() {
   }
   data._rulingBuffer = rulingBufferDays;
   data._acceptanceDelay = acceptanceDelayDays;
-  data._mode = currentMode;
   const activeTab = document.querySelector(".tab.active");
   if (activeTab) data._tab = activeTab.dataset.tab;
   sessionStorage.setItem("bondForm", JSON.stringify(data));
@@ -2569,7 +2532,6 @@ function restoreForm() {
     }
     if (data._rulingBuffer) setRulingBuffer(data._rulingBuffer);
     if (data._acceptanceDelay) setAcceptanceDelay(data._acceptanceDelay);
-    if (data._mode) setMode(data._mode);
     if (data._tab) switchTab(data._tab);
   } catch (_) {}
 }
