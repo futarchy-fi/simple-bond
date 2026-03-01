@@ -1959,9 +1959,22 @@ async function loadBond() {
     setAddrLink("bJudge", judge);
     const tokenDisplayName = friendlyTokenName(token, symbol);
     setAddrLink("bToken", token, tokenDisplayName);
-    const fmtBondAmt = parseFloat(ethers.formatUnits(bondAmount, decimals)).toLocaleString(undefined, { maximumFractionDigits: 2 });
-    const fmtChallengeAmt = parseFloat(ethers.formatUnits(challengeAmount, decimals)).toLocaleString(undefined, { maximumFractionDigits: 2 });
-    const fmtJudgeFee = parseFloat(ethers.formatUnits(judgeFee, decimals)).toLocaleString(undefined, { maximumFractionDigits: 2 });
+
+    // Convert sDAI shares to USD value for display
+    let displayBondAmt = bondAmount, displayChallengeAmt = challengeAmount, displayJudgeFee = judgeFee;
+    let displayDecimals = decimals;
+    const isSdaiToken = token.toLowerCase() === SDAI_ADDRESS.toLowerCase();
+    if (isSdaiToken) {
+      try {
+        const sdaiVault = new ethers.Contract(SDAI_ADDRESS, SDAI_ABI, readProvider);
+        displayBondAmt = await sdaiVault.convertToAssets(bondAmount);
+        displayChallengeAmt = await sdaiVault.convertToAssets(challengeAmount);
+        displayJudgeFee = await sdaiVault.convertToAssets(judgeFee);
+      } catch (_) {} // fallback to raw shares
+    }
+    const fmtBondAmt = parseFloat(ethers.formatUnits(displayBondAmt, displayDecimals)).toLocaleString(undefined, { maximumFractionDigits: 2 });
+    const fmtChallengeAmt = parseFloat(ethers.formatUnits(displayChallengeAmt, displayDecimals)).toLocaleString(undefined, { maximumFractionDigits: 2 });
+    const fmtJudgeFee = parseFloat(ethers.formatUnits(displayJudgeFee, displayDecimals)).toLocaleString(undefined, { maximumFractionDigits: 2 });
     document.getElementById("bBondAmount").textContent = `$${fmtBondAmt}`;
     document.getElementById("bChallengeAmount").textContent = `$${fmtChallengeAmt}`;
     document.getElementById("bJudgeFee").textContent = `$${fmtJudgeFee}`;
@@ -2028,10 +2041,11 @@ async function loadBond() {
     // ─── Risk/Reward Card ────────────────────────────────────────
     const rrCard = document.getElementById("riskRewardCard");
     if (!settled && !conceded && now <= deadline) {
-      const netProfit = bondAmount - judgeFee;
-      const netProfitFmt = parseFloat(ethers.formatUnits(netProfit, decimals)).toLocaleString(undefined, { maximumFractionDigits: 2 });
+      const netProfit = displayBondAmt - displayJudgeFee;
+      const netProfitFmt = parseFloat(ethers.formatUnits(netProfit, displayDecimals)).toLocaleString(undefined, { maximumFractionDigits: 2 });
       const riskFmt = fmtChallengeAmt;
-      const challengerBeliefPct = (Number(challengeAmount) * 100 / Number(netPot)).toFixed(0);
+      const displayNetPot = displayBondAmt + displayChallengeAmt - displayJudgeFee;
+      const challengerBeliefPct = displayNetPot > 0n ? (Number(displayChallengeAmt) * 100 / Number(displayNetPot)).toFixed(0) : "?";
 
       document.getElementById("rrWinAmount").textContent = `+$${netProfitFmt}`;
       document.getElementById("rrRiskAmount").textContent = `$${riskFmt}`;
@@ -2373,6 +2387,15 @@ async function loadBrowseBonds() {
     const now = BigInt(Math.floor(Date.now() / 1000));
     const allBonds = [];
 
+    // Fetch sDAI rate once for USD conversion
+    let sdaiRate = null; // assets per 1 share (1e18)
+    if (activeChainId === 100) {
+      try {
+        const sdaiVault = new ethers.Contract(SDAI_ADDRESS, SDAI_ABI, readProvider);
+        sdaiRate = await sdaiVault.convertToAssets(ethers.parseUnits('1', 18));
+      } catch (_) {}
+    }
+
     for (const ev of events) {
       const bondId = Number(ev.args.bondId);
       try {
@@ -2416,8 +2439,13 @@ async function loadBrowseBonds() {
     });
 
     for (const bond of allBonds) {
-      const bondAmt = parseFloat(ethers.formatUnits(bond.bondAmount, bond.decimals)).toLocaleString(undefined, { maximumFractionDigits: 2 });
-      const challengeAmt = parseFloat(ethers.formatUnits(bond.challengeAmount, bond.decimals)).toLocaleString(undefined, { maximumFractionDigits: 2 });
+      let dispBond = bond.bondAmount, dispChallenge = bond.challengeAmount;
+      if (sdaiRate && bond.token.toLowerCase() === SDAI_ADDRESS.toLowerCase()) {
+        dispBond = bond.bondAmount * sdaiRate / ethers.parseUnits('1', 18);
+        dispChallenge = bond.challengeAmount * sdaiRate / ethers.parseUnits('1', 18);
+      }
+      const bondAmt = parseFloat(ethers.formatUnits(dispBond, bond.decimals)).toLocaleString(undefined, { maximumFractionDigits: 2 });
+      const challengeAmt = parseFloat(ethers.formatUnits(dispChallenge, bond.decimals)).toLocaleString(undefined, { maximumFractionDigits: 2 });
       const desc = bond.metadata || "No description";
       const isActive = bond.status === "Active";
       const deadlineInfo = isActive ? `Deadline: <span class="countdown">${formatCountdown(Number(bond.deadline))}</span>` : `<span class="status-badge ${bond.statusClass}" style="font-size:10px;">${bond.status}</span>`;
@@ -2551,6 +2579,15 @@ async function loadMyBonds() {
     const readProvider = new ethers.JsonRpcProvider(chain().rpc);
     const readContract = new ethers.Contract(chain().contract, BOND_ABI, readProvider);
 
+    // Fetch sDAI rate once for USD conversion
+    let myBondsSdaiRate = null;
+    if (activeChainId === 100) {
+      try {
+        const sdaiVault = new ethers.Contract(SDAI_ADDRESS, SDAI_ABI, readProvider);
+        myBondsSdaiRate = await sdaiVault.convertToAssets(ethers.parseUnits('1', 18));
+      } catch (_) {}
+    }
+
     const posterFilter = readContract.filters.BondCreated(null, userAddr);
     const judgeFilter = readContract.filters.BondCreated(null, null, userAddr);
     const challengerFilter = readContract.filters.Challenged(null, null, userAddr);
@@ -2618,7 +2655,11 @@ async function loadMyBonds() {
       const role = roles.join(" & ");
 
       const desc = metadata || "No description";
-      const amtStr = parseFloat(ethers.formatUnits(bondAmount, decimals)).toLocaleString(undefined, { maximumFractionDigits: 2 });
+      let dispAmt = bondAmount;
+      if (myBondsSdaiRate && token.toLowerCase() === SDAI_ADDRESS.toLowerCase()) {
+        dispAmt = bondAmount * myBondsSdaiRate / ethers.parseUnits('1', 18);
+      }
+      const amtStr = parseFloat(ethers.formatUnits(dispAmt, decimals)).toLocaleString(undefined, { maximumFractionDigits: 2 });
       const displayName = friendlyTokenName(token, symbol);
 
       const item = document.createElement("div");
