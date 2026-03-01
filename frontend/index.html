@@ -929,7 +929,7 @@ async function updateTokenExplainer() {
       const sdaiVault = new ethers.Contract(SDAI_ADDRESS, SDAI_ABI, provider);
       const assetsPerShare = await sdaiVault.convertToAssets(ethers.parseUnits('1', 18));
       const rate = parseFloat(ethers.formatUnits(assetsPerShare, 18)).toFixed(4);
-      el.innerHTML = `Stored as <b>sDAI</b> — a savings token that earns yield. 1 sDAI = ${rate} xDAI. Your xDAI will be auto-converted.`;
+      el.innerHTML = `Stored as <b>sDAI</b> — a savings token that earns yield. 1 sDAI = ${rate} xDAI = ${rate} USD. Your xDAI will be auto-converted.`;
     } catch {
       el.textContent = 'Stored as sDAI (earns ~8% APY). Your xDAI will be auto-converted.';
     }
