@@ -3059,7 +3059,12 @@ function buildJudgeSelect() {
   const prev = sel.value;
   sel.innerHTML = '<option value="">Select a registered judge...</option>';
   const currentToken = getSelectedTokenAddr().toLowerCase();
+  // Deduplicate judgesList by address (race conditions can cause dupes)
+  const seen = new Set();
   for (const j of judgesList) {
+    const key = j.address.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
     const opt = document.createElement("option");
     opt.value = j.address;
     const feeStr = formatJudgeFeeForToken(j);
@@ -3079,8 +3084,11 @@ function buildJudgeSelect() {
   if (prev && [...sel.options].some(o => o.value === prev)) sel.value = prev;
 }
 
+let _loadingJudgeSelect = false;
 async function loadJudgeSelectOnCreate() {
+  if (_loadingJudgeSelect) return;
   if (judgesList.length === 0) {
+    _loadingJudgeSelect = true;
     try {
       const readProvider = new ethers.JsonRpcProvider(chain().rpc);
       const readContract = new ethers.Contract(chain().contract, BOND_ABI, readProvider);
@@ -3113,6 +3121,7 @@ async function loadJudgeSelectOnCreate() {
         } catch (_) {}
       }
     } catch (_) {}
+    _loadingJudgeSelect = false;
   }
   buildJudgeSelect();
 }
