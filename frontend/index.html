@@ -914,8 +914,12 @@ function setMode(mode) {
     el.classList.toggle('show', mode === 'advanced');
   });
   updateTokenExplainer();
-  // In simple mode, auto-fill challenge/fee from bond amount
-  if (mode === 'simple') onAmountChange();
+  // In simple mode, reset user overrides and re-apply defaults
+  if (mode === 'simple') {
+    delete document.getElementById("challengeAmount").dataset.userEdited;
+    delete document.getElementById("judgeFee").dataset.userEdited;
+    onAmountChange();
+  }
 }
 
 async function updateTokenExplainer() {
@@ -1713,8 +1717,8 @@ async function smartCreateBond() {
     if (deadline <= BigInt(Math.floor(Date.now() / 1000))) {
       showMsg(msg, "Deadline must be in the future", "error"); return;
     }
-    if (judgeFee >= bondAmount + challengeAmount) {
-      showMsg(msg, "Judge fee must be less than bond + challenge amount", "error"); return;
+    if (judgeFee > challengeAmount) {
+      showMsg(msg, "Judge fee can't exceed the challenge amount", "error"); return;
     }
     if (judgeFee > challengeAmount) {
       showMsg(msg, "Judge fee must be <= challenge amount", "error"); return;
@@ -1810,18 +1814,28 @@ async function smartCreateBond() {
 
         updateStepStatus(stepperEl, stepIdx, 'done');
 
+        // Hide the form, show success prominently
+        const formEl = document.getElementById("createForm");
         if (bondId !== null) {
-          msg.innerHTML = `<div class="success-card">
+          formEl.innerHTML = `<div class="success-card">
             <div class="sc-label">Bond created!</div>
             <div class="sc-id">Bond #${bondId}</div>
             <div class="sc-actions">
               <button class="success" onclick="viewBondById(${bondId})">View Bond</button>
               <button class="secondary" onclick="copyBondLink(${bondId})">Copy Link</button>
+              <button class="secondary" onclick="resetCreateForm()">Create Another</button>
             </div>
           </div>`;
         } else {
-          showMsg(msg, "Bond created! Check the transaction for the ID.", "success");
+          formEl.innerHTML = `<div class="success-card">
+            <div class="sc-label">Bond created!</div>
+            <div class="sc-id">Check tx for ID</div>
+            <div class="sc-actions">
+              <button class="secondary" onclick="resetCreateForm()">Create Another</button>
+            </div>
+          </div>`;
         }
+        formEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
         tokenCache = {};
         myBondsLoaded = false;
@@ -2577,6 +2591,13 @@ async function loadMyBonds() {
     loadingEl.classList.add("hidden");
     listEl.innerHTML = `<div class="msg msg-error">Error loading bonds: ${err.message}</div>`;
   }
+}
+
+// ─── Reset create form (after successful creation) ───────────────────
+function resetCreateForm() {
+  // Rebuild the form by reloading the page (simplest way to restore all HTML)
+  sessionStorage.removeItem("bondForm");
+  window.location.reload();
 }
 
 // ─── Form persistence ─────────────────────────────────────────────────
