@@ -436,8 +436,8 @@
 
         <div class="form-group">
           <label>Judge address</label>
-          <input type="text" id="judgeAddr" placeholder="0x... (the person who decides disputes)">
-          <div class="hint">The judge rules on challenges. Pick someone both parties trust.</div>
+          <input type="text" id="judgeAddr" placeholder="0x... or name.eth" oninput="resolveJudgeEns()">
+          <div id="judgeEnsHint" class="hint">The judge rules on challenges. Pick someone both parties trust.</div>
         </div>
 
         <div class="form-group">
@@ -1674,8 +1674,16 @@ async function smartCreateBond() {
       showMsg(msg, "Enter a valid amount", "error"); return;
     }
 
-    const judgeAddr = document.getElementById("judgeAddr").value.trim();
-    if (!ethers.isAddress(judgeAddr)) { showMsg(msg, "Enter a valid judge address", "error"); return; }
+    const judgeInput = document.getElementById("judgeAddr");
+    let judgeAddr = judgeInput.dataset.resolvedAddr || judgeInput.value.trim();
+    // Try ENS resolution if it looks like a name
+    if (!ethers.isAddress(judgeAddr) && (judgeAddr.endsWith('.eth') || judgeAddr.endsWith('.xyz') || judgeAddr.endsWith('.id'))) {
+      try {
+        const resolved = await ensProvider.resolveName(judgeAddr);
+        if (resolved) judgeAddr = resolved;
+      } catch (_) {}
+    }
+    if (!ethers.isAddress(judgeAddr)) { showMsg(msg, "Enter a valid judge address or ENS name", "error"); return; }
 
     const deadlineStr = document.getElementById("deadline").value;
     if (!deadlineStr) { showMsg(msg, "Set a deadline", "error"); return; }
@@ -2502,10 +2510,68 @@ function setAcceptanceDelay(days) {
 
 function short(addr) { return addr.slice(0, 6) + "..." + addr.slice(-4); }
 
+// ─── ENS Resolution (always via Ethereum mainnet) ─────────────────────
+const ensCache = {};
+const ensProvider = new ethers.JsonRpcProvider("https://eth.llamarpc.com");
+
+async function resolveEns(addr) {
+  const key = addr.toLowerCase();
+  if (key in ensCache) return ensCache[key];
+  ensCache[key] = null; // mark as in-flight
+  try {
+    const name = await ensProvider.lookupAddress(addr);
+    ensCache[key] = name;
+    return name;
+  } catch (_) {
+    ensCache[key] = null;
+    return null;
+  }
+}
+
+let judgeEnsTimer = null;
+function resolveJudgeEns() {
+  clearTimeout(judgeEnsTimer);
+  judgeEnsTimer = setTimeout(async () => {
+    const input = document.getElementById("judgeAddr");
+    const hint = document.getElementById("judgeEnsHint");
+    const val = input.value.trim();
+    if (val.endsWith('.eth') || val.endsWith('.xyz') || val.endsWith('.id')) {
+      hint.textContent = 'Resolving ENS name...';
+      hint.style.color = 'var(--muted)';
+      try {
+        const addr = await ensProvider.resolveName(val);
+        if (addr) {
+          hint.innerHTML = `Resolved: <b>${short(addr)}</b>`;
+          hint.style.color = 'var(--green)';
+          input.dataset.resolvedAddr = addr;
+        } else {
+          hint.textContent = 'ENS name not found.';
+          hint.style.color = 'var(--red)';
+          delete input.dataset.resolvedAddr;
+        }
+      } catch (_) {
+        hint.textContent = 'Could not resolve ENS name.';
+        hint.style.color = 'var(--red)';
+        delete input.dataset.resolvedAddr;
+      }
+    } else {
+      hint.textContent = 'The judge rules on challenges. Pick someone both parties trust.';
+      hint.style.color = 'var(--muted)';
+      delete input.dataset.resolvedAddr;
+    }
+  }, 500);
+}
+
 function setAddrLink(elId, addr, label) {
   const el = document.getElementById(elId);
   el.href = chain().explorer + "/address/" + addr;
   el.textContent = label ? `${label} (${short(addr)})` : short(addr);
+  // Async ENS lookup — update text when resolved
+  if (!label) {
+    resolveEns(addr).then(name => {
+      if (name) el.textContent = `${name} (${short(addr)})`;
+    });
+  }
 }
 
 function showMsg(el, html, type) {
