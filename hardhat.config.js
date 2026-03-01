@@ -1,5 +1,6 @@
 require("@nomicfoundation/hardhat-ethers");
 require("@nomicfoundation/hardhat-chai-matchers");
+require("@nomicfoundation/hardhat-verify");
 require("dotenv").config();
 
 module.exports = {
@@ -31,10 +32,6 @@ module.exports = {
         },
     },
     etherscan: {
-        apiKey: {
-            gnosis: process.env.ETHERSCAN_API_KEY || "",
-            polygon: process.env.POLYGONSCAN_API_KEY || "",
-            mainnet: process.env.ETHERSCAN_API_KEY || "",
-        },
+        apiKey: process.env.ETHERSCAN_API_KEY || "",
     },
 };
