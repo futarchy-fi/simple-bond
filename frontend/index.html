@@ -156,6 +156,30 @@
   footer { text-align: center; padding: 24px 0; color: var(--muted); font-size: 12px; border-top: 1px solid var(--border); margin-top: 32px; }
   footer a { color: var(--accent); text-decoration: none; }
 
+  /* ─── Notification Bell ─── */
+  .notify-bell {
+    position: relative; cursor: pointer; padding: 6px; border-radius: 6px;
+    transition: background 0.15s; display: flex; align-items: center;
+  }
+  .notify-bell:hover { background: var(--surface-hover); }
+  .notify-bell svg { width: 20px; height: 20px; fill: var(--muted); transition: fill 0.15s; }
+  .notify-bell.active svg { fill: var(--green); }
+  .notify-bell .notify-dot {
+    position: absolute; top: 4px; right: 4px; width: 7px; height: 7px;
+    background: var(--orange); border-radius: 50%; display: none;
+  }
+  .notify-bell.pending .notify-dot { display: block; }
+  .notify-panel {
+    position: absolute; top: 100%; right: 0; width: 300px; z-index: 100;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 16px; margin-top: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  }
+  .notify-panel h3 { font-size: 14px; font-weight: 600; margin-bottom: 12px; }
+  .notify-panel input[type="email"] { margin-bottom: 10px; }
+  .notify-panel .notify-status { font-size: 13px; color: var(--muted); margin-bottom: 10px; }
+  .notify-panel .notify-status .email-masked { color: var(--text); }
+  .notify-panel button { width: 100%; }
+
   /* ─── Connection Screen ─── */
   .connect-screen {
     text-align: center; padding: 60px 20px;
@@ -393,6 +417,28 @@
         <option value="137">Polygon</option>
         <option value="1">Ethereum</option>
       </select>
+      <div id="notifyBell" class="notify-bell hidden" onclick="toggleNotifyPanel(event)">
+        <svg viewBox="0 0 24 24"><path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg>
+        <span class="notify-dot"></span>
+        <div id="notifyPanel" class="notify-panel hidden" onclick="event.stopPropagation()">
+          <div id="notifyUnregistered">
+            <h3>Email Notifications</h3>
+            <p style="font-size:13px;color:var(--muted);margin-bottom:10px;">Get notified about challenges, rulings, and other bond events.</p>
+            <input type="email" id="notifyEmail" placeholder="your@email.com">
+            <button onclick="registerNotifyEmail(event)">Enable Notifications</button>
+          </div>
+          <div id="notifyVerified" class="hidden">
+            <h3>Notifications Active</h3>
+            <p class="notify-status">Sending to <span class="email-masked" id="notifyMaskedEmail"></span></p>
+            <button class="danger" onclick="unregisterNotify(event)">Disable Notifications</button>
+          </div>
+          <div id="notifyPending" class="hidden">
+            <h3>Check Your Email</h3>
+            <p class="notify-status">We sent a verification link. Click it to activate notifications.</p>
+          </div>
+          <div id="notifyMsg"></div>
+        </div>
+      </div>
       <div id="walletInfo" class="wallet-info hidden">
         <div class="address" id="walletAddr"></div>
         <div class="chain" id="chainName"></div>
@@ -743,6 +789,18 @@
 
 <script>
 // ─── Multi-Chain Config ───────────────────────────────────────────────
+// KlerosJudge adapter addresses per chain (null = not deployed)
+const KLEROS_JUDGE = {
+  100: "0x71e15D42bE15BAE117096E12C9dBA25E67d14C67",  // Deployed block 44935632
+  137: null,  // Not deployed on Polygon yet
+  1:   null,  // Not deployed on Ethereum yet
+};
+
+const KLEROS_COURT_URL = {
+  100: "https://resolve.kleros.io",
+  1:   "https://resolve.kleros.io",
+};
+
 const CHAINS = {
   100: {
     name: "Gnosis",
@@ -868,6 +926,18 @@ const BOND_ABI = [
   "event JudgeDeregistered(address indexed judge)",
   "event JudgeFeeUpdated(address indexed judge, address indexed token, uint256 newMinFee)",
   "event BondRejectedByJudge(uint256 indexed bondId, address indexed judge)",
+];
+
+const KLEROS_JUDGE_ABI = [
+  "function requestArbitration(uint256 bondId) payable returns (uint256 disputeID)",
+  "function executeRuling(uint256 disputeID)",
+  "function submitEvidence(uint256 bondId, uint256 challengeIndex, string evidence)",
+  "function getArbitrationCost() view returns (uint256)",
+  "function disputes(uint256 disputeID) view returns (uint256 bondId, uint256 challengeIndex, address requester, uint8 status, uint256 ruling)",
+  "function hasDispute(uint256 bondId, uint256 challengeIndex) view returns (bool)",
+  "function bondChallengeToDispute(uint256 bondId, uint256 challengeIndex) view returns (uint256)",
+  "event ArbitrationRequested(uint256 indexed bondId, uint256 challengeIndex, uint256 indexed disputeID, address indexed requester)",
+  "event RulingExecuted(uint256 indexed bondId, uint256 indexed disputeID, uint256 ruling)",
 ];
 
 const ERC20_ABI = [
@@ -1401,6 +1471,7 @@ function onWalletConnected() {
   judgesLoaded = false;
   refreshAllBalances();
   loadJudgeSelectOnCreate();
+  checkNotifyStatus();
 
   // Set up injected wallet event listeners
   if (connectionType === 'injected' && window.ethereum) {
@@ -2107,7 +2178,14 @@ async function loadBond() {
     document.getElementById("bId").textContent = bondId;
     document.getElementById("bStatus").innerHTML = `<span class="status-badge ${statusClass}">${status}</span>`;
     setAddrLink("bPoster", poster);
-    setAddrLink("bJudge", judge);
+    if (isKlerosJudge(judge)) {
+      const bJudgeEl = document.getElementById("bJudge");
+      bJudgeEl.textContent = "Kleros Decentralized Court";
+      bJudgeEl.href = chain().explorer + "/address/" + judge;
+      bJudgeEl.title = judge;
+    } else {
+      setAddrLink("bJudge", judge);
+    }
     const tokenDisplayName = friendlyTokenName(token, symbol);
     setAddrLink("bToken", token, tokenDisplayName);
 
@@ -2257,25 +2335,45 @@ async function loadBond() {
         btnsDiv.appendChild(concedeBtn);
       }
 
-      // Judge actions on current challenge (only in ruling window)
-      if (ua === judge.toLowerCase() && hasPendingChallenge && inRulingWindow) {
-        // Fee waiver input
-        const feeGroup = document.createElement("div");
-        feeGroup.className = "fee-waiver-group";
-        feeGroup.innerHTML = `<label>Judge fee to charge: </label><input type="text" id="feeChargedInput" value="${parseFloat(ethers.formatUnits(judgeFee, decimals)).toFixed(2)}" style="max-width:100px;display:inline-block;padding:6px 10px;font-size:13px;"> <span style="font-size:12px;color:var(--muted);">max: $${fmtJudgeFee} (enter 0 to waive)</span>`;
-        btnsDiv.parentNode.insertBefore(feeGroup, btnsDiv);
+      // Check if this bond uses KlerosJudge
+      const isKleros = isKlerosJudge(judge);
 
-        const ruleForCBtn = document.createElement("button");
-        ruleForCBtn.className = "danger";
-        ruleForCBtn.textContent = "Rule for Challenger";
-        ruleForCBtn.onclick = () => doRuleForChallenger(bondId, decimals, judgeFee);
-        btnsDiv.appendChild(ruleForCBtn);
+      if (isKleros && hasPendingChallenge) {
+        // --- Kleros-specific actions ---
+        await renderKlerosActions(btnsDiv, bondId, currentIdx, poster, judge, ua, now, rwStart, rwEnd);
+      } else if (!isKleros) {
+        // --- Normal human judge actions ---
 
-        const ruleForPBtn = document.createElement("button");
-        ruleForPBtn.className = "success";
-        ruleForPBtn.textContent = "Rule for Poster";
-        ruleForPBtn.onclick = () => doRuleForPoster(bondId, decimals, judgeFee);
-        btnsDiv.appendChild(ruleForPBtn);
+        // Judge actions on current challenge (only in ruling window)
+        if (ua === judge.toLowerCase() && hasPendingChallenge && inRulingWindow) {
+          // Fee waiver input
+          const feeGroup = document.createElement("div");
+          feeGroup.className = "fee-waiver-group";
+          feeGroup.innerHTML = `<label>Judge fee to charge: </label><input type="text" id="feeChargedInput" value="${parseFloat(ethers.formatUnits(judgeFee, decimals)).toFixed(2)}" style="max-width:100px;display:inline-block;padding:6px 10px;font-size:13px;"> <span style="font-size:12px;color:var(--muted);">max: $${fmtJudgeFee} (enter 0 to waive)</span>`;
+          btnsDiv.parentNode.insertBefore(feeGroup, btnsDiv);
+
+          const ruleForCBtn = document.createElement("button");
+          ruleForCBtn.className = "danger";
+          ruleForCBtn.textContent = "Rule for Challenger";
+          ruleForCBtn.onclick = () => doRuleForChallenger(bondId, decimals, judgeFee);
+          btnsDiv.appendChild(ruleForCBtn);
+
+          const ruleForPBtn = document.createElement("button");
+          ruleForPBtn.className = "success";
+          ruleForPBtn.textContent = "Rule for Poster";
+          ruleForPBtn.onclick = () => doRuleForPoster(bondId, decimals, judgeFee);
+          btnsDiv.appendChild(ruleForPBtn);
+        }
+
+        // Judge reject bond (anytime bond isn't settled)
+        if (ua === judge.toLowerCase()) {
+          const rejectBtn = document.createElement("button");
+          rejectBtn.className = "reject";
+          rejectBtn.textContent = "Reject Bond";
+          rejectBtn.title = "Reject — all parties refunded, no fee charged";
+          rejectBtn.onclick = () => doRejectBond(bondId);
+          btnsDiv.appendChild(rejectBtn);
+        }
       }
 
       // Poster withdraw (no pending challenges)
@@ -2285,16 +2383,6 @@ async function loadBond() {
         wdBtn.textContent = "Withdraw Bond";
         wdBtn.onclick = () => doWithdrawBond(bondId);
         btnsDiv.appendChild(wdBtn);
-      }
-
-      // Judge reject bond (anytime bond isn't settled)
-      if (ua === judge.toLowerCase()) {
-        const rejectBtn = document.createElement("button");
-        rejectBtn.className = "reject";
-        rejectBtn.textContent = "Reject Bond";
-        rejectBtn.title = "Reject — all parties refunded, no fee charged";
-        rejectBtn.onclick = () => doRejectBond(bondId);
-        btnsDiv.appendChild(rejectBtn);
       }
 
       // Timeout claim
@@ -3087,8 +3175,20 @@ function buildJudgeSelect() {
   const prev = sel.value;
   sel.innerHTML = '<option value="">Select a registered judge...</option>';
   const currentToken = getSelectedTokenAddr().toLowerCase();
+  const klerosAddr = KLEROS_JUDGE[activeChainId];
+
+  // Add Kleros Judge at the top if deployed on this chain
+  if (klerosAddr) {
+    const kOpt = document.createElement("option");
+    kOpt.value = klerosAddr;
+    kOpt.textContent = "Kleros Decentralized Court";
+    kOpt.style.fontWeight = "bold";
+    sel.appendChild(kOpt);
+  }
+
   // Deduplicate judgesList by address (race conditions can cause dupes)
   const seen = new Set();
+  if (klerosAddr) seen.add(klerosAddr.toLowerCase()); // skip Kleros in normal list (already added above)
   for (const j of judgesList) {
     const key = j.address.toLowerCase();
     if (seen.has(key)) continue;
@@ -3104,6 +3204,7 @@ function buildJudgeSelect() {
     });
     sel.appendChild(opt);
   }
+
   const customOpt = document.createElement("option");
   customOpt.value = "__custom__";
   customOpt.textContent = "Custom address...";
@@ -3154,35 +3255,59 @@ async function loadJudgeSelectOnCreate() {
   buildJudgeSelect();
 }
 
+function isKlerosJudge(addr) {
+  if (!addr) return false;
+  const kj = KLEROS_JUDGE[activeChainId];
+  return kj && addr.toLowerCase() === kj.toLowerCase();
+}
+
 function onJudgeSelectChange() {
   const val = document.getElementById("judgeSelect").value;
   const customField = document.getElementById("judgeCustomField");
   const hintEl = document.getElementById("judgeMinFeeHint");
+  const rulingField = document.getElementById("advRulingBufferField");
 
   if (val === "__custom__") {
     customField.classList.remove("hidden");
     hintEl.textContent = "Enter a registered judge address. The judge must be registered on-chain.";
+    // Restore ruling buffer controls
+    rulingField.querySelectorAll(".ruling-preset").forEach(b => b.disabled = false);
   } else if (val) {
     customField.classList.add("hidden");
-    const j = judgesList.find(j => j.address.toLowerCase() === val.toLowerCase());
-    if (j) {
-      const feeStr = formatJudgeFeeForToken(j);
-      const currentToken = getSelectedTokenAddr().toLowerCase();
-      const tok = getAllTokens().find(t => t.address.toLowerCase() === currentToken);
-      const symbol = tok ? tok.symbol : "token";
-      hintEl.textContent = `Minimum fee: ${feeStr} ${symbol} per ruling.`;
-      // Auto-set judge fee: use max(5% of bond, judge minimum)
+
+    // Check if this is the KlerosJudge adapter
+    if (isKlerosJudge(val)) {
+      hintEl.innerHTML = 'Disputes resolved by <strong>Kleros decentralized court</strong> (3-14 days typical). Arbitration cost paid in xDAI when requesting a ruling.';
+      // Lock ruling buffer to 90 days for Kleros
+      setRulingBuffer(90);
+      rulingField.querySelectorAll(".ruling-preset").forEach(b => b.disabled = true);
+      // Default judgeFee to 0 for Kleros (adapter collects fees separately)
       const feeEl = document.getElementById("judgeFee");
-      if (!feeEl.dataset.userEdited) {
-        const fee = j.tokenFees.get(currentToken);
-        const judgeMin = (fee && fee > 0n) ? parseFloat(ethers.formatUnits(fee, tok ? (tok.decimals || 18) : 18)) : 0;
-        const bondVal = parseFloat(document.getElementById("bondAmount").value) || 0;
-        const defaultFee = bondVal * 0.05;
-        feeEl.value = Math.max(defaultFee, judgeMin).toFixed(2);
+      if (!feeEl.dataset.userEdited) feeEl.value = "0";
+    } else {
+      // Normal judge — restore ruling buffer controls
+      rulingField.querySelectorAll(".ruling-preset").forEach(b => b.disabled = false);
+      const j = judgesList.find(j => j.address.toLowerCase() === val.toLowerCase());
+      if (j) {
+        const feeStr = formatJudgeFeeForToken(j);
+        const currentToken = getSelectedTokenAddr().toLowerCase();
+        const tok = getAllTokens().find(t => t.address.toLowerCase() === currentToken);
+        const symbol = tok ? tok.symbol : "token";
+        hintEl.textContent = `Minimum fee: ${feeStr} ${symbol} per ruling.`;
+        // Auto-set judge fee: use max(5% of bond, judge minimum)
+        const feeEl = document.getElementById("judgeFee");
+        if (!feeEl.dataset.userEdited) {
+          const fee = j.tokenFees.get(currentToken);
+          const judgeMin = (fee && fee > 0n) ? parseFloat(ethers.formatUnits(fee, tok ? (tok.decimals || 18) : 18)) : 0;
+          const bondVal = parseFloat(document.getElementById("bondAmount").value) || 0;
+          const defaultFee = bondVal * 0.05;
+          feeEl.value = Math.max(defaultFee, judgeMin).toFixed(2);
+        }
       }
     }
   } else {
     customField.classList.add("hidden");
+    rulingField.querySelectorAll(".ruling-preset").forEach(b => b.disabled = false);
     hintEl.textContent = "The judge rules on challenges. Pick someone both parties trust.";
   }
 }
@@ -3352,9 +3477,307 @@ window.addEventListener("DOMContentLoaded", async () => {
     showConnectScreen();
   }
 
+  // Handle notification query params
+  const notifyParam = params.get("notify");
+  if (notifyParam === "verified") {
+    showNotifyToast("Email verified! You'll receive bond notifications now.", "success");
+  } else if (notifyParam === "unsubscribed") {
+    showNotifyToast("You've been unsubscribed from notifications.", "info");
+  }
+
   // Save form on unload
   window.addEventListener("beforeunload", saveForm);
 });
+
+// ─── Notification System ─────────────────────────────────────────────
+const NOTIFY_API = "/api/notify";
+
+function showNotifyToast(msg, type) {
+  const el = document.createElement("div");
+  el.className = `msg msg-${type === "success" ? "success" : type === "error" ? "error" : "info"}`;
+  el.style.cssText = "position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:1000;max-width:400px;animation:fadeIn 0.3s;";
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 5000);
+}
+
+function toggleNotifyPanel(e) {
+  e.stopPropagation();
+  const panel = document.getElementById("notifyPanel");
+  panel.classList.toggle("hidden");
+}
+
+// Close panel on outside click
+document.addEventListener("click", (e) => {
+  const panel = document.getElementById("notifyPanel");
+  const bell = document.getElementById("notifyBell");
+  if (panel && !panel.contains(e.target) && !bell.contains(e.target)) {
+    panel.classList.add("hidden");
+  }
+});
+
+async function checkNotifyStatus() {
+  if (!userAddr) return;
+  const bell = document.getElementById("notifyBell");
+  bell.classList.remove("hidden");
+
+  try {
+    const res = await fetch(`${NOTIFY_API}/status?address=${userAddr}&chain=${activeChainId}`);
+    const data = await res.json();
+
+    document.getElementById("notifyUnregistered").classList.add("hidden");
+    document.getElementById("notifyVerified").classList.add("hidden");
+    document.getElementById("notifyPending").classList.add("hidden");
+
+    bell.classList.remove("active", "pending");
+
+    if (data.registered && data.verified) {
+      document.getElementById("notifyVerified").classList.remove("hidden");
+      document.getElementById("notifyMaskedEmail").textContent = data.email;
+      bell.classList.add("active");
+    } else if (data.registered && !data.verified) {
+      document.getElementById("notifyPending").classList.remove("hidden");
+      bell.classList.add("pending");
+    } else {
+      document.getElementById("notifyUnregistered").classList.remove("hidden");
+    }
+  } catch {
+    // API not available yet — show registration form
+    document.getElementById("notifyUnregistered").classList.remove("hidden");
+    document.getElementById("notifyVerified").classList.add("hidden");
+    document.getElementById("notifyPending").classList.add("hidden");
+  }
+}
+
+async function registerNotifyEmail(e) {
+  e.stopPropagation();
+  const email = document.getElementById("notifyEmail").value.trim();
+  if (!email || !email.includes("@")) {
+    showNotifyMsg("Please enter a valid email address.", "error");
+    return;
+  }
+  if (!signer) {
+    showNotifyMsg("Please connect your wallet first.", "error");
+    return;
+  }
+
+  const timestamp = Math.floor(Date.now() / 1000);
+  const message = `Enable SimpleBond notifications for ${email} on chain ${activeChainId}. Timestamp: ${timestamp}`;
+
+  let signature;
+  try {
+    signature = await signer.signMessage(message);
+  } catch (err) {
+    showNotifyMsg("Signature rejected.", "error");
+    return;
+  }
+
+  try {
+    const res = await fetch(`${NOTIFY_API}/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ address: userAddr, email, chainId: activeChainId, signature, timestamp }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      showNotifyMsg("Verification email sent! Check your inbox.", "success");
+      checkNotifyStatus();
+    } else {
+      showNotifyMsg(data.error || "Registration failed.", "error");
+    }
+  } catch {
+    showNotifyMsg("Could not reach notification server.", "error");
+  }
+}
+
+async function unregisterNotify(e) {
+  e.stopPropagation();
+  // For unsubscribe we just point them to a POST or we can use the status API info
+  showNotifyMsg("Use the unsubscribe link in any notification email.", "info");
+}
+
+function showNotifyMsg(msg, type) {
+  const el = document.getElementById("notifyMsg");
+  el.className = `msg msg-${type === "success" ? "success" : type === "error" ? "error" : "info"}`;
+  el.textContent = msg;
+  el.style.display = "block";
+  setTimeout(() => { el.style.display = "none"; }, 4000);
+}
+
+// ─── Kleros Judge Integration ────────────────────────────────────────
+
+function getKlerosJudgeContract(signerOrProvider) {
+  const addr = KLEROS_JUDGE[activeChainId];
+  if (!addr) return null;
+  return new ethers.Contract(addr, KLEROS_JUDGE_ABI, signerOrProvider);
+}
+
+function getKlerosJudgeReadContract() {
+  const addr = KLEROS_JUDGE[activeChainId];
+  if (!addr) return null;
+  const readProvider = new ethers.JsonRpcProvider(chain().rpc);
+  return new ethers.Contract(addr, KLEROS_JUDGE_ABI, readProvider);
+}
+
+/**
+ * Render Kleros-specific action buttons in the bond detail view.
+ * Called when the bond's judge is the KlerosJudge adapter.
+ */
+async function renderKlerosActions(btnsDiv, bondId, challengeIndex, poster, judge, ua, now, rwStart, rwEnd) {
+  const kjRead = getKlerosJudgeReadContract();
+  if (!kjRead) {
+    const note = document.createElement("div");
+    note.className = "msg msg-info";
+    note.textContent = "Kleros Judge not deployed on this chain yet.";
+    btnsDiv.appendChild(note);
+    return;
+  }
+
+  try {
+    const disputeExists = await kjRead.hasDispute(bondId, challengeIndex);
+
+    if (!disputeExists) {
+      // No dispute yet — show "Request Kleros Arbitration" button
+      if (ua === poster.toLowerCase() || await isCurrentChallenger(bondId, challengeIndex, ua)) {
+        const cost = await kjRead.getArbitrationCost();
+        const costStr = parseFloat(ethers.formatEther(cost)).toFixed(4);
+
+        const infoDiv = document.createElement("div");
+        infoDiv.style.cssText = "font-size:13px;color:var(--muted);margin-bottom:8px;";
+        infoDiv.textContent = `Arbitration cost: ${costStr} xDAI (paid to Kleros jurors)`;
+        btnsDiv.appendChild(infoDiv);
+
+        const arbBtn = document.createElement("button");
+        arbBtn.className = "primary";
+        arbBtn.textContent = "Request Kleros Arbitration";
+        arbBtn.onclick = () => doRequestKlerosArbitration(bondId, cost);
+        btnsDiv.appendChild(arbBtn);
+      }
+    } else {
+      // Dispute exists — show status
+      const disputeID = await kjRead.bondChallengeToDispute(bondId, challengeIndex);
+      const d = await kjRead.disputes(disputeID);
+      const dStatus = Number(d.status); // 0=None, 1=Active, 2=Ruled, 3=Executed
+
+      const courtUrl = KLEROS_COURT_URL[activeChainId];
+
+      if (dStatus === 1) {
+        // Active — waiting for Kleros ruling
+        const statusDiv = document.createElement("div");
+        statusDiv.className = "msg msg-info";
+        statusDiv.innerHTML = `Dispute #${disputeID} — <strong>In Progress</strong>`;
+        if (courtUrl) statusDiv.innerHTML += ` | <a href="${courtUrl}/cases/${disputeID}" target="_blank" rel="noopener">View on Kleros Court</a>`;
+        btnsDiv.appendChild(statusDiv);
+
+        // Evidence submission
+        const evDiv = document.createElement("div");
+        evDiv.style.cssText = "margin-top:10px;";
+        evDiv.innerHTML = `
+          <label style="font-size:13px;">Submit Evidence (IPFS URI or text):</label>
+          <div style="display:flex;gap:8px;margin-top:4px;">
+            <input type="text" id="klerosEvidenceInput" placeholder="/ipfs/Qm... or evidence text" style="flex:1;padding:6px 10px;font-size:13px;">
+            <button class="secondary" onclick="doSubmitKlerosEvidence(${bondId}, ${challengeIndex})">Submit</button>
+          </div>`;
+        btnsDiv.appendChild(evDiv);
+
+      } else if (dStatus === 2) {
+        // Ruled but not executed
+        const rulingNames = { 0: "Refused to Arbitrate (Refund All)", 1: "Poster Wins", 2: "Challenger Wins" };
+        const rulingText = rulingNames[Number(d.ruling)] || `Unknown (${d.ruling})`;
+
+        const statusDiv = document.createElement("div");
+        statusDiv.className = "msg msg-info";
+        statusDiv.innerHTML = `Dispute #${disputeID} — Ruling: <strong>${rulingText}</strong>`;
+        if (courtUrl) statusDiv.innerHTML += ` | <a href="${courtUrl}/cases/${disputeID}" target="_blank" rel="noopener">View on Kleros</a>`;
+        btnsDiv.appendChild(statusDiv);
+
+        // Execute button (enabled when in ruling window)
+        const inWindow = now >= rwStart && now <= rwEnd;
+        const execBtn = document.createElement("button");
+        execBtn.className = "success";
+        execBtn.textContent = inWindow ? "Execute Ruling" : "Execute Ruling (waiting for ruling window)";
+        execBtn.disabled = !inWindow;
+        execBtn.onclick = () => doExecuteKlerosRuling(Number(disputeID));
+        btnsDiv.appendChild(execBtn);
+
+        if (!inWindow && now < rwStart) {
+          const waitNote = document.createElement("div");
+          waitNote.style.cssText = "font-size:12px;color:var(--muted);margin-top:4px;";
+          waitNote.textContent = `Ruling window opens: ${new Date(Number(rwStart) * 1000).toLocaleString()}`;
+          btnsDiv.appendChild(waitNote);
+        }
+
+      } else if (dStatus === 3) {
+        // Already executed
+        const statusDiv = document.createElement("div");
+        statusDiv.className = "msg msg-success";
+        statusDiv.textContent = `Dispute #${disputeID} — Ruling executed.`;
+        btnsDiv.appendChild(statusDiv);
+      }
+    }
+  } catch (err) {
+    const errDiv = document.createElement("div");
+    errDiv.className = "msg msg-error";
+    errDiv.textContent = "Error loading Kleros dispute status: " + (err.reason || err.message);
+    btnsDiv.appendChild(errDiv);
+  }
+}
+
+async function isCurrentChallenger(bondId, challengeIndex, ua) {
+  try {
+    const readProvider = new ethers.JsonRpcProvider(chain().rpc);
+    const readContract = new ethers.Contract(chain().contract, BOND_ABI, readProvider);
+    const c = await readContract.getChallenge(bondId, challengeIndex);
+    return c.challenger.toLowerCase() === ua.toLowerCase();
+  } catch { return false; }
+}
+
+async function doRequestKlerosArbitration(bondId, cost) {
+  const msg = document.getElementById("viewMsg");
+  if (!signer) { showMsg(msg, "Connect wallet first", "error"); return; }
+  try {
+    showMsg(msg, "Requesting Kleros arbitration...", "info");
+    const kj = getKlerosJudgeContract(signer);
+    const tx = await kj.requestArbitration(bondId, { value: cost });
+    await waitForTx(tx);
+    showMsg(msg, "Kleros dispute created! Jurors will be drawn soon.", "success");
+    loadBond();
+  } catch (err) {
+    showMsg(msg, err.reason || err.message, "error");
+  }
+}
+
+async function doExecuteKlerosRuling(disputeID) {
+  const msg = document.getElementById("viewMsg");
+  if (!signer) { showMsg(msg, "Connect wallet first", "error"); return; }
+  try {
+    showMsg(msg, "Executing Kleros ruling...", "info");
+    const kj = getKlerosJudgeContract(signer);
+    const tx = await kj.executeRuling(disputeID);
+    await waitForTx(tx);
+    showMsg(msg, "Ruling executed successfully.", "success");
+    loadBond();
+  } catch (err) {
+    showMsg(msg, err.reason || err.message, "error");
+  }
+}
+
+async function doSubmitKlerosEvidence(bondId, challengeIndex) {
+  const msg = document.getElementById("viewMsg");
+  if (!signer) { showMsg(msg, "Connect wallet first", "error"); return; }
+  const evidence = document.getElementById("klerosEvidenceInput")?.value?.trim();
+  if (!evidence) { showMsg(msg, "Enter evidence text or IPFS URI", "error"); return; }
+  try {
+    showMsg(msg, "Submitting evidence...", "info");
+    const kj = getKlerosJudgeContract(signer);
+    const tx = await kj.submitEvidence(bondId, challengeIndex, evidence);
+    await waitForTx(tx);
+    showMsg(msg, "Evidence submitted.", "success");
+    document.getElementById("klerosEvidenceInput").value = "";
+  } catch (err) {
+    showMsg(msg, err.reason || err.message, "error");
+  }
+}
 </script>
 </body>
 </html>
