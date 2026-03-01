@@ -1816,28 +1816,28 @@ async function smartCreateBond() {
 
         updateStepStatus(stepperEl, stepIdx, 'done');
 
-        // Hide the form, show success prominently
-        const formEl = document.getElementById("createForm");
+        // Show success prominently — hide form fields, show success card in msg
+        document.querySelectorAll('#createForm .form-group, #createForm .mode-toggle, #createBtn, #createStepper').forEach(el => el.style.display = 'none');
         if (bondId !== null) {
-          formEl.innerHTML = `<div class="success-card">
+          msg.innerHTML = `<div class="success-card">
             <div class="sc-label">Bond created!</div>
             <div class="sc-id">Bond #${bondId}</div>
             <div class="sc-actions">
               <button class="success" onclick="viewBondById(${bondId})">View Bond</button>
               <button class="secondary" onclick="copyBondLink(${bondId})">Copy Link</button>
-              <button class="secondary" onclick="resetCreateForm()">Create Another</button>
+              <button class="secondary" onclick="window.location.reload()">Create Another</button>
             </div>
           </div>`;
         } else {
-          formEl.innerHTML = `<div class="success-card">
+          msg.innerHTML = `<div class="success-card">
             <div class="sc-label">Bond created!</div>
             <div class="sc-id">Check tx for ID</div>
             <div class="sc-actions">
-              <button class="secondary" onclick="resetCreateForm()">Create Another</button>
+              <button class="secondary" onclick="window.location.reload()">Create Another</button>
             </div>
           </div>`;
         }
-        formEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        msg.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
         tokenCache = {};
         myBondsLoaded = false;
@@ -2478,7 +2478,7 @@ async function refreshAllBalances() {
   await Promise.all(promises);
   buildTokenSelect();
   const sel = document.getElementById("tokenSelect");
-  if (!sel.value) sel.value = chain().defaultToken.address;
+  if (sel && !sel.value) sel.value = chain().defaultToken.address;
   updateBalanceDisplay(getSelectedToken());
 }
 
@@ -2594,13 +2594,6 @@ async function loadMyBonds() {
     loadingEl.classList.add("hidden");
     listEl.innerHTML = `<div class="msg msg-error">Error loading bonds: ${err.message}</div>`;
   }
-}
-
-// ─── Reset create form (after successful creation) ───────────────────
-function resetCreateForm() {
-  // Rebuild the form by reloading the page (simplest way to restore all HTML)
-  sessionStorage.removeItem("bondForm");
-  window.location.reload();
 }
 
 // ─── Form persistence ─────────────────────────────────────────────────
