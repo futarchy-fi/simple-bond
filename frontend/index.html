@@ -1604,7 +1604,7 @@ function updateStepStatus(container, idx, status) {
 async function waitForTx(tx, retries = 5) {
   for (let i = 0; i < retries; i++) {
     try {
-      const receipt = await waitForTx(tx);
+      const receipt = await tx.wait();
       if (receipt) return receipt;
     } catch (err) {
       if (i === retries - 1) throw err;
@@ -1631,12 +1631,14 @@ async function ensureApproval(tokenAddr, amount, spender) {
   const token = new ethers.Contract(tokenAddr, ERC20_ABI, signer);
   const allowance = await token.allowance(userAddr, spender);
   if (allowance >= amount) return;
-  const tx = await token.approve(spender, amount);
-  await waitForTx(tx);
+  // Approve max so user doesn't need to re-approve for future txs
+  const tx = await token.approve(spender, ethers.MaxUint256);
+  const receipt = await waitForTx(tx);
+  if (!receipt) throw new Error("Approval transaction failed — please try again");
   // Update cache
   const key = tokenAddr.toLowerCase();
   if (tokenCache[key]) {
-    tokenCache[key].allowance = await token.allowance(userAddr, spender);
+    tokenCache[key].allowance = ethers.MaxUint256;
   }
 }
 
