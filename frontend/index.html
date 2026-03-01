@@ -378,8 +378,8 @@
     <h1>SimpleBond <span>v3 — by Futarchy</span></h1>
     <div class="header-right">
       <select id="chainSelect" class="chain-select" onchange="switchChain(this.value)">
-        <option value="100">Gnosis</option>
         <option value="137">Polygon</option>
+        <option value="100">Gnosis</option>
         <option value="1">Ethereum</option>
       </select>
       <div id="walletInfo" class="wallet-info hidden">
@@ -675,7 +675,7 @@
 
   <footer>
     <a href="https://github.com/futarchy-fi/simple-bond" target="_blank">GitHub</a>
-    &nbsp;&middot;&nbsp; <span id="footerChain">Gnosis Chain</span>
+    &nbsp;&middot;&nbsp; <span id="footerChain">Polygon</span>
   </footer>
 </div>
 
@@ -747,7 +747,7 @@ const CHAINS = {
   },
 };
 
-let activeChainId = 100;
+let activeChainId = 137;
 function chain() { return CHAINS[activeChainId]; }
 
 const WEB3AUTH_CLIENT_ID = "BPt1ahKWn4CSezBP6MhIZQQICRcOjt6epWT9jQ45M4sGQyO3jimvzjdBN93ukw2tBR_4PyRBI94FsFLZBfYQFWo";
