@@ -1881,7 +1881,7 @@ async function loadBond() {
   msg.innerHTML = "";
 
   try {
-    const readProvider = provider || new ethers.JsonRpcProvider(chain().rpc);
+    const readProvider = new ethers.JsonRpcProvider(chain().rpc);
     const readContract = new ethers.Contract(chain().contract, BOND_ABI, readProvider);
 
     const nextId = await readContract.nextBondId();
