@@ -1,0 +1,22 @@
+[Unit]
+Description=SimpleBond Notification API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Replace with your deploy user and repo path.
+User=simplebond
+WorkingDirectory=/opt/simple-bond
+ExecStart=/usr/bin/node backend/api.mjs
+Restart=on-failure
+RestartSec=10
+Environment=NODE_ENV=production
+Environment=BOND_NOTIFY_HOST=127.0.0.1
+Environment=BOND_NOTIFY_PORT=3200
+Environment=BOND_NOTIFY_BASE_URL=https://api.bond.futarchy.ai
+Environment=SIMPLE_BOND_FRONTEND_URL=https://bond.futarchy.ai
+EnvironmentFile=-/etc/simple-bond/bond-notify.env
+
+[Install]
+WantedBy=multi-user.target
