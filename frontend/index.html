@@ -797,6 +797,13 @@ const KLEROS_JUDGE = {
   1:   null,  // Not deployed on Ethereum yet
 };
 
+// KlerosJudgeV2 adapter addresses per chain (null = not deployed)
+const KLEROS_JUDGE_V2 = {
+  100: "0x2b0f8e598BCF1d3cc63162960F75D9ae3AE1649e",  // Deployed block 44950825
+  137: null,
+  1:   null,
+};
+
 const KLEROS_COURT_URL = {
   100: "https://resolve.kleros.io",
   1:   "https://resolve.kleros.io",
@@ -939,6 +946,27 @@ const KLEROS_JUDGE_ABI = [
   "function bondChallengeToDispute(uint256 bondId, uint256 challengeIndex) view returns (uint256)",
   "event ArbitrationRequested(uint256 indexed bondId, uint256 challengeIndex, uint256 indexed disputeID, address indexed requester)",
   "event RulingExecuted(uint256 indexed bondId, uint256 indexed disputeID, uint256 ruling)",
+];
+
+const KLEROS_JUDGE_V2_ABI = [
+  "function fundBond(uint256 bondId) payable",
+  "function withdrawBondFunding(uint256 bondId)",
+  "function triggerArbitration(uint256 bondId) payable returns (uint256 disputeId)",
+  "function executeRuling(uint256 bondId, uint256 challengeIndex)",
+  "function claimFee(uint256 bondId, uint256 challengeIndex)",
+  "function submitEvidence(uint256 bondId, uint256 challengeIndex, string evidence)",
+  "function transferOwnership(address newOwner)",
+  "function getArbitrationCost() view returns (uint256)",
+  "function getBondDispute(uint256 bondId, uint256 challengeIndex) view returns (address funder, uint256 xdaiPaid, uint256 disputeId, uint8 status, uint256 ruling, bool feeClaimed)",
+  "function isWithinGracePeriod(uint256 bondId) view returns (bool)",
+  "function bondXdaiBalance(uint256 bondId) view returns (uint256)",
+  "function hasDispute(uint256 bondId, uint256 challengeIndex) view returns (bool)",
+  "function ownerGracePeriod() view returns (uint256)",
+  "function owner() view returns (address)",
+  "event ArbitrationTriggered(uint256 indexed bondId, uint256 challengeIndex, uint256 indexed disputeId, address indexed funder)",
+  "event RulingExecuted(uint256 indexed bondId, uint256 indexed disputeId, uint256 ruling)",
+  "event FeeClaimed(uint256 indexed bondId, uint256 challengeIndex, address indexed funder, address indexed token, uint256 amount)",
+  "event BondFunded(uint256 indexed bondId, address indexed depositor, uint256 amount)",
 ];
 
 const ERC20_ABI = [
@@ -2179,7 +2207,12 @@ async function loadBond() {
     document.getElementById("bId").textContent = bondId;
     document.getElementById("bStatus").innerHTML = `<span class="status-badge ${statusClass}">${status}</span>`;
     setAddrLink("bPoster", poster);
-    if (isKlerosJudge(judge)) {
+    if (isKlerosJudgeV2(judge)) {
+      const bJudgeEl = document.getElementById("bJudge");
+      bJudgeEl.textContent = "Kleros Decentralized Court (V2)";
+      bJudgeEl.href = "?chain=" + chain().name.toLowerCase() + "&tab=kleros";
+      bJudgeEl.title = judge + " — Permissionless adapter with keeper economics";
+    } else if (isKlerosJudge(judge)) {
       const bJudgeEl = document.getElementById("bJudge");
       bJudgeEl.textContent = "Kleros Decentralized Court";
       bJudgeEl.href = chain().explorer + "/address/" + judge;
@@ -2336,13 +2369,17 @@ async function loadBond() {
         btnsDiv.appendChild(concedeBtn);
       }
 
-      // Check if this bond uses KlerosJudge
+      // Check if this bond uses a Kleros adapter
+      const isKlerosV2 = isKlerosJudgeV2(judge);
       const isKleros = isKlerosJudge(judge);
 
-      if (isKleros && hasPendingChallenge) {
-        // --- Kleros-specific actions ---
+      if (isKlerosV2 && hasPendingChallenge) {
+        // --- Kleros V2 actions (keeper economics) ---
+        await renderKlerosV2Actions(btnsDiv, bondId, currentIdx, poster, judge, ua, now, rwStart, rwEnd);
+      } else if (isKleros && hasPendingChallenge) {
+        // --- Kleros V1 actions ---
         await renderKlerosActions(btnsDiv, bondId, currentIdx, poster, judge, ua, now, rwStart, rwEnd);
-      } else if (!isKleros) {
+      } else if (!isKlerosV2 && !isKleros) {
         // --- Normal human judge actions ---
 
         // Judge actions on current challenge (only in ruling window)
@@ -3178,11 +3215,21 @@ function buildJudgeSelect() {
   const currentToken = getSelectedTokenAddr().toLowerCase();
   const klerosAddr = KLEROS_JUDGE[activeChainId];
 
-  // Add Kleros Judge at the top if deployed on this chain
+  // Add Kleros Judge V2 at the top if deployed on this chain
+  const klerosV2Addr = KLEROS_JUDGE_V2[activeChainId];
+  if (klerosV2Addr) {
+    const k2Opt = document.createElement("option");
+    k2Opt.value = klerosV2Addr;
+    k2Opt.textContent = "Kleros Decentralized Court (V2 — Keeper Economics)";
+    k2Opt.style.fontWeight = "bold";
+    sel.appendChild(k2Opt);
+  }
+
+  // Add Kleros Judge V1 if deployed on this chain
   if (klerosAddr) {
     const kOpt = document.createElement("option");
     kOpt.value = klerosAddr;
-    kOpt.textContent = "Kleros Decentralized Court";
+    kOpt.textContent = "Kleros Decentralized Court (V1)";
     kOpt.style.fontWeight = "bold";
     sel.appendChild(kOpt);
   }
@@ -3190,6 +3237,7 @@ function buildJudgeSelect() {
   // Deduplicate judgesList by address (race conditions can cause dupes)
   const seen = new Set();
   if (klerosAddr) seen.add(klerosAddr.toLowerCase()); // skip Kleros in normal list (already added above)
+  if (klerosV2Addr) seen.add(klerosV2Addr.toLowerCase());
   for (const j of judgesList) {
     const key = j.address.toLowerCase();
     if (seen.has(key)) continue;
@@ -3262,6 +3310,16 @@ function isKlerosJudge(addr) {
   return kj && addr.toLowerCase() === kj.toLowerCase();
 }
 
+function isKlerosJudgeV2(addr) {
+  if (!addr) return false;
+  const kj2 = KLEROS_JUDGE_V2[activeChainId];
+  return kj2 && addr.toLowerCase() === kj2.toLowerCase();
+}
+
+function isAnyKlerosJudge(addr) {
+  return isKlerosJudge(addr) || isKlerosJudgeV2(addr);
+}
+
 function onJudgeSelectChange() {
   const val = document.getElementById("judgeSelect").value;
   const customField = document.getElementById("judgeCustomField");
@@ -3276,13 +3334,31 @@ function onJudgeSelectChange() {
   } else if (val) {
     customField.classList.add("hidden");
 
-    // Check if this is the KlerosJudge adapter
-    if (isKlerosJudge(val)) {
+    // Check if this is a Kleros adapter
+    if (isKlerosJudgeV2(val)) {
+      hintEl.innerHTML = 'Disputes resolved by <strong>Kleros decentralized court (V2)</strong> — permissionless with keeper economics. A keeper fronts xDAI to Kleros and earns the judge fee as compensation. Set judge fee above current Kleros cost to attract keepers.';
+      setRulingBuffer(90);
+      rulingField.querySelectorAll(".ruling-preset").forEach(b => b.disabled = true);
+      // For V2, suggest a meaningful judge fee (keeper compensation)
+      const feeEl = document.getElementById("judgeFee");
+      if (!feeEl.dataset.userEdited) {
+        // Try to show current Kleros cost as hint
+        try {
+          const kj2Read = getKlerosJudgeV2ReadContract();
+          if (kj2Read) {
+            kj2Read.getArbitrationCost().then(cost => {
+              const costStr = parseFloat(ethers.formatEther(cost)).toFixed(4);
+              hintEl.innerHTML += `<br><small>Current Kleros cost: ~${costStr} xDAI. Set fee higher to incentivize keepers.</small>`;
+            }).catch(() => {});
+          }
+        } catch (_) {}
+      }
+    } else if (isKlerosJudge(val)) {
       hintEl.innerHTML = 'Disputes resolved by <strong>Kleros decentralized court</strong> (3-14 days typical). Arbitration cost paid in xDAI when requesting a ruling.';
       // Lock ruling buffer to 90 days for Kleros
       setRulingBuffer(90);
       rulingField.querySelectorAll(".ruling-preset").forEach(b => b.disabled = true);
-      // Default judgeFee to 0 for Kleros (adapter collects fees separately)
+      // Default judgeFee to 0 for Kleros V1 (adapter collects fees separately)
       const feeEl = document.getElementById("judgeFee");
       if (!feeEl.dataset.userEdited) feeEl.value = "0";
     } else {
@@ -3780,6 +3856,264 @@ async function doSubmitKlerosEvidence(bondId, challengeIndex) {
     await waitForTx(tx);
     showMsg(msg, "Evidence submitted.", "success");
     document.getElementById("klerosEvidenceInput").value = "";
+  } catch (err) {
+    showMsg(msg, err.reason || err.message, "error");
+  }
+}
+
+// ─── Kleros Judge V2 Integration ────────────────────────────────────
+
+function getKlerosJudgeV2Contract(signerOrProvider) {
+  const addr = KLEROS_JUDGE_V2[activeChainId];
+  if (!addr) return null;
+  return new ethers.Contract(addr, KLEROS_JUDGE_V2_ABI, signerOrProvider);
+}
+
+function getKlerosJudgeV2ReadContract() {
+  const addr = KLEROS_JUDGE_V2[activeChainId];
+  if (!addr) return null;
+  const readProvider = new ethers.JsonRpcProvider(chain().rpc);
+  return new ethers.Contract(addr, KLEROS_JUDGE_V2_ABI, readProvider);
+}
+
+/**
+ * Render Kleros V2 action buttons in the bond detail view.
+ * Shows keeper economics: pre-funding, grace period, fee claiming.
+ */
+async function renderKlerosV2Actions(btnsDiv, bondId, challengeIndex, poster, judge, ua, now, rwStart, rwEnd) {
+  const kj2Read = getKlerosJudgeV2ReadContract();
+  if (!kj2Read) {
+    const note = document.createElement("div");
+    note.className = "msg msg-info";
+    note.textContent = "Kleros Judge V2 not deployed on this chain yet.";
+    btnsDiv.appendChild(note);
+    return;
+  }
+
+  try {
+    const disputeExists = await kj2Read.hasDispute(bondId, challengeIndex);
+
+    if (!disputeExists) {
+      // --- No dispute yet ---
+      const cost = await kj2Read.getArbitrationCost();
+      const costStr = parseFloat(ethers.formatEther(cost)).toFixed(4);
+      const preFunded = await kj2Read.bondXdaiBalance(bondId);
+      const preFundedStr = parseFloat(ethers.formatEther(preFunded)).toFixed(4);
+      const withinGrace = await kj2Read.isWithinGracePeriod(bondId);
+      const adapterOwner = await kj2Read.owner();
+      const isOwner = ua === adapterOwner.toLowerCase();
+
+      // Info section
+      const infoDiv = document.createElement("div");
+      infoDiv.style.cssText = "font-size:13px;color:var(--muted);margin-bottom:8px;";
+      infoDiv.innerHTML = `Kleros arbitration cost: <strong>${costStr} xDAI</strong> | Pre-funded: <strong>${preFundedStr} xDAI</strong>`;
+      if (withinGrace) {
+        infoDiv.innerHTML += ` | <span style="color:var(--warning);">Owner grace period active</span>`;
+      } else {
+        infoDiv.innerHTML += ` | <span style="color:var(--success);">Open — anyone can trigger</span>`;
+      }
+      btnsDiv.appendChild(infoDiv);
+
+      // Fund Bond input + button (anyone can fund)
+      const fundDiv = document.createElement("div");
+      fundDiv.style.cssText = "display:flex;gap:8px;margin-bottom:8px;align-items:center;";
+      fundDiv.innerHTML = `
+        <input type="text" id="fundBondV2Amount" placeholder="xDAI amount" style="max-width:120px;padding:6px 10px;font-size:13px;">
+        <button class="secondary" onclick="doFundBondV2(${bondId})">Fund Bond</button>
+        <span style="font-size:12px;color:var(--muted);">Pre-deposit xDAI for arbitration</span>`;
+      btnsDiv.appendChild(fundDiv);
+
+      // Trigger Arbitration button
+      const canTrigger = !withinGrace || isOwner;
+      const needsValue = preFunded < cost;
+
+      const trigBtn = document.createElement("button");
+      trigBtn.className = "primary";
+      if (canTrigger) {
+        if (needsValue) {
+          const needed = cost - preFunded;
+          const neededStr = parseFloat(ethers.formatEther(needed)).toFixed(4);
+          trigBtn.textContent = `Trigger Arbitration (${neededStr} xDAI)`;
+          trigBtn.onclick = () => doTriggerArbitrationV2(bondId, needed);
+        } else {
+          trigBtn.textContent = "Trigger Arbitration (pre-funded)";
+          trigBtn.onclick = () => doTriggerArbitrationV2(bondId, 0n);
+        }
+      } else {
+        trigBtn.textContent = "Trigger Arbitration (owner only during grace)";
+        trigBtn.disabled = true;
+      }
+      btnsDiv.appendChild(trigBtn);
+
+    } else {
+      // --- Dispute exists ---
+      const d = await kj2Read.getBondDispute(bondId, challengeIndex);
+      const dStatus = Number(d.status); // 0=None, 1=Active, 2=Ruled, 3=Executed
+      const courtUrl = KLEROS_COURT_URL[activeChainId];
+      const disputeId = Number(d.disputeId);
+
+      // Funder info
+      const funderDiv = document.createElement("div");
+      funderDiv.style.cssText = "font-size:12px;color:var(--muted);margin-bottom:6px;";
+      funderDiv.textContent = `Funder: ${d.funder.slice(0, 8)}...${d.funder.slice(-6)} | xDAI paid: ${parseFloat(ethers.formatEther(d.xdaiPaid)).toFixed(4)}`;
+      btnsDiv.appendChild(funderDiv);
+
+      if (dStatus === 1) {
+        // Active — waiting for Kleros ruling
+        const statusDiv = document.createElement("div");
+        statusDiv.className = "msg msg-info";
+        statusDiv.innerHTML = `Dispute #${disputeId} — <strong>In Progress</strong>`;
+        if (courtUrl) statusDiv.innerHTML += ` | <a href="${courtUrl}/cases/${disputeId}" target="_blank" rel="noopener">View on Kleros Court</a>`;
+        btnsDiv.appendChild(statusDiv);
+
+        // Evidence submission
+        const evDiv = document.createElement("div");
+        evDiv.style.cssText = "margin-top:10px;";
+        evDiv.innerHTML = `
+          <label style="font-size:13px;">Submit Evidence (IPFS URI or text):</label>
+          <div style="display:flex;gap:8px;margin-top:4px;">
+            <input type="text" id="klerosV2EvidenceInput" placeholder="/ipfs/Qm... or evidence text" style="flex:1;padding:6px 10px;font-size:13px;">
+            <button class="secondary" onclick="doSubmitKlerosV2Evidence(${bondId}, ${challengeIndex})">Submit</button>
+          </div>`;
+        btnsDiv.appendChild(evDiv);
+
+      } else if (dStatus === 2) {
+        // Ruled but not executed
+        const rulingNames = { 0: "Refused to Arbitrate (Refund All)", 1: "Poster Wins", 2: "Challenger Wins" };
+        const rulingText = rulingNames[Number(d.ruling)] || `Unknown (${d.ruling})`;
+
+        const statusDiv = document.createElement("div");
+        statusDiv.className = "msg msg-info";
+        statusDiv.innerHTML = `Dispute #${disputeId} — Ruling: <strong>${rulingText}</strong>`;
+        if (courtUrl) statusDiv.innerHTML += ` | <a href="${courtUrl}/cases/${disputeId}" target="_blank" rel="noopener">View on Kleros</a>`;
+        btnsDiv.appendChild(statusDiv);
+
+        // Execute button
+        const inWindow = now >= rwStart && now <= rwEnd;
+        const execBtn = document.createElement("button");
+        execBtn.className = "success";
+        execBtn.textContent = inWindow ? "Execute Ruling" : "Execute Ruling (waiting for ruling window)";
+        execBtn.disabled = !inWindow;
+        execBtn.onclick = () => doExecuteRulingV2(bondId, challengeIndex);
+        btnsDiv.appendChild(execBtn);
+
+        if (!inWindow && now < rwStart) {
+          const waitNote = document.createElement("div");
+          waitNote.style.cssText = "font-size:12px;color:var(--muted);margin-top:4px;";
+          waitNote.textContent = `Ruling window opens: ${new Date(Number(rwStart) * 1000).toLocaleString()}`;
+          btnsDiv.appendChild(waitNote);
+        }
+
+      } else if (dStatus === 3) {
+        // Executed
+        const rulingNames = { 0: "Refused", 1: "Poster Wins", 2: "Challenger Wins" };
+        const rulingText = rulingNames[Number(d.ruling)] || `Unknown`;
+
+        const statusDiv = document.createElement("div");
+        statusDiv.className = "msg msg-success";
+        statusDiv.textContent = `Dispute #${disputeId} — Ruling executed: ${rulingText}`;
+        btnsDiv.appendChild(statusDiv);
+
+        // Claim Fee button (only for funder, only for non-refused rulings)
+        if (!d.feeClaimed && Number(d.ruling) !== 0 && ua === d.funder.toLowerCase()) {
+          const claimBtn = document.createElement("button");
+          claimBtn.className = "primary";
+          claimBtn.textContent = "Claim Judge Fee";
+          claimBtn.onclick = () => doClaimFeeV2(bondId, challengeIndex);
+          btnsDiv.appendChild(claimBtn);
+        } else if (d.feeClaimed) {
+          const claimedNote = document.createElement("div");
+          claimedNote.style.cssText = "font-size:12px;color:var(--success);margin-top:4px;";
+          claimedNote.textContent = "Judge fee claimed.";
+          btnsDiv.appendChild(claimedNote);
+        }
+      }
+    }
+  } catch (err) {
+    const errDiv = document.createElement("div");
+    errDiv.className = "msg msg-error";
+    errDiv.textContent = "Error loading Kleros V2 dispute status: " + (err.reason || err.message);
+    btnsDiv.appendChild(errDiv);
+  }
+}
+
+async function doFundBondV2(bondId) {
+  const msg = document.getElementById("viewMsg");
+  if (!signer) { showMsg(msg, "Connect wallet first", "error"); return; }
+  const amountStr = document.getElementById("fundBondV2Amount")?.value?.trim();
+  if (!amountStr || isNaN(Number(amountStr)) || Number(amountStr) <= 0) {
+    showMsg(msg, "Enter a valid xDAI amount", "error"); return;
+  }
+  try {
+    showMsg(msg, "Funding bond for arbitration...", "info");
+    const kj2 = getKlerosJudgeV2Contract(signer);
+    const value = ethers.parseEther(amountStr);
+    const tx = await kj2.fundBond(bondId, { value });
+    await waitForTx(tx);
+    showMsg(msg, `Deposited ${amountStr} xDAI for bond #${bondId}.`, "success");
+    loadBond();
+  } catch (err) {
+    showMsg(msg, err.reason || err.message, "error");
+  }
+}
+
+async function doTriggerArbitrationV2(bondId, value) {
+  const msg = document.getElementById("viewMsg");
+  if (!signer) { showMsg(msg, "Connect wallet first", "error"); return; }
+  try {
+    showMsg(msg, "Triggering Kleros arbitration...", "info");
+    const kj2 = getKlerosJudgeV2Contract(signer);
+    const tx = await kj2.triggerArbitration(bondId, { value });
+    await waitForTx(tx);
+    showMsg(msg, "Kleros dispute created! You'll earn the judge fee when the ruling is executed.", "success");
+    loadBond();
+  } catch (err) {
+    showMsg(msg, err.reason || err.message, "error");
+  }
+}
+
+async function doExecuteRulingV2(bondId, challengeIndex) {
+  const msg = document.getElementById("viewMsg");
+  if (!signer) { showMsg(msg, "Connect wallet first", "error"); return; }
+  try {
+    showMsg(msg, "Executing Kleros ruling...", "info");
+    const kj2 = getKlerosJudgeV2Contract(signer);
+    const tx = await kj2.executeRuling(bondId, challengeIndex);
+    await waitForTx(tx);
+    showMsg(msg, "Ruling executed successfully.", "success");
+    loadBond();
+  } catch (err) {
+    showMsg(msg, err.reason || err.message, "error");
+  }
+}
+
+async function doClaimFeeV2(bondId, challengeIndex) {
+  const msg = document.getElementById("viewMsg");
+  if (!signer) { showMsg(msg, "Connect wallet first", "error"); return; }
+  try {
+    showMsg(msg, "Claiming judge fee...", "info");
+    const kj2 = getKlerosJudgeV2Contract(signer);
+    const tx = await kj2.claimFee(bondId, challengeIndex);
+    await waitForTx(tx);
+    showMsg(msg, "Judge fee claimed!", "success");
+    loadBond();
+  } catch (err) {
+    showMsg(msg, err.reason || err.message, "error");
+  }
+}
+
+async function doSubmitKlerosV2Evidence(bondId, challengeIndex) {
+  const msg = document.getElementById("viewMsg");
+  if (!signer) { showMsg(msg, "Connect wallet first", "error"); return; }
+  const evidence = document.getElementById("klerosV2EvidenceInput")?.value?.trim();
+  if (!evidence) { showMsg(msg, "Enter evidence text or IPFS URI", "error"); return; }
+  try {
+    showMsg(msg, "Submitting evidence...", "info");
+    const kj2 = getKlerosJudgeV2Contract(signer);
+    const tx = await kj2.submitEvidence(bondId, challengeIndex, evidence);
+    await waitForTx(tx);
+    showMsg(msg, "Evidence submitted.", "success");
+    document.getElementById("klerosV2EvidenceInput").value = "";
   } catch (err) {
     showMsg(msg, err.reason || err.message, "error");
   }
