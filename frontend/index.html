@@ -3089,6 +3089,28 @@ async function loadMyBonds() {
 // ─── Judge Registry ───────────────────────────────────────────────────
 let judgesLoaded = false;
 let judgesList = []; // cached list of {address, tokenFees: Map<tokenAddr, bigint>, bondCount}
+let judgesLoadRequestId = 0;
+
+function normalizeJudges(entries) {
+  const merged = new Map();
+  for (const entry of entries) {
+    const key = entry.address.toLowerCase();
+    if (!merged.has(key)) {
+      merged.set(key, {
+        address: entry.address,
+        tokenFees: new Map(entry.tokenFees || []),
+        bondCount: entry.bondCount || 0,
+      });
+      continue;
+    }
+    const current = merged.get(key);
+    current.bondCount = Math.max(current.bondCount, entry.bondCount || 0);
+    for (const [tokenAddr, fee] of (entry.tokenFees || new Map()).entries()) {
+      current.tokenFees.set(tokenAddr.toLowerCase(), fee);
+    }
+  }
+  return [...merged.values()];
+}
 
 // Get the currently selected token address on the create bond form
 function getSelectedTokenAddr() {
@@ -3107,6 +3129,7 @@ function formatJudgeFeeForToken(j) {
 }
 
 async function loadJudges() {
+  const requestId = ++judgesLoadRequestId;
   const listEl = document.getElementById("judgesList");
   const loadingEl = document.getElementById("judgesLoading");
   const emptyEl = document.getElementById("judgesEmpty");
@@ -3180,7 +3203,7 @@ async function loadJudges() {
     }
 
     // Filter to currently registered by checking contract state
-    judgesList = [];
+    const nextJudges = [];
     for (const addr of judgeAddrs) {
       try {
         // Use checksummed address from events
@@ -3190,7 +3213,7 @@ async function loadJudges() {
         if (registered) {
           const bondFilter = readContract.filters.BondCreated(null, null, checksumAddr);
           const bondEvents = await readContract.queryFilter(bondFilter, chain().deployBlock).catch(() => []);
-          judgesList.push({
+          nextJudges.push({
             address: checksumAddr,
             tokenFees: feeMap.get(addr) || new Map(),
             bondCount: bondEvents.length,
@@ -3199,7 +3222,11 @@ async function loadJudges() {
       } catch (_) {}
     }
 
+    if (requestId !== judgesLoadRequestId) return;
+
+    judgesList = normalizeJudges(nextJudges);
     loadingEl.classList.add("hidden");
+    listEl.innerHTML = "";
 
     if (judgesList.length === 0) {
       emptyEl.classList.remove("hidden");
@@ -3244,6 +3271,7 @@ async function loadJudges() {
     judgesLoaded = true;
     buildJudgeSelect();
   } catch (err) {
+    if (requestId !== judgesLoadRequestId) return;
     loadingEl.classList.add("hidden");
     listEl.innerHTML = `<div class="msg msg-error">Error loading judges: ${err.message}</div>`;
   }
@@ -3335,15 +3363,16 @@ async function loadJudgeSelectOnCreate() {
         feeMap.get(judgeKey).set(tokenKey, ev.args.newMinFee);
       }
 
-      judgesList = [];
+      const nextJudges = [];
       for (const [addr, checksumAddr] of judgeAddrs) {
         try {
           const registered = await readContract.judges(checksumAddr);
           if (registered) {
-            judgesList.push({ address: checksumAddr, tokenFees: feeMap.get(addr) || new Map(), bondCount: 0 });
+            nextJudges.push({ address: checksumAddr, tokenFees: feeMap.get(addr) || new Map(), bondCount: 0 });
           }
         } catch (_) {}
       }
+      judgesList = normalizeJudges(nextJudges);
     } catch (_) {}
     _loadingJudgeSelect = false;
   }
