@@ -802,6 +802,13 @@ const KLEROS_COURT_URL = {
   1:   "https://resolve.kleros.io",
 };
 
+const ETH_MAINNET_RPC_URL = "https://ethereum-rpc.publicnode.com";
+const ETH_MAINNET_ENS_RPC_URLS = [
+  ETH_MAINNET_RPC_URL,
+  "https://eth.drpc.org",
+  "https://mainnet.gateway.tenderly.co",
+];
+
 const CHAINS = {
   100: {
     name: "Gnosis",
@@ -851,7 +858,7 @@ const CHAINS = {
   },
   1: {
     name: "Ethereum",
-    rpc: "https://eth.llamarpc.com",
+    rpc: ETH_MAINNET_RPC_URL,
     explorer: "https://etherscan.io",
     contract: null, // v4 not deployed on Ethereum yet
     deployBlock: 0,
@@ -968,6 +975,8 @@ let provider, signer, userAddr, bondContract;
 let web3authInstance = null;
 let web3authProvider = null;
 let connectionType = null; // 'web3auth' | 'injected'
+let injectedAccountsChangedHandler = null;
+let injectedChainChangedHandler = null;
 let tokenCache = {};
 let approvalCheckTimer = null;
 let rulingBufferDays = 30;
@@ -976,6 +985,7 @@ let currentViewBondId = null;
 let currentViewBondData = null;
 let myBondsLoaded = false;
 let browseBondsLoaded = false;
+const INJECTED_WALLET_LOGOUT_KEY = "simpleBond.injectedWalletLoggedOut";
 
 // ─── Token list (localStorage) ────────────────────────────────────────
 function getCustomTokens() {
@@ -1314,13 +1324,98 @@ async function connectWeb3Auth() {
   }
 }
 
-async function connectInjectedWallet() {
+function markInjectedWalletLoggedOut() {
+  try { localStorage.setItem(INJECTED_WALLET_LOGOUT_KEY, "1"); } catch (_) {}
+}
+
+function clearInjectedWalletLoggedOut() {
+  try { localStorage.removeItem(INJECTED_WALLET_LOGOUT_KEY); } catch (_) {}
+}
+
+function wasInjectedWalletLoggedOut() {
+  try { return localStorage.getItem(INJECTED_WALLET_LOGOUT_KEY) === "1"; } catch (_) { return false; }
+}
+
+function detachInjectedWalletListeners() {
+  if (!window.ethereum || typeof window.ethereum.removeListener !== "function") return;
+  if (injectedAccountsChangedHandler) {
+    try { window.ethereum.removeListener("accountsChanged", injectedAccountsChangedHandler); } catch (_) {}
+    injectedAccountsChangedHandler = null;
+  }
+  if (injectedChainChangedHandler) {
+    try { window.ethereum.removeListener("chainChanged", injectedChainChangedHandler); } catch (_) {}
+    injectedChainChangedHandler = null;
+  }
+}
+
+function attachInjectedWalletListeners() {
+  if (!window.ethereum || typeof window.ethereum.on !== "function") return;
+  detachInjectedWalletListeners();
+
+  injectedAccountsChangedHandler = () => { saveForm(); window.location.reload(); };
+  injectedChainChangedHandler = (hexChainId) => {
+    const newId = parseInt(hexChainId, 16);
+    if (CHAINS[newId]) {
+      activeChainId = newId;
+      document.getElementById("chainSelect").value = String(newId);
+      document.getElementById("chainName").textContent = chain().name;
+      document.getElementById("footerChain").textContent = chain().name;
+      tokenCache = {};
+      myBondsLoaded = false;
+      browseBondsLoaded = false;
+      provider = new ethers.BrowserProvider(window.ethereum);
+      provider.getSigner().then(s => {
+        signer = s;
+        bondContract = new ethers.Contract(chain().contract, BOND_ABI, signer);
+        buildTokenSelect();
+        document.getElementById("tokenSelect").value = chain().defaultToken.address;
+        refreshAllBalances();
+      });
+    }
+  };
+
+  window.ethereum.on("accountsChanged", injectedAccountsChangedHandler);
+  window.ethereum.on("chainChanged", injectedChainChangedHandler);
+}
+
+async function revokeInjectedWalletPermissions() {
+  if (!window.ethereum?.request) return false;
+  try {
+    await window.ethereum.request({
+      method: "wallet_revokePermissions",
+      params: [{ eth_accounts: {} }],
+    });
+    return true;
+  } catch (err) {
+    console.warn("Injected wallet permission revoke unavailable:", err);
+    return false;
+  }
+}
+
+async function connectInjectedWallet({ silent = false } = {}) {
   if (!window.ethereum) {
-    alert("No wallet detected. Install MetaMask or Rabby to use this option.");
-    return;
+    if (!silent) alert("No wallet detected. Install MetaMask or Rabby to use this option.");
+    return false;
   }
   try {
-    await window.ethereum.request({ method: "eth_requestAccounts" });
+    const requireFreshApproval = !silent && wasInjectedWalletLoggedOut();
+    if (requireFreshApproval) {
+      try {
+        await window.ethereum.request({
+          method: "wallet_requestPermissions",
+          params: [{ eth_accounts: {} }],
+        });
+      } catch (permErr) {
+        if (permErr?.code === 4001) throw permErr;
+        console.warn("wallet_requestPermissions failed, falling back to eth_requestAccounts:", permErr);
+      }
+    }
+
+    const accounts = await window.ethereum.request({
+      method: silent ? "eth_accounts" : "eth_requestAccounts",
+    });
+    if (!accounts || accounts.length === 0) return false;
+
     provider = new ethers.BrowserProvider(window.ethereum);
     const network = await provider.getNetwork();
     const walletChainId = Number(network.chainId);
@@ -1336,13 +1431,18 @@ async function connectInjectedWallet() {
     }
 
     signer = await provider.getSigner();
-    userAddr = await signer.getAddress();
+    userAddr = accounts[0] || await signer.getAddress();
     connectionType = 'injected';
     bondContract = new ethers.Contract(chain().contract, BOND_ABI, signer);
+    clearInjectedWalletLoggedOut();
     onWalletConnected();
+    return true;
   } catch (err) {
     console.error("Injected wallet error:", err);
-    alert("Connection failed: " + (err.message || err));
+    if (!silent && err?.code !== 4001) {
+      alert("Connection failed: " + (err.message || err));
+    }
+    return false;
   }
 }
 
@@ -1476,31 +1576,20 @@ function onWalletConnected() {
 
   // Set up injected wallet event listeners
   if (connectionType === 'injected' && window.ethereum) {
-    window.ethereum.on("accountsChanged", () => { saveForm(); window.location.reload(); });
-    window.ethereum.on("chainChanged", (hexChainId) => {
-      const newId = parseInt(hexChainId, 16);
-      if (CHAINS[newId]) {
-        activeChainId = newId;
-        document.getElementById("chainSelect").value = String(newId);
-        document.getElementById("chainName").textContent = chain().name;
-        document.getElementById("footerChain").textContent = chain().name;
-        tokenCache = {};
-        myBondsLoaded = false;
-        browseBondsLoaded = false;
-        provider = new ethers.BrowserProvider(window.ethereum);
-        provider.getSigner().then(s => {
-          signer = s;
-          bondContract = new ethers.Contract(chain().contract, BOND_ABI, signer);
-          buildTokenSelect();
-          document.getElementById("tokenSelect").value = chain().defaultToken.address;
-          refreshAllBalances();
-        });
-      }
-    });
+    attachInjectedWalletListeners();
+  } else {
+    detachInjectedWalletListeners();
   }
 }
 
 async function disconnectWallet() {
+  if (connectionType === 'injected') {
+    detachInjectedWalletListeners();
+    markInjectedWalletLoggedOut();
+    await revokeInjectedWalletPermissions();
+  } else {
+    clearInjectedWalletLoggedOut();
+  }
   if (connectionType === 'web3auth' && web3authInstance) {
     try { await web3authInstance.logout(); } catch (_) {}
     web3authProvider = null;
@@ -2754,20 +2843,25 @@ function short(addr) { return addr.slice(0, 6) + "..." + addr.slice(-4); }
 
 // ─── ENS Resolution (always via Ethereum mainnet) ─────────────────────
 const ensCache = {};
-const ensProvider = new ethers.JsonRpcProvider("https://eth.llamarpc.com");
+const ensProviders = ETH_MAINNET_ENS_RPC_URLS.map(url => new ethers.JsonRpcProvider(url));
 
 async function resolveEns(addr) {
   const key = addr.toLowerCase();
   if (key in ensCache) return ensCache[key];
-  ensCache[key] = null; // mark as in-flight
-  try {
-    const name = await ensProvider.lookupAddress(addr);
-    ensCache[key] = name;
-    return name;
-  } catch (_) {
+  ensCache[key] = (async () => {
+    for (const provider of ensProviders) {
+      try {
+        const name = await provider.lookupAddress(addr);
+        if (name) {
+          ensCache[key] = name;
+          return name;
+        }
+      } catch (_) {}
+    }
     ensCache[key] = null;
     return null;
-  }
+  })();
+  return ensCache[key];
 }
 
 let judgeEnsTimer = null;
@@ -3463,13 +3557,9 @@ window.addEventListener("DOMContentLoaded", async () => {
   }
 
   // Check injected wallet reconnection
-  if (!autoConnected && window.ethereum) {
+  if (!autoConnected && window.ethereum && !wasInjectedWalletLoggedOut()) {
     try {
-      const accounts = await window.ethereum.request({ method: "eth_accounts" });
-      if (accounts && accounts.length > 0) {
-        await connectInjectedWallet();
-        autoConnected = true;
-      }
+      autoConnected = await connectInjectedWallet({ silent: true });
     } catch (_) {}
   }
 
