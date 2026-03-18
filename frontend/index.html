@@ -6,6 +6,7 @@
 <title>SimpleBond v0.4 — Futarchy</title>
 <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.4/dist/ethers.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@web3auth/modal@9/dist/modal.umd.min.js"></script>
+<script src="./runtime-config.js"></script>
 <style>
   :root {
     --bg: #0a0a0f;
@@ -3490,7 +3491,12 @@ window.addEventListener("DOMContentLoaded", async () => {
 });
 
 // ─── Notification System ─────────────────────────────────────────────
-const NOTIFY_API = "/api/notify";
+function normalizeUrlBase(value, fallback) {
+  const raw = typeof value === "string" && value.trim() ? value.trim() : fallback;
+  return raw.replace(/\/+$/, "");
+}
+
+const NOTIFY_API = normalizeUrlBase(window.SIMPLE_BOND_CONFIG?.notifyApiBase, "/api/notify");
 
 function showNotifyToast(msg, type) {
   const el = document.createElement("div");

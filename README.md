@@ -116,6 +116,44 @@ npx hardhat compile
 npx hardhat run scripts/deploy.js --network gnosis
 ```
 
+## Frontend Runtime Config
+
+The frontend is still a static site, but the notification API base is now configurable at runtime in `frontend/runtime-config.js`.
+
+Default:
+
+```js
+window.SIMPLE_BOND_CONFIG = {
+  notifyApiBase: "/api/notify",
+};
+```
+
+That keeps the current same-origin deployment working. If the frontend moves to Netlify or any other static host, point `notifyApiBase` at the public API origin instead, for example:
+
+```js
+window.SIMPLE_BOND_CONFIG = {
+  notifyApiBase: "https://api.bond.futarchy.ai/api/notify",
+};
+```
+
+## Notification Deploy
+
+The notification subsystem now has three entrypoints:
+
+- `npm run notify` - compatibility mode, starts the API and worker in one process
+- `npm run notify:api` - HTTP API only
+- `npm run notify:worker` - chain watcher / email worker only
+
+For a split deployment, set:
+
+- `BOND_NOTIFY_BASE_URL` to the public API origin, for example `https://api.bond.futarchy.ai`
+- `SIMPLE_BOND_FRONTEND_URL` to the frontend origin, for example `https://bond.futarchy.ai`
+
+Sample systemd units live in `deploy/systemd/`:
+
+- `deploy/systemd/bond-notify-api.service`
+- `deploy/systemd/bond-notify-worker.service`
+
 ## Addresses
 
 | Asset | Chain | Address |
