@@ -454,7 +454,7 @@
     <h2>Put your money where your mouth is</h2>
     <p class="subtitle">Create and challenge bonds with real stakes. No crypto experience needed.</p>
     <div class="connect-options">
-      <button class="connect-option connect-option-primary" onclick="connectWeb3Auth()">
+      <button id="web3authBtn" class="connect-option connect-option-primary" onclick="connectWeb3Auth()">
         Sign in with Google or Email
       </button>
       <button class="connect-option connect-option-secondary" onclick="connectInjectedWallet()">
@@ -1263,12 +1263,25 @@ function showConnectScreen() {
   document.getElementById("mainApp").classList.add("hidden");
 }
 
+function setWeb3AuthButtonState(enabled) {
+  const btn = document.getElementById("web3authBtn");
+  if (!btn) return;
+  btn.disabled = !enabled;
+  btn.textContent = enabled ? "Sign in with Google or Email" : "Google/Email Sign-In Unavailable";
+  btn.style.opacity = enabled ? "1" : "0.6";
+  btn.style.cursor = enabled ? "" : "not-allowed";
+}
+
 async function initWeb3Auth() {
-  if (WEB3AUTH_CLIENT_ID === "YOUR_WEB3AUTH_CLIENT_ID") return null;
+  if (WEB3AUTH_CLIENT_ID === "YOUR_WEB3AUTH_CLIENT_ID") {
+    setWeb3AuthButtonState(false);
+    return null;
+  }
   try {
     const { Web3Auth } = window.Modal || window.Web3auth?.Modal || {};
     if (!Web3Auth) {
       console.warn("Web3Auth Modal not loaded from CDN");
+      setWeb3AuthButtonState(false);
       return null;
     }
     const c = chain();
@@ -1291,9 +1304,11 @@ async function initWeb3Auth() {
     });
     await web3auth.initModal();
     web3authInstance = web3auth;
+    setWeb3AuthButtonState(true);
     return web3auth;
   } catch (err) {
     console.warn("Web3Auth init failed:", err);
+    setWeb3AuthButtonState(false);
     return null;
   }
 }
@@ -1334,6 +1349,17 @@ function clearInjectedWalletLoggedOut() {
 
 function wasInjectedWalletLoggedOut() {
   try { return localStorage.getItem(INJECTED_WALLET_LOGOUT_KEY) === "1"; } catch (_) { return false; }
+}
+
+function getInjectedWalletErrorMessage(err) {
+  const message = String(err?.reason || err?.message || err || "");
+  if (/at least one account/i.test(message) || /no active account/i.test(message)) {
+    return "Your wallet extension is installed, but no account is active. Unlock it and select or create an account, then try again.";
+  }
+  if (err?.code === 4001 && /reject|denied|cancel/i.test(message)) {
+    return null;
+  }
+  return message || "Unknown wallet error";
 }
 
 function detachInjectedWalletListeners() {
@@ -1414,7 +1440,12 @@ async function connectInjectedWallet({ silent = false } = {}) {
     const accounts = await window.ethereum.request({
       method: silent ? "eth_accounts" : "eth_requestAccounts",
     });
-    if (!accounts || accounts.length === 0) return false;
+    if (!accounts || accounts.length === 0) {
+      if (!silent) {
+        alert("Connection failed: Your wallet did not return an active account. Unlock it and select an account, then try again.");
+      }
+      return false;
+    }
 
     provider = new ethers.BrowserProvider(window.ethereum);
     const network = await provider.getNetwork();
@@ -1439,8 +1470,9 @@ async function connectInjectedWallet({ silent = false } = {}) {
     return true;
   } catch (err) {
     console.error("Injected wallet error:", err);
-    if (!silent && err?.code !== 4001) {
-      alert("Connection failed: " + (err.message || err));
+    const friendlyMessage = getInjectedWalletErrorMessage(err);
+    if (!silent && friendlyMessage) {
+      alert("Connection failed: " + friendlyMessage);
     }
     return false;
   }
@@ -3539,6 +3571,8 @@ function getChainIdFromParam(param) {
 }
 
 window.addEventListener("DOMContentLoaded", async () => {
+  setWeb3AuthButtonState(false);
+
   // Parse chain from URL
   const params = new URLSearchParams(window.location.search);
   const chainParam = params.get("chain");
