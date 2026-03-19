@@ -32,6 +32,17 @@ db.exec(`
     chain_id INTEGER PRIMARY KEY,
     last_block INTEGER NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS judge_profiles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    wallet_address TEXT NOT NULL,
+    chain_id INTEGER NOT NULL,
+    statement TEXT NOT NULL DEFAULT '',
+    link_url TEXT NOT NULL DEFAULT '',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    UNIQUE (wallet_address, chain_id)
+  );
 `);
 
 // --- Subscriptions ---
@@ -76,6 +87,40 @@ const insertLog = db.prepare(`
   VALUES (?, ?, ?, ?, ?)
 `);
 
+// --- Judge profiles ---
+
+const upsertJudgeProfile = db.prepare(`
+  INSERT INTO judge_profiles (wallet_address, chain_id, statement, link_url)
+  VALUES (?, ?, ?, ?)
+  ON CONFLICT(wallet_address, chain_id) DO UPDATE SET
+    statement=excluded.statement,
+    link_url=excluded.link_url,
+    updated_at=datetime('now')
+  RETURNING id, wallet_address, chain_id, statement, link_url, created_at, updated_at
+`);
+
+const deleteJudgeProfile = db.prepare(`
+  DELETE FROM judge_profiles WHERE wallet_address=? AND chain_id=?
+`);
+
+const getJudgeProfileByAddress = db.prepare(`
+  SELECT id, wallet_address, chain_id, statement, link_url, created_at, updated_at
+  FROM judge_profiles
+  WHERE wallet_address=? AND chain_id=?
+`);
+
+const getJudgeProfileById = db.prepare(`
+  SELECT id, wallet_address, chain_id, statement, link_url, created_at, updated_at
+  FROM judge_profiles
+  WHERE id=?
+`);
+
+const getJudgeProfilesByAddresses = db.prepare(`
+  SELECT id, wallet_address, chain_id, statement, link_url, created_at, updated_at
+  FROM judge_profiles
+  WHERE chain_id=? AND wallet_address IN (SELECT value FROM json_each(?))
+`);
+
 export default {
   upsertSubscription(address, email, chainId) {
     upsertSub.run(address.toLowerCase(), email.toLowerCase(), chainId);
@@ -109,5 +154,26 @@ export default {
 
   logEmail(address, chainId, bondId, eventType, sesMessageId) {
     insertLog.run(address.toLowerCase(), chainId, bondId, eventType, sesMessageId);
+  },
+
+  upsertJudgeProfile(address, chainId, statement, linkUrl) {
+    return upsertJudgeProfile.get(address.toLowerCase(), chainId, statement, linkUrl);
+  },
+
+  deleteJudgeProfile(address, chainId) {
+    return deleteJudgeProfile.run(address.toLowerCase(), chainId);
+  },
+
+  getJudgeProfile(address, chainId) {
+    return getJudgeProfileByAddress.get(address.toLowerCase(), chainId);
+  },
+
+  getJudgeProfileById(id) {
+    return getJudgeProfileById.get(id);
+  },
+
+  getJudgeProfiles(chainId, addresses) {
+    const lower = addresses.map(a => a.toLowerCase());
+    return getJudgeProfilesByAddresses.all(chainId, JSON.stringify(lower));
   },
 };
