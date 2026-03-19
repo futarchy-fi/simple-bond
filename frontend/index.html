@@ -1263,25 +1263,29 @@ function showConnectScreen() {
   document.getElementById("mainApp").classList.add("hidden");
 }
 
-function setWeb3AuthButtonState(enabled) {
+let web3AuthUnavailableReason = "";
+
+function setWeb3AuthButtonState(enabled, reason = "") {
   const btn = document.getElementById("web3authBtn");
   if (!btn) return;
+  web3AuthUnavailableReason = enabled ? "" : reason;
   btn.disabled = !enabled;
   btn.textContent = enabled ? "Sign in with Google or Email" : "Google/Email Sign-In Unavailable";
+  btn.title = enabled ? "" : reason;
   btn.style.opacity = enabled ? "1" : "0.6";
   btn.style.cursor = enabled ? "" : "not-allowed";
 }
 
 async function initWeb3Auth() {
   if (WEB3AUTH_CLIENT_ID === "YOUR_WEB3AUTH_CLIENT_ID") {
-    setWeb3AuthButtonState(false);
+    setWeb3AuthButtonState(false, "Google/Email sign-in is not configured on this deployment yet. Use Connect Existing Wallet instead.");
     return null;
   }
   try {
     const { Web3Auth } = window.Modal || window.Web3auth?.Modal || {};
     if (!Web3Auth) {
       console.warn("Web3Auth Modal not loaded from CDN");
-      setWeb3AuthButtonState(false);
+      setWeb3AuthButtonState(false, "Google/Email sign-in is temporarily unavailable. Use Connect Existing Wallet instead.");
       return null;
     }
     const c = chain();
@@ -1308,7 +1312,7 @@ async function initWeb3Auth() {
     return web3auth;
   } catch (err) {
     console.warn("Web3Auth init failed:", err);
-    setWeb3AuthButtonState(false);
+    setWeb3AuthButtonState(false, "Google/Email sign-in could not be initialized right now. Use Connect Existing Wallet instead.");
     return null;
   }
 }
@@ -1318,7 +1322,7 @@ async function connectWeb3Auth() {
     if (!web3authInstance) {
       const inst = await initWeb3Auth();
       if (!inst) {
-        alert("Web3Auth is not configured yet. Please set WEB3AUTH_CLIENT_ID in the page source, or use 'Connect Existing Wallet'.");
+        alert(web3AuthUnavailableReason || "Web3Auth is not configured yet. Please set WEB3AUTH_CLIENT_ID in the page source, or use 'Connect Existing Wallet'.");
         return;
       }
     }
