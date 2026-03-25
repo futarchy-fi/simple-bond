@@ -3533,8 +3533,7 @@ async function showJudgeProfilePage(profileId) {
     currentJudgeProfileView = profile;
     const profileChain = CHAINS[profile.chainId];
     const addressEl = document.getElementById("judgeProfileAddress");
-    addressEl.href = profileChain ? `${profileChain.explorer}/address/${profile.address}` : "#";
-    addressEl.textContent = short(profile.address);
+    setJudgeLink(addressEl, profile.address, { profile, chainId: profile.chainId });
     addressEl.title = profile.address;
     resolveEns(profile.address).then(name => {
       if (
@@ -3543,7 +3542,6 @@ async function showJudgeProfilePage(profileId) {
         name
       ) {
         document.getElementById("judgeProfileTitle").textContent = name;
-        addressEl.textContent = `${name} (${short(profile.address)})`;
       }
     });
     document.getElementById("judgeProfileTitle").textContent = short(profile.address);
@@ -3590,6 +3588,15 @@ function formatJudgeChainList(chainIds) {
   return chainIds.map(chainId => CHAINS[chainId]?.name || `Chain ${chainId}`).join(", ");
 }
 
+function parseJudgeRegistration(value) {
+  if (typeof value === "boolean") return value;
+  if (value && typeof value === "object") {
+    if (typeof value.registered === "boolean") return value.registered;
+    if (typeof value[0] === "boolean") return value[0];
+  }
+  return false;
+}
+
 async function findRegisteredJudgeChains(address, { excludeChainId = null } = {}) {
   if (!address) return [];
   const chainIds = getJudgeRegistryChainIds().filter(chainId => chainId !== excludeChainId);
@@ -3598,7 +3605,7 @@ async function findRegisteredJudgeChains(address, { excludeChainId = null } = {}
       const cfg = CHAINS[chainId];
       const readProvider = new ethers.JsonRpcProvider(cfg.rpc);
       const readContract = new ethers.Contract(cfg.contract, BOND_ABI, readProvider);
-      return await readContract.judges(address) ? chainId : null;
+      return parseJudgeRegistration(await readContract.judges(address)) ? chainId : null;
     } catch (_) {
       return null;
     }
@@ -3652,7 +3659,7 @@ async function refreshJudgeRegistrationUi() {
   const readContract = new ethers.Contract(chain().contract, BOND_ABI, readProvider);
 
   try {
-    const registered = await readContract.judges(userAddr);
+    const registered = parseJudgeRegistration(await readContract.judges(userAddr));
     if (registered) {
       ownStatusTextEl.textContent = `You are registered as a judge on ${chain().name}.`;
       ownStatusEl.classList.remove("hidden");
@@ -3773,7 +3780,7 @@ async function loadJudges() {
         // Use checksummed address from events
         const checksumAddr = regEvents.find(e => e.args.judge.toLowerCase() === addr)?.args.judge;
         if (!checksumAddr) continue;
-        const registered = await readContract.judges(checksumAddr);
+        const registered = parseJudgeRegistration(await readContract.judges(checksumAddr));
         if (registered) {
           if (isKlerosJudge(checksumAddr)) continue;
           const bondFilter = readContract.filters.BondCreated(null, null, checksumAddr);
@@ -3954,7 +3961,7 @@ async function loadJudgeSelectOnCreate() {
       const nextJudges = [];
       for (const [addr, checksumAddr] of judgeAddrs) {
         try {
-          const registered = await readContract.judges(checksumAddr);
+          const registered = parseJudgeRegistration(await readContract.judges(checksumAddr));
           if (registered) {
             if (isKlerosJudge(checksumAddr)) continue;
             nextJudges.push({ address: checksumAddr, tokenFees: feeMap.get(addr) || new Map(), bondCount: 0 });
