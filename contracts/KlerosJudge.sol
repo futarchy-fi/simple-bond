@@ -144,6 +144,7 @@ contract KlerosJudge is IArbitrable, IEvidence {
 
         // No duplicate dispute for this challenge
         require(!hasDispute[bondId][currentChallenge], "Dispute already exists");
+        require(block.timestamp <= simpleBond.rulingDeadline(bondId), "Bond past ruling deadline");
 
         // Create Kleros dispute
         uint256 cost = arbitrator.arbitrationCost(arbitratorExtraData);

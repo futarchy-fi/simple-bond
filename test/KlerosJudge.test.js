@@ -216,6 +216,18 @@ describe("KlerosJudge", function () {
       ).to.be.revertedWith("Dispute already exists");
     });
 
+    it("reverts if the bond is past ruling deadline", async function () {
+      const bondId = await createDefaultBond();
+      await challengeBond(bondId, challenger1);
+      await advancePastRulingDeadline(bondId);
+
+      await expect(
+        klerosJudge.connect(poster).requestArbitration(bondId, {
+          value: ARBITRATION_COST,
+        })
+      ).to.be.revertedWith("Bond past ruling deadline");
+    });
+
     it("reverts if insufficient arbitration fee", async function () {
       const bondId = await createDefaultBond();
       await challengeBond(bondId, challenger1);
