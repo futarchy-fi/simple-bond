@@ -589,8 +589,10 @@
             <button type="button" class="preset ruling-preset" data-buffer="7" onclick="setRulingBuffer(7)">7 days</button>
             <button type="button" class="preset ruling-preset" data-buffer="14" onclick="setRulingBuffer(14)">14 days</button>
             <button type="button" class="preset ruling-preset active" data-buffer="30" onclick="setRulingBuffer(30)">30 days</button>
+            <button type="button" class="preset ruling-preset" data-buffer="60" onclick="setRulingBuffer(60)">60 days</button>
           </div>
           <div class="hint">Time for the judge to rule. If missed, everyone is refunded. Default: 30 days.</div>
+          <div id="klerosRulingWindowNote" class="hint hidden">Kleros disputes can take longer because jurors review evidence through a separate court process. Bonds using Kleros need at least a 60-day ruling window.</div>
         </div>
 
         <div id="createStepper"></div>
@@ -881,6 +883,7 @@ const KLEROS_COURT_URL = {
   100: "https://resolve.kleros.io",
   1:   "https://resolve.kleros.io",
 };
+const KLEROS_MIN_RULING_BUFFER_DAYS = 60;
 
 const ETH_MAINNET_RPC_URL = "https://ethereum-rpc.publicnode.com";
 const ETH_MAINNET_ENS_RPC_URLS = [
@@ -1167,6 +1170,27 @@ function onAmountChange() {
     }
   }
   checkApproval();
+}
+
+function getCreateJudgeInputValue() {
+  const judgeSelectVal = document.getElementById("judgeSelect").value;
+  if (judgeSelectVal === "__custom__") {
+    const judgeInput = document.getElementById("judgeAddr");
+    if (!judgeInput) return "";
+    return judgeInput.dataset.resolvedAddr || judgeInput.value.trim();
+  }
+  return judgeSelectVal || "";
+}
+
+async function resolveCreateJudgeAddress() {
+  let judgeAddr = getCreateJudgeInputValue();
+  if (!ethers.isAddress(judgeAddr) && (judgeAddr.endsWith('.eth') || judgeAddr.endsWith('.xyz') || judgeAddr.endsWith('.id'))) {
+    try {
+      const resolved = await ensProvider.resolveName(judgeAddr);
+      if (resolved) judgeAddr = resolved;
+    } catch (_) {}
+  }
+  return judgeAddr;
 }
 
 // ─── Simple / Advanced toggle ─────────────────────────────────────────
@@ -2095,22 +2119,11 @@ async function smartCreateBond() {
     }
 
     // Get judge address from dropdown or custom input
-    const judgeSelectVal = document.getElementById("judgeSelect").value;
-    let judgeAddr;
-    if (judgeSelectVal === "__custom__") {
-      const judgeInput = document.getElementById("judgeAddr");
-      judgeAddr = judgeInput.dataset.resolvedAddr || judgeInput.value.trim();
-      if (!ethers.isAddress(judgeAddr) && (judgeAddr.endsWith('.eth') || judgeAddr.endsWith('.xyz') || judgeAddr.endsWith('.id'))) {
-        try {
-          const resolved = await ensProvider.resolveName(judgeAddr);
-          if (resolved) judgeAddr = resolved;
-        } catch (_) {}
-      }
-    } else {
-      judgeAddr = judgeSelectVal;
-    }
+    const judgeAddr = await resolveCreateJudgeAddress();
     if (!ethers.isAddress(judgeAddr)) { showMsg(msg, "Select a judge or enter a valid address", "error"); return; }
-    if (isKlerosJudge(judgeAddr)) { showMsg(msg, "The Kleros judge integration is temporarily unavailable.", "error"); return; }
+    if (isKlerosJudge(judgeAddr) && rulingBufferDays < KLEROS_MIN_RULING_BUFFER_DAYS) {
+      showMsg(msg, `Kleros bonds need at least a ${KLEROS_MIN_RULING_BUFFER_DAYS}-day ruling window.`, "error"); return;
+    }
 
     const deadlineStr = document.getElementById("deadline").value;
     if (!deadlineStr) { showMsg(msg, "Set a deadline", "error"); return; }
@@ -2979,6 +2992,9 @@ function setDeadline(days) {
 }
 
 function setRulingBuffer(days) {
+  if (isKlerosJudge(getCreateJudgeInputValue()) && days < KLEROS_MIN_RULING_BUFFER_DAYS) {
+    days = KLEROS_MIN_RULING_BUFFER_DAYS;
+  }
   rulingBufferDays = days;
   document.querySelectorAll(".ruling-preset").forEach(b => b.classList.toggle("active", b.dataset.buffer == days));
 }
@@ -3016,10 +3032,12 @@ async function resolveEns(addr) {
 let judgeEnsTimer = null;
 function resolveJudgeEns() {
   clearTimeout(judgeEnsTimer);
+  const input = document.getElementById("judgeAddr");
+  const val = input.value.trim();
+  delete input.dataset.resolvedAddr;
+  onJudgeSelectChange();
   judgeEnsTimer = setTimeout(async () => {
-    const input = document.getElementById("judgeAddr");
     const hint = document.getElementById("judgeEnsHint");
-    const val = input.value.trim();
     if (val.endsWith('.eth') || val.endsWith('.xyz') || val.endsWith('.id')) {
       hint.textContent = 'Resolving ENS name...';
       hint.style.color = 'var(--muted)';
@@ -3044,6 +3062,7 @@ function resolveJudgeEns() {
       hint.style.color = 'var(--muted)';
       delete input.dataset.resolvedAddr;
     }
+    onJudgeSelectChange();
   }, 500);
 }
 
@@ -3897,12 +3916,20 @@ function buildJudgeSelect() {
   const prev = sel.value;
   sel.innerHTML = '<option value="">Select a registered judge...</option>';
   const currentToken = getSelectedTokenAddr().toLowerCase();
+  const klerosAddr = KLEROS_JUDGE[activeChainId];
 
   // Deduplicate judgesList by address (race conditions can cause dupes)
   const seen = new Set();
+  if (klerosAddr) {
+    const opt = document.createElement("option");
+    opt.value = klerosAddr;
+    opt.textContent = "Kleros decentralized court";
+    sel.appendChild(opt);
+    seen.add(klerosAddr.toLowerCase());
+  }
   for (const j of judgesList) {
     const key = j.address.toLowerCase();
-    if (seen.has(key) || isKlerosJudge(j.address)) continue;
+    if (seen.has(key)) continue;
     seen.add(key);
     const opt = document.createElement("option");
     opt.value = j.address;
@@ -3966,6 +3993,7 @@ async function loadJudgeSelectOnCreate() {
     _loadingJudgeSelect = false;
   }
   buildJudgeSelect();
+  onJudgeSelectChange();
 }
 
 function isKlerosJudge(addr) {
@@ -3974,24 +4002,42 @@ function isKlerosJudge(addr) {
   return kj && addr.toLowerCase() === kj.toLowerCase();
 }
 
+function syncJudgeRulingWindowState(judgeAddr = getCreateJudgeInputValue()) {
+  const rulingField = document.getElementById("advRulingBufferField");
+  const noteEl = document.getElementById("klerosRulingWindowNote");
+  const isKleros = isKlerosJudge(judgeAddr);
+
+  if (isKleros && rulingBufferDays < KLEROS_MIN_RULING_BUFFER_DAYS) {
+    setRulingBuffer(KLEROS_MIN_RULING_BUFFER_DAYS);
+  }
+  rulingField.querySelectorAll(".ruling-preset").forEach(b => {
+    const days = Number(b.dataset.buffer || 0);
+    b.disabled = isKleros && days < KLEROS_MIN_RULING_BUFFER_DAYS;
+  });
+  noteEl.classList.toggle("hidden", !isKleros);
+  return isKleros;
+}
+
 function onJudgeSelectChange() {
   const val = document.getElementById("judgeSelect").value;
   const customField = document.getElementById("judgeCustomField");
   const hintEl = document.getElementById("judgeMinFeeHint");
-  const rulingField = document.getElementById("advRulingBufferField");
 
   if (val === "__custom__") {
     customField.classList.remove("hidden");
-    hintEl.textContent = "Enter a registered judge address. The judge must be registered on-chain.";
-    // Restore ruling buffer controls
-    rulingField.querySelectorAll(".ruling-preset").forEach(b => b.disabled = false);
+    if (syncJudgeRulingWindowState()) {
+      hintEl.textContent = "Disputes resolved by Kleros decentralized court. Arbitration cost is paid in xDAI when requesting a ruling.";
+    } else {
+      hintEl.textContent = "Enter a registered judge address. The judge must be registered on-chain.";
+    }
   } else if (val) {
     customField.classList.add("hidden");
-    rulingField.querySelectorAll(".ruling-preset").forEach(b => b.disabled = false);
     if (isKlerosJudge(val)) {
-      hintEl.textContent = "The Kleros judge integration is temporarily unavailable.";
+      syncJudgeRulingWindowState(val);
+      hintEl.textContent = "Disputes resolved by Kleros decentralized court. Arbitration cost is paid in xDAI when requesting a ruling.";
       return;
     }
+    syncJudgeRulingWindowState(val);
     const j = judgesList.find(j => j.address.toLowerCase() === val.toLowerCase());
     if (j) {
       const feeStr = formatJudgeFeeForToken(j);
@@ -4008,10 +4054,12 @@ function onJudgeSelectChange() {
         const defaultFee = bondVal * 0.05;
         feeEl.value = Math.max(defaultFee, judgeMin).toFixed(2);
       }
+    } else {
+      hintEl.textContent = "The judge rules on challenges. Pick someone both parties trust.";
     }
   } else {
     customField.classList.add("hidden");
-    rulingField.querySelectorAll(".ruling-preset").forEach(b => b.disabled = false);
+    syncJudgeRulingWindowState("");
     hintEl.textContent = "The judge rules on challenges. Pick someone both parties trust.";
   }
 }
@@ -4109,6 +4157,7 @@ function restoreForm() {
     if (data._rulingBuffer) setRulingBuffer(data._rulingBuffer);
     if (data._acceptanceDelay) setAcceptanceDelay(data._acceptanceDelay);
     if (data._tab) switchTab(data._tab);
+    onJudgeSelectChange();
   } catch (_) {}
 }
 
