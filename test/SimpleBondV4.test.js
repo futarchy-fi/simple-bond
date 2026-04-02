@@ -143,6 +143,13 @@ describe("SimpleBondV4", function () {
       ).to.be.revertedWith("Not registered");
     });
 
+    it("reverts setJudgeFee for zero token address", async function () {
+      await bond.connect(outsider).registerAsJudge();
+      await expect(
+        bond.connect(outsider).setJudgeFee(ethers.ZeroAddress, 100)
+      ).to.be.revertedWith("Zero token");
+    });
+
     it("re-registration preserves existing per-token fees", async function () {
       await bond.connect(outsider).registerAsJudge();
       await bond.connect(outsider).setJudgeFee(tokenAddr, ethers.parseEther("100"));
@@ -189,10 +196,24 @@ describe("SimpleBondV4", function () {
       ).to.be.revertedWith("Length mismatch");
     });
 
+    it("batch setJudgeFees reverts on empty batch", async function () {
+      await bond.connect(outsider).registerAsJudge();
+      await expect(
+        bond.connect(outsider).setJudgeFees([], [])
+      ).to.be.revertedWith("Empty batch");
+    });
+
     it("batch setJudgeFees reverts if not registered", async function () {
       await expect(
         bond.connect(outsider).setJudgeFees([tokenAddr], [100])
       ).to.be.revertedWith("Not registered");
+    });
+
+    it("batch setJudgeFees reverts for zero token address", async function () {
+      await bond.connect(outsider).registerAsJudge();
+      await expect(
+        bond.connect(outsider).setJudgeFees([tokenAddr, ethers.ZeroAddress], [100, 200])
+      ).to.be.revertedWith("Zero token");
     });
   });
 
@@ -408,6 +429,85 @@ describe("SimpleBondV4", function () {
       await expect(
         bond.connect(judge).rejectBond(999)
       ).to.be.revertedWith("Bond does not exist");
+    });
+  });
+
+  describe("Invalid Settlement Bond IDs", function () {
+    it("concede reverts for a nonexistent bond", async function () {
+      await expect(
+        bond.connect(poster).concede(0, "")
+      ).to.be.revertedWith("Bond does not exist");
+    });
+
+    it("ruleForPoster reverts for a nonexistent bond", async function () {
+      await expect(
+        bond.connect(judge).ruleForPoster(0, JUDGE_FEE)
+      ).to.be.revertedWith("Bond does not exist");
+    });
+
+    it("ruleForChallenger reverts for a nonexistent bond", async function () {
+      await expect(
+        bond.connect(judge).ruleForChallenger(0, JUDGE_FEE)
+      ).to.be.revertedWith("Bond does not exist");
+    });
+
+    it("withdrawBond reverts for a nonexistent bond", async function () {
+      await expect(
+        bond.connect(poster).withdrawBond(0)
+      ).to.be.revertedWith("Bond does not exist");
+    });
+
+    it("claimTimeout reverts for a nonexistent bond", async function () {
+      await expect(
+        bond.connect(outsider).claimTimeout(0)
+      ).to.be.revertedWith("Bond does not exist");
+    });
+  });
+
+  describe("View Helpers", function () {
+    it("getChallengeCount reverts for a nonexistent bond", async function () {
+      await expect(
+        bond.getChallengeCount(0)
+      ).to.be.revertedWith("Bond does not exist");
+    });
+
+    it("getChallenge reverts for a nonexistent bond", async function () {
+      await expect(
+        bond.getChallenge(0, 0)
+      ).to.be.revertedWith("Bond does not exist");
+    });
+
+    it("getChallenge reverts for an out-of-range challenge index", async function () {
+      await createDefaultBond();
+      await bond.connect(challenger1).challenge(0, "Only challenge");
+
+      await expect(
+        bond.getChallenge(0, 1)
+      ).to.be.revertedWith("Challenge does not exist");
+    });
+
+    it("rulingWindowStart reverts for a nonexistent bond", async function () {
+      await expect(
+        bond.rulingWindowStart(0)
+      ).to.be.revertedWith("Bond does not exist");
+    });
+
+    it("rulingDeadline reverts for a nonexistent bond", async function () {
+      await expect(
+        bond.rulingDeadline(0)
+      ).to.be.revertedWith("Bond does not exist");
+    });
+
+    it("getJudgeMinFee reverts for a zero judge address", async function () {
+      await expect(
+        bond.getJudgeMinFee(ethers.ZeroAddress, tokenAddr)
+      ).to.be.revertedWith("Zero judge");
+    });
+
+    it("getJudgeMinFee reverts for a zero token address", async function () {
+      await expect(
+        bond.getJudgeMinFee(judge.address, ethers.ZeroAddress)
+      ).to.be.revertedWith("Zero token");
     });
   });
 
