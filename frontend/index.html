@@ -3618,7 +3618,7 @@ async function findRegisteredJudgeChains(address, { excludeChainId = null } = {}
       const cfg = CHAINS[chainId];
       const readProvider = new ethers.JsonRpcProvider(cfg.rpc);
       const readContract = new ethers.Contract(cfg.contract, BOND_ABI, readProvider);
-      return await readContract.judges(address) ? chainId : null;
+      return parseJudgeRegistration(await readContract.judges(address)) ? chainId : null;
     } catch (_) {
       return null;
     }
@@ -3672,7 +3672,7 @@ async function refreshJudgeRegistrationUi() {
   const readContract = new ethers.Contract(chain().contract, BOND_ABI, readProvider);
 
   try {
-    const registered = await readContract.judges(userAddr);
+    const registered = parseJudgeRegistration(await readContract.judges(userAddr));
     if (registered) {
       ownStatusTextEl.textContent = `You are registered as a judge on ${chain().name}.`;
       ownStatusEl.classList.remove("hidden");
@@ -3776,7 +3776,7 @@ async function loadJudges() {
         // Use checksummed address from events
         const checksumAddr = regEvents.find(e => e.args.judge.toLowerCase() === addr)?.args.judge;
         if (!checksumAddr) continue;
-        const registered = await readContract.judges(checksumAddr);
+        const registered = parseJudgeRegistration(await readContract.judges(checksumAddr));
         if (registered) {
           if (isKlerosJudge(checksumAddr)) continue;
           const bondFilter = readContract.filters.BondCreated(null, null, checksumAddr);
@@ -3960,7 +3960,7 @@ async function loadJudgeSelectOnCreate() {
       const nextJudges = [];
       for (const [addr, checksumAddr] of judgeAddrs) {
         try {
-          const registered = await readContract.judges(checksumAddr);
+          const registered = parseJudgeRegistration(await readContract.judges(checksumAddr));
           if (registered) {
             if (isKlerosJudge(checksumAddr)) continue;
             nextJudges.push({ address: checksumAddr, tokenFees: feeMap.get(addr) || new Map(), bondCount: 0 });
