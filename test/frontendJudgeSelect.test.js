@@ -1,11 +1,26 @@
 const { expect } = require("chai");
 
 const {
+  parseJudgeRegistration,
   dedupeJudgesByAddress,
   getJudgeSelectEntries,
 } = require("../frontend/judges.js");
 
 describe("judge dropdown helpers", function () {
+  it("normalizes judge registration getter results into booleans", function () {
+    expect(parseJudgeRegistration(true)).to.equal(true);
+    expect(parseJudgeRegistration(false)).to.equal(false);
+    expect(parseJudgeRegistration({ registered: true })).to.equal(true);
+    expect(parseJudgeRegistration({ registered: false })).to.equal(false);
+    expect(parseJudgeRegistration([true])).to.equal(true);
+    expect(parseJudgeRegistration([false])).to.equal(false);
+    expect(parseJudgeRegistration({ 0: true })).to.equal(true);
+    expect(parseJudgeRegistration({ 0: false })).to.equal(false);
+    expect(parseJudgeRegistration({})).to.equal(false);
+    expect(parseJudgeRegistration(null)).to.equal(false);
+    expect(parseJudgeRegistration("true")).to.equal(false);
+  });
+
   it("deduplicates judge entries by address and merges token fees case-insensitively", function () {
     const entries = [
       {
