@@ -94,6 +94,16 @@ contract KlerosJudge is IArbitrable, IEvidence {
     error CallerNotOwner();
     error ZeroWithdrawalRecipient();
     error ZeroNewOwner();
+    error DisputeAlreadyExists();
+    error BondPastRulingDeadline();
+    error InsufficientArbitrationFee();
+    error ArbitrationFeeRefundFailed();
+    error BondNotJudgedByAdapter();
+    error BondAlreadySettled();
+    error BondConceded();
+    error NoPendingChallenge();
+    error ChallengeNotPending();
+    error CallerNotPosterOrChallenger();
 
     // --- Constants -----------------------------------------------------------
 
@@ -205,12 +215,12 @@ contract KlerosJudge is IArbitrable, IEvidence {
         uint256 currentChallenge = _validateAndGetChallenge(bondId);
 
         // No duplicate dispute for this challenge
-        require(!hasDispute[bondId][currentChallenge], "Dispute already exists");
-        require(block.timestamp <= simpleBond.rulingDeadline(bondId), "Bond past ruling deadline");
+        if (hasDispute[bondId][currentChallenge]) revert DisputeAlreadyExists();
+        if (block.timestamp > simpleBond.rulingDeadline(bondId)) revert BondPastRulingDeadline();
 
         // Create Kleros dispute
         uint256 cost = arbitrator.arbitrationCost(arbitratorExtraData);
-        require(msg.value >= cost, "Insufficient arbitration fee");
+        if (msg.value < cost) revert InsufficientArbitrationFee();
 
         disputeID = arbitrator.createDispute{value: cost}(
             RULING_CHOICES,
@@ -232,7 +242,7 @@ contract KlerosJudge is IArbitrable, IEvidence {
         // Refund excess ETH
         if (msg.value > cost) {
             (bool sent, ) = msg.sender.call{value: msg.value - cost}("");
-            require(sent, "Refund failed");
+            if (!sent) revert ArbitrationFeeRefundFailed();
         }
 
         // Emit ERC-1497 events
@@ -395,21 +405,20 @@ contract KlerosJudge is IArbitrable, IEvidence {
         bool conceded  = _readBondWord(bondId, 11) != 0;
         uint256 currentChallenge = _readBondWord(bondId, 12);
 
-        require(judge == address(this), "Not judge for this bond");
-        require(!settled, "Bond already settled");
-        require(!conceded, "Bond conceded");
+        if (judge != address(this)) revert BondNotJudgedByAdapter();
+        if (settled) revert BondAlreadySettled();
+        if (conceded) revert BondConceded();
 
         uint256 challengeCount = simpleBond.getChallengeCount(bondId);
-        require(currentChallenge < challengeCount, "No pending challenge");
+        if (currentChallenge >= challengeCount) revert NoPendingChallenge();
 
         (address challenger, uint8 challengeStatus, ) =
             simpleBond.getChallenge(bondId, currentChallenge);
-        require(challengeStatus == 0, "Challenge not pending");
+        if (challengeStatus != 0) revert ChallengeNotPending();
 
-        require(
-            msg.sender == poster || msg.sender == challenger,
-            "Only poster or challenger"
-        );
+        if (msg.sender != poster && msg.sender != challenger) {
+            revert CallerNotPosterOrChallenger();
+        }
 
         return currentChallenge;
     }

@@ -222,7 +222,7 @@ describe("KlerosJudge", function () {
         klerosJudge.connect(outsider).requestArbitration(bondId, {
           value: ARBITRATION_COST,
         })
-      ).to.be.revertedWith("Only poster or challenger");
+      ).to.be.revertedWithCustomError(klerosJudge, "CallerNotPosterOrChallenger");
     });
 
     it("reverts if no pending challenge", async function () {
@@ -232,7 +232,7 @@ describe("KlerosJudge", function () {
         klerosJudge.connect(poster).requestArbitration(bondId, {
           value: ARBITRATION_COST,
         })
-      ).to.be.revertedWith("No pending challenge");
+      ).to.be.revertedWithCustomError(klerosJudge, "NoPendingChallenge");
     });
 
     it("reverts if dispute already exists for this challenge", async function () {
@@ -247,7 +247,7 @@ describe("KlerosJudge", function () {
         klerosJudge.connect(challenger1).requestArbitration(bondId, {
           value: ARBITRATION_COST,
         })
-      ).to.be.revertedWith("Dispute already exists");
+      ).to.be.revertedWithCustomError(klerosJudge, "DisputeAlreadyExists");
     });
 
     it("reverts if the bond is past ruling deadline", async function () {
@@ -259,7 +259,7 @@ describe("KlerosJudge", function () {
         klerosJudge.connect(poster).requestArbitration(bondId, {
           value: ARBITRATION_COST,
         })
-      ).to.be.revertedWith("Bond past ruling deadline");
+      ).to.be.revertedWithCustomError(klerosJudge, "BondPastRulingDeadline");
     });
 
     it("reverts if insufficient arbitration fee", async function () {
@@ -270,7 +270,7 @@ describe("KlerosJudge", function () {
         klerosJudge.connect(poster).requestArbitration(bondId, {
           value: ARBITRATION_COST - 1n,
         })
-      ).to.be.revertedWith("Insufficient arbitration fee");
+      ).to.be.revertedWithCustomError(klerosJudge, "InsufficientArbitrationFee");
     });
 
     it("refunds excess ETH", async function () {
@@ -309,7 +309,7 @@ describe("KlerosJudge", function () {
         klerosJudge.connect(poster).requestArbitration(0, {
           value: ARBITRATION_COST,
         })
-      ).to.be.revertedWith("Not judge for this bond");
+      ).to.be.revertedWithCustomError(klerosJudge, "BondNotJudgedByAdapter");
     });
 
     it("sets hasDispute and bondChallengeToDispute correctly", async function () {
