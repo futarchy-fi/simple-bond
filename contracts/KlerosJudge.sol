@@ -91,18 +91,25 @@ contract KlerosJudge is IArbitrable, IEvidence {
 
     // --- Constants -----------------------------------------------------------
 
+    /// @notice Returns the number of non-zero ruling options Kleros may choose from.
     uint256 public constant RULING_CHOICES = 2;
+    /// @notice Returns the ERC-792 ruling value that resolves a dispute in favor of the poster.
     uint256 public constant RULING_POSTER = 1;
+    /// @notice Returns the ERC-792 ruling value that resolves a dispute in favor of the challenger.
     uint256 public constant RULING_CHALLENGER = 2;
 
     // --- Immutables ----------------------------------------------------------
 
+    /// @notice Returns the Kleros arbitrator contract used to create and receive disputes.
     IArbitrator public immutable arbitrator;
+    /// @notice Returns the SimpleBondV4 contract this adapter executes rulings against.
     ISimpleBondV4 public immutable simpleBond;
 
     // --- State ---------------------------------------------------------------
 
+    /// @notice Returns the arbitrator extra data used for future dispute creations.
     bytes public arbitratorExtraData;
+    /// @notice Returns the address allowed to administer this adapter.
     address public owner;
 
     enum DisputeStatus { None, Active, Ruled, Executed }
