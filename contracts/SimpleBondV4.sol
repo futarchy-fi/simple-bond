@@ -30,6 +30,8 @@ contract SimpleBondV4 {
     uint8 private constant BOND_RESOLVED_FOR_POSTER = 1;
     uint8 private constant BOND_RESOLVED_FOR_CHALLENGER = 2;
 
+    error InsufficientChallengeAmount(uint256 challengeAmount, uint256 judgeFee);
+
     // --- Data Structures --------------------------------------------------
 
     struct Challenge {
@@ -252,7 +254,9 @@ contract SimpleBondV4 {
         require(judge != address(0), "Zero judge");
         require(deadline > block.timestamp, "Deadline in past");
         require(rulingBuffer > 0, "Zero ruling buffer");
-        require(judgeFee <= challengeAmount, "Fee > challenge amount");
+        if (judgeFee > challengeAmount) {
+            revert InsufficientChallengeAmount(challengeAmount, judgeFee);
+        }
         require(judges[judge].registered, "Judge not registered");
         require(judgeFee >= judgeMinFees[judge][token], "Fee below judge minimum");
 
