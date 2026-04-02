@@ -4,6 +4,7 @@
   "description": "Minimal on-chain bond contract",
   "main": "index.js",
   "scripts": {
+    "clean": "npx hardhat clean",
     "compile": "hardhat compile",
     "test": "hardhat test",
     "notify": "node backend/server.mjs",
