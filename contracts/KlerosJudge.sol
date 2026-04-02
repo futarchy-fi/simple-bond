@@ -89,6 +89,12 @@ interface ISimpleBondV4 {
 contract KlerosJudge is IArbitrable, IEvidence {
     using SafeERC20 for IERC20;
 
+    error ZeroArbitratorAddress();
+    error ZeroSimpleBondAddress();
+    error CallerNotOwner();
+    error ZeroWithdrawalRecipient();
+    error ZeroNewOwner();
+
     // --- Constants -----------------------------------------------------------
 
     /// @notice Returns the number of non-zero ruling options Kleros may choose from.
@@ -164,8 +170,8 @@ contract KlerosJudge is IArbitrable, IEvidence {
         bytes memory _arbitratorExtraData,
         string memory _metaEvidence
     ) {
-        require(_arbitrator != address(0), "Zero arbitrator");
-        require(_simpleBond != address(0), "Zero simpleBond");
+        if (_arbitrator == address(0)) revert ZeroArbitratorAddress();
+        if (_simpleBond == address(0)) revert ZeroSimpleBondAddress();
 
         arbitrator = IArbitrator(_arbitrator);
         simpleBond = ISimpleBondV4(_simpleBond);
@@ -182,7 +188,7 @@ contract KlerosJudge is IArbitrable, IEvidence {
     // --- Modifiers -----------------------------------------------------------
 
     modifier onlyOwner() {
-        require(msg.sender == owner, "Only owner");
+        if (msg.sender != owner) revert CallerNotOwner();
         _;
     }
 
@@ -318,7 +324,7 @@ contract KlerosJudge is IArbitrable, IEvidence {
      * @param amount Amount to withdraw
      */
     function withdrawFees(address token, address to, uint256 amount) external onlyOwner {
-        require(to != address(0), "Zero address");
+        if (to == address(0)) revert ZeroWithdrawalRecipient();
         IERC20(token).safeTransfer(to, amount);
     }
 
@@ -336,7 +342,7 @@ contract KlerosJudge is IArbitrable, IEvidence {
      * @param newOwner The new owner address
      */
     function transferOwnership(address newOwner) external onlyOwner {
-        require(newOwner != address(0), "Zero address");
+        if (newOwner == address(0)) revert ZeroNewOwner();
         emit OwnershipTransferred(owner, newOwner);
         owner = newOwner;
     }

@@ -154,14 +154,14 @@ describe("KlerosJudge", function () {
       const KlerosJudge = await ethers.getContractFactory("KlerosJudge");
       await expect(
         KlerosJudge.deploy(ethers.ZeroAddress, await bond.getAddress(), "0x", "")
-      ).to.be.revertedWith("Zero arbitrator");
+      ).to.be.revertedWithCustomError(klerosJudge, "ZeroArbitratorAddress");
     });
 
     it("reverts on zero simpleBond address", async function () {
       const KlerosJudge = await ethers.getContractFactory("KlerosJudge");
       await expect(
         KlerosJudge.deploy(await mockArbitrator.getAddress(), ethers.ZeroAddress, "0x", "")
-      ).to.be.revertedWith("Zero simpleBond");
+      ).to.be.revertedWithCustomError(klerosJudge, "ZeroSimpleBondAddress");
     });
   });
 
@@ -593,7 +593,7 @@ describe("KlerosJudge", function () {
     it("non-owner cannot withdraw fees", async function () {
       await expect(
         klerosJudge.connect(outsider).withdrawFees(tokenAddr, outsider.address, 1)
-      ).to.be.revertedWith("Only owner");
+      ).to.be.revertedWithCustomError(klerosJudge, "CallerNotOwner");
     });
   });
 
@@ -671,7 +671,7 @@ describe("KlerosJudge", function () {
     it("non-owner cannot update extra data", async function () {
       await expect(
         klerosJudge.connect(outsider).updateArbitratorExtraData("0x")
-      ).to.be.revertedWith("Only owner");
+      ).to.be.revertedWithCustomError(klerosJudge, "CallerNotOwner");
     });
 
     it("owner can transfer ownership", async function () {
@@ -681,7 +681,7 @@ describe("KlerosJudge", function () {
       // Old owner can no longer call owner functions
       await expect(
         klerosJudge.connect(owner).updateArbitratorExtraData("0x")
-      ).to.be.revertedWith("Only owner");
+      ).to.be.revertedWithCustomError(klerosJudge, "CallerNotOwner");
     });
 
     it("transferOwnership emits event", async function () {
@@ -693,7 +693,13 @@ describe("KlerosJudge", function () {
     it("cannot transfer to zero address", async function () {
       await expect(
         klerosJudge.connect(owner).transferOwnership(ethers.ZeroAddress)
-      ).to.be.revertedWith("Zero address");
+      ).to.be.revertedWithCustomError(klerosJudge, "ZeroNewOwner");
+    });
+
+    it("reverts when withdrawing fees to the zero address", async function () {
+      await expect(
+        klerosJudge.connect(owner).withdrawFees(tokenAddr, ethers.ZeroAddress, 1)
+      ).to.be.revertedWithCustomError(klerosJudge, "ZeroWithdrawalRecipient");
     });
   });
 
