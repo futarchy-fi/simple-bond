@@ -464,6 +464,53 @@ describe("SimpleBondV4", function () {
     });
   });
 
+  describe("View Helpers", function () {
+    it("getChallengeCount reverts for a nonexistent bond", async function () {
+      await expect(
+        bond.getChallengeCount(0)
+      ).to.be.revertedWith("Bond does not exist");
+    });
+
+    it("getChallenge reverts for a nonexistent bond", async function () {
+      await expect(
+        bond.getChallenge(0, 0)
+      ).to.be.revertedWith("Bond does not exist");
+    });
+
+    it("getChallenge reverts for an out-of-range challenge index", async function () {
+      await createDefaultBond();
+      await bond.connect(challenger1).challenge(0, "Only challenge");
+
+      await expect(
+        bond.getChallenge(0, 1)
+      ).to.be.revertedWith("Challenge does not exist");
+    });
+
+    it("rulingWindowStart reverts for a nonexistent bond", async function () {
+      await expect(
+        bond.rulingWindowStart(0)
+      ).to.be.revertedWith("Bond does not exist");
+    });
+
+    it("rulingDeadline reverts for a nonexistent bond", async function () {
+      await expect(
+        bond.rulingDeadline(0)
+      ).to.be.revertedWith("Bond does not exist");
+    });
+
+    it("getJudgeMinFee reverts for a zero judge address", async function () {
+      await expect(
+        bond.getJudgeMinFee(ethers.ZeroAddress, tokenAddr)
+      ).to.be.revertedWith("Zero judge");
+    });
+
+    it("getJudgeMinFee reverts for a zero token address", async function () {
+      await expect(
+        bond.getJudgeMinFee(judge.address, ethers.ZeroAddress)
+      ).to.be.revertedWith("Zero token");
+    });
+  });
+
   // =====================================================================
   // 4. DEREGISTERED JUDGE CAN STILL RULE ON EXISTING BONDS
   // =====================================================================

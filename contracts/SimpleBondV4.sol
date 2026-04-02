@@ -465,18 +465,23 @@ contract SimpleBondV4 {
     // --- Views ------------------------------------------------------------
 
     function getChallengeCount(uint256 bondId) external view returns (uint256) {
+        _requireBondExists(bondId);
         return challenges[bondId].length;
     }
 
     function getChallenge(uint256 bondId, uint256 index)
         external view returns (address challenger, uint8 status, string memory metadata)
     {
+        _requireBondExists(bondId);
+        require(index < challenges[bondId].length, "Challenge does not exist");
         Challenge storage c = challenges[bondId][index];
         return (c.challenger, c.status, c.metadata);
     }
 
     /// @notice Returns the judge's minimum fee for a specific token.
     function getJudgeMinFee(address judge, address token) external view returns (uint256) {
+        require(judge != address(0), "Zero judge");
+        require(token != address(0), "Zero token");
         return judgeMinFees[judge][token];
     }
 
@@ -485,20 +490,25 @@ contract SimpleBondV4 {
      *         max(deadline, lastChallengeTime + acceptanceDelay)
      */
     function rulingWindowStart(uint256 bondId) public view returns (uint256) {
-        Bond storage b = bonds[bondId];
-        uint256 afterDeadline = b.deadline;
-        uint256 afterAcceptance = b.lastChallengeTime + b.acceptanceDelay;
-        return afterDeadline > afterAcceptance ? afterDeadline : afterAcceptance;
+        _requireBondExists(bondId);
+        return _rulingWindowStartFor(bonds[bondId]);
     }
 
     /**
      * @notice Returns the deadline by which the judge must finish ruling.
      */
     function rulingDeadline(uint256 bondId) public view returns (uint256) {
-        return _rulingDeadline(bondId);
+        _requireBondExists(bondId);
+        return _rulingDeadlineFor(bonds[bondId]);
     }
 
     // --- Internal ---------------------------------------------------------
+
+    function _rulingWindowStartFor(Bond storage b) internal view returns (uint256) {
+        uint256 afterDeadline = b.deadline;
+        uint256 afterAcceptance = b.lastChallengeTime + b.acceptanceDelay;
+        return afterDeadline > afterAcceptance ? afterDeadline : afterAcceptance;
+    }
 
     function _requireBondExists(uint256 bondId) internal view {
         require(bonds[bondId].poster != address(0), "Bond does not exist");
@@ -506,15 +516,18 @@ contract SimpleBondV4 {
 
     function _requireRulingWindow(uint256 bondId) internal view {
         Bond storage b = bonds[bondId];
-        uint256 start = rulingWindowStart(bondId);
+        uint256 start = _rulingWindowStartFor(b);
         uint256 end = start + b.rulingBuffer;
         require(block.timestamp >= start, "Before ruling window");
         require(block.timestamp <= end, "Past ruling deadline");
     }
 
     function _rulingDeadline(uint256 bondId) internal view returns (uint256) {
-        Bond storage b = bonds[bondId];
-        return rulingWindowStart(bondId) + b.rulingBuffer;
+        return _rulingDeadlineFor(bonds[bondId]);
+    }
+
+    function _rulingDeadlineFor(Bond storage b) internal view returns (uint256) {
+        return _rulingWindowStartFor(b) + b.rulingBuffer;
     }
 
     function _noPendingChallenges(uint256 bondId) internal view returns (bool) {
