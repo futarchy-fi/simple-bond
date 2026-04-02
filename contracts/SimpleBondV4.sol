@@ -151,6 +151,7 @@ contract SimpleBondV4 {
      */
     function setJudgeFee(address token, uint256 minFee) external {
         require(judges[msg.sender].registered, "Not registered");
+        require(token != address(0), "Zero token");
         judgeMinFees[msg.sender][token] = minFee;
         emit JudgeFeeUpdated(msg.sender, token, minFee);
     }
@@ -163,7 +164,9 @@ contract SimpleBondV4 {
     function setJudgeFees(address[] calldata tokens, uint256[] calldata minFees) external {
         require(judges[msg.sender].registered, "Not registered");
         require(tokens.length == minFees.length, "Length mismatch");
+        require(tokens.length > 0, "Empty batch");
         for (uint256 i = 0; i < tokens.length; i++) {
+            require(tokens[i] != address(0), "Zero token");
             judgeMinFees[msg.sender][tokens[i]] = minFees[i];
             emit JudgeFeeUpdated(msg.sender, tokens[i], minFees[i]);
         }

@@ -143,6 +143,13 @@ describe("SimpleBondV4", function () {
       ).to.be.revertedWith("Not registered");
     });
 
+    it("reverts setJudgeFee for zero token address", async function () {
+      await bond.connect(outsider).registerAsJudge();
+      await expect(
+        bond.connect(outsider).setJudgeFee(ethers.ZeroAddress, 100)
+      ).to.be.revertedWith("Zero token");
+    });
+
     it("re-registration preserves existing per-token fees", async function () {
       await bond.connect(outsider).registerAsJudge();
       await bond.connect(outsider).setJudgeFee(tokenAddr, ethers.parseEther("100"));
@@ -189,10 +196,24 @@ describe("SimpleBondV4", function () {
       ).to.be.revertedWith("Length mismatch");
     });
 
+    it("batch setJudgeFees reverts on empty batch", async function () {
+      await bond.connect(outsider).registerAsJudge();
+      await expect(
+        bond.connect(outsider).setJudgeFees([], [])
+      ).to.be.revertedWith("Empty batch");
+    });
+
     it("batch setJudgeFees reverts if not registered", async function () {
       await expect(
         bond.connect(outsider).setJudgeFees([tokenAddr], [100])
       ).to.be.revertedWith("Not registered");
+    });
+
+    it("batch setJudgeFees reverts for zero token address", async function () {
+      await bond.connect(outsider).registerAsJudge();
+      await expect(
+        bond.connect(outsider).setJudgeFees([tokenAddr, ethers.ZeroAddress], [100, 200])
+      ).to.be.revertedWith("Zero token");
     });
   });
 
