@@ -1,3 +1,4 @@
+![Tests](https://img.shields.io/badge/tests-passing-green)
 # SimpleBond v4
 
 A truth-machine bond contract. Make a claim, back it with money, and let the world challenge you. Designed by Robin Hanson, built by Futarchy.
