@@ -1,4 +1,13 @@
 (function (root) {
+  function parseJudgeRegistration(value) {
+    if (typeof value === "boolean") return value;
+    if (value && typeof value === "object") {
+      if (typeof value.registered === "boolean") return value.registered;
+      if (typeof value[0] === "boolean") return value[0];
+    }
+    return false;
+  }
+
   function normalizeTokenFees(tokenFees) {
     const normalized = new Map();
     for (const [tokenAddr, fee] of (tokenFees || new Map()).entries()) {
@@ -59,11 +68,13 @@
 
   if (typeof module !== "undefined" && module.exports) {
     module.exports = {
+      parseJudgeRegistration,
       dedupeJudgesByAddress,
       getJudgeSelectEntries,
     };
   }
 
+  root.parseJudgeRegistration = parseJudgeRegistration;
   root.dedupeJudgesByAddress = dedupeJudgesByAddress;
   root.getJudgeSelectEntries = getJudgeSelectEntries;
 })(typeof window !== "undefined" ? window : globalThis);
