@@ -27,6 +27,9 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 contract SimpleBondV4 {
     using SafeERC20 for IERC20;
 
+    uint8 private constant BOND_RESOLVED_FOR_POSTER = 1;
+    uint8 private constant BOND_RESOLVED_FOR_CHALLENGER = 2;
+
     // --- Data Structures --------------------------------------------------
 
     struct Challenge {
@@ -79,11 +82,24 @@ contract SimpleBondV4 {
         string  metadata
     );
 
+    event BondCreated(
+        uint256 indexed bondId,
+        address indexed poster,
+        address token,
+        uint256 amount
+    );
+
     event Challenged(
         uint256 indexed bondId,
         uint256 challengeIndex,
         address indexed challenger,
         string  metadata
+    );
+
+    event BondChallenged(
+        uint256 indexed bondId,
+        address indexed challenger,
+        uint256 amount
     );
 
     /// @notice Emitted when the poster publicly concedes the claim is wrong.
@@ -92,6 +108,11 @@ contract SimpleBondV4 {
         address indexed poster,
         string  metadata
     );
+
+    event BondConceded(uint256 indexed bondId);
+
+    /// @notice verdict: 1 = poster won, 2 = challenger won.
+    event BondResolved(uint256 indexed bondId, uint8 verdict);
 
     event RuledForChallenger(
         uint256 indexed bondId,
@@ -262,6 +283,7 @@ contract SimpleBondV4 {
             deadline, acceptanceDelay, rulingBuffer,
             _metadata
         );
+        emit BondCreated(bondId, msg.sender, token, bondAmount);
     }
 
     // --- Challenge --------------------------------------------------------
@@ -295,6 +317,7 @@ contract SimpleBondV4 {
         IERC20(b.token).safeTransferFrom(msg.sender, address(this), b.challengeAmount);
 
         emit Challenged(bondId, idx, msg.sender, _metadata);
+        emit BondChallenged(bondId, msg.sender, b.challengeAmount);
     }
 
     // --- Poster Concession ------------------------------------------------
@@ -330,6 +353,7 @@ contract SimpleBondV4 {
         _refundRemaining(bondId, 0);
 
         emit ClaimConceded(bondId, b.poster, _metadata);
+        emit BondConceded(bondId);
     }
 
     // --- Judge Rulings ----------------------------------------------------
@@ -369,6 +393,7 @@ contract SimpleBondV4 {
         }
 
         emit RuledForChallenger(bondId, idx, c.challenger, feeCharged);
+        emit BondResolved(bondId, BOND_RESOLVED_FOR_CHALLENGER);
 
         // Refund remaining pending challengers
         _refundRemaining(bondId, idx + 1);
@@ -405,6 +430,7 @@ contract SimpleBondV4 {
         }
 
         emit RuledForPoster(bondId, idx, c.challenger, feeCharged);
+        emit BondResolved(bondId, BOND_RESOLVED_FOR_POSTER);
 
         // Advance to next challenge
         b.currentChallenge = idx + 1;

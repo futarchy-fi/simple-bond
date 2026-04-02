@@ -12,6 +12,12 @@ const RULING_BUFFER = 30 * 86400;   // 30 days
 
 const ONE_DAY = 86400;
 const ONE_MONTH = 30 * ONE_DAY;
+const DETAILED_BOND_CREATED_EVENT =
+  "BondCreated(uint256,address,address,address,uint256,uint256,uint256,uint256,uint256,uint256,string)";
+const LIGHTWEIGHT_BOND_CREATED_EVENT =
+  "BondCreated(uint256,address,address,uint256)";
+const BOND_RESOLVED_FOR_POSTER = 1n;
+const BOND_RESOLVED_FOR_CHALLENGER = 2n;
 
 describe("SimpleBondV4", function () {
   let bond, token;
@@ -255,7 +261,7 @@ describe("SimpleBondV4", function () {
           judge.address, // registered with per-token minFee=500
           deadline, ACCEPTANCE_DELAY, RULING_BUFFER, "Valid bond"
         )
-      ).to.emit(bond, "BondCreated");
+      ).to.emit(bond, DETAILED_BOND_CREATED_EVENT);
     });
 
     it("succeeds when fee equals judge minimum exactly", async function () {
@@ -558,20 +564,23 @@ describe("SimpleBondV4", function () {
   // 5. CREATION (existing V3 tests, adapted for V4)
   // =====================================================================
   describe("Bond Creation", function () {
-    it("creates a bond with correct parameters and emits BondCreated", async function () {
-      await expect(
-        bond.connect(poster).createBond(
-          tokenAddr,
-          BOND_AMOUNT, CHALLENGE_AMOUNT, JUDGE_FEE,
-          judge.address,
-          deadline, ACCEPTANCE_DELAY, RULING_BUFFER,
-          "Test claim"
-        )
-      ).to.emit(bond, "BondCreated").withArgs(
+    it("creates a bond with correct parameters and emits both BondCreated events", async function () {
+      const tx = bond.connect(poster).createBond(
+        tokenAddr,
+        BOND_AMOUNT, CHALLENGE_AMOUNT, JUDGE_FEE,
+        judge.address,
+        deadline, ACCEPTANCE_DELAY, RULING_BUFFER,
+        "Test claim"
+      );
+
+      await expect(tx).to.emit(bond, DETAILED_BOND_CREATED_EVENT).withArgs(
         0, poster.address, judge.address, tokenAddr,
         BOND_AMOUNT, CHALLENGE_AMOUNT, JUDGE_FEE,
         deadline, ACCEPTANCE_DELAY, RULING_BUFFER,
         "Test claim"
+      );
+      await expect(tx).to.emit(bond, LIGHTWEIGHT_BOND_CREATED_EVENT).withArgs(
+        0, poster.address, tokenAddr, BOND_AMOUNT
       );
 
       expect(await bond.nextBondId()).to.equal(1n);
@@ -653,11 +662,14 @@ describe("SimpleBondV4", function () {
       await createDefaultBond();
     });
 
-    it("accepts a challenge with metadata and emits Challenged", async function () {
-      await expect(
-        bond.connect(challenger1).challenge(0, "Section 3 contains factual errors")
-      ).to.emit(bond, "Challenged").withArgs(
+    it("accepts a challenge with metadata and emits both challenge events", async function () {
+      const tx = bond.connect(challenger1).challenge(0, "Section 3 contains factual errors");
+
+      await expect(tx).to.emit(bond, "Challenged").withArgs(
         0, 0, challenger1.address, "Section 3 contains factual errors"
+      );
+      await expect(tx).to.emit(bond, "BondChallenged").withArgs(
+        0, challenger1.address, CHALLENGE_AMOUNT
       );
     });
 
@@ -728,14 +740,15 @@ describe("SimpleBondV4", function () {
       await createDefaultBond();
     });
 
-    it("poster concedes, emits ClaimConceded with metadata", async function () {
+    it("poster concedes and emits both concession events", async function () {
       await bond.connect(challenger1).challenge(0, "You're wrong about X");
 
-      await expect(
-        bond.connect(poster).concede(0, "I was wrong because Y")
-      ).to.emit(bond, "ClaimConceded").withArgs(
+      const tx = bond.connect(poster).concede(0, "I was wrong because Y");
+
+      await expect(tx).to.emit(bond, "ClaimConceded").withArgs(
         0, poster.address, "I was wrong because Y"
       );
+      await expect(tx).to.emit(bond, "BondConceded").withArgs(0);
     });
 
     it("concession refunds poster's full bond", async function () {
@@ -952,11 +965,16 @@ describe("SimpleBondV4", function () {
       expect(status).to.equal(2n);
     });
 
-    it("emits RuledForPoster with feeCharged", async function () {
+    it("emits RuledForPoster and BondResolved for a poster win", async function () {
       await advanceToRulingWindow();
-      await expect(
-        bond.connect(judge).ruleForPoster(0, JUDGE_FEE)
-      ).to.emit(bond, "RuledForPoster").withArgs(0, 0, challenger1.address, JUDGE_FEE);
+      const tx = bond.connect(judge).ruleForPoster(0, JUDGE_FEE);
+
+      await expect(tx).to.emit(bond, "RuledForPoster").withArgs(
+        0, 0, challenger1.address, JUDGE_FEE
+      );
+      await expect(tx).to.emit(bond, "BondResolved").withArgs(
+        0, BOND_RESOLVED_FOR_POSTER
+      );
     });
   });
 
@@ -1009,6 +1027,18 @@ describe("SimpleBondV4", function () {
 
       expect(await token.balanceOf(challenger2.address) - before2).to.equal(CHALLENGE_AMOUNT);
       expect(await token.balanceOf(challenger3.address) - before3).to.equal(CHALLENGE_AMOUNT);
+    });
+
+    it("emits RuledForChallenger and BondResolved for a challenger win", async function () {
+      await advanceToRulingWindow();
+      const tx = bond.connect(judge).ruleForChallenger(0, JUDGE_FEE);
+
+      await expect(tx).to.emit(bond, "RuledForChallenger").withArgs(
+        0, 0, challenger1.address, JUDGE_FEE
+      );
+      await expect(tx).to.emit(bond, "BondResolved").withArgs(
+        0, BOND_RESOLVED_FOR_CHALLENGER
+      );
     });
   });
 
