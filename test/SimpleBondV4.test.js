@@ -65,6 +65,10 @@ describe("SimpleBondV4", function () {
     await time.increaseTo(Number(end) + 1);
   }
 
+  async function challengeBond(bondId, challenger, metadata = "I found errors") {
+    await bond.connect(challenger).challenge(bondId, metadata);
+  }
+
   beforeEach(async function () {
     await deployFixture();
   });
@@ -590,10 +594,13 @@ describe("SimpleBondV4", function () {
       expect(b2.lastChallengeTime).to.be.gt(t1);
     });
 
-    it("reverts challenge after deadline", async function () {
+    it("reverts challengeBond after the deadline has passed", async function () {
+      await time.setNextBlockTimestamp(deadline);
+      await challengeBond(0, challenger1, "Filed at the deadline");
+
       await time.increaseTo(deadline + 1);
       await expect(
-        bond.connect(challenger1).challenge(0, "Too late")
+        challengeBond(0, challenger2, "Too late")
       ).to.be.revertedWith("Past deadline");
     });
 
