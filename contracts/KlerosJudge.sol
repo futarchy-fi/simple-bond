@@ -10,16 +10,63 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
  * @notice Minimal interface for the SimpleBondV4 functions KlerosJudge needs.
  */
 interface ISimpleBondV4 {
+    /**
+     * @notice Registers the caller as an available judge.
+     */
     function registerAsJudge() external;
+
+    /**
+     * @notice Records a ruling in favor of the current challenger.
+     * @param bondId The bond to rule on
+     * @param feeCharged The judge fee charged for the ruling
+     */
     function ruleForChallenger(uint256 bondId, uint256 feeCharged) external;
+
+    /**
+     * @notice Records a ruling in favor of the poster.
+     * @param bondId The bond to rule on
+     * @param feeCharged The judge fee charged for the ruling
+     */
     function ruleForPoster(uint256 bondId, uint256 feeCharged) external;
+
+    /**
+     * @notice Rejects a bond and unwinds it without a winner.
+     * @param bondId The bond to reject
+     */
     function rejectBond(uint256 bondId) external;
+
+    /**
+     * @notice Returns the earliest timestamp when ruling may begin.
+     * @param bondId The bond to inspect
+     * @return windowStart The timestamp when the ruling window opens
+     */
     function rulingWindowStart(uint256 bondId) external view returns (uint256);
+
+    /**
+     * @notice Returns the latest timestamp when ruling is still allowed.
+     * @param bondId The bond to inspect
+     * @return deadline The timestamp when the ruling window closes
+     */
     function rulingDeadline(uint256 bondId) external view returns (uint256);
+
+    /**
+     * @notice Returns data for a specific challenge on a bond.
+     * @param bondId The bond to inspect
+     * @param index The challenge index to read
+     * @return challenger The challenger address
+     * @return status The challenge status
+     * @return metadata The challenge metadata string
+     */
     function getChallenge(uint256 bondId, uint256 index)
         external
         view
         returns (address challenger, uint8 status, string memory metadata);
+
+    /**
+     * @notice Returns the total number of challenges filed against a bond.
+     * @param bondId The bond to inspect
+     * @return count The number of recorded challenges
+     */
     function getChallengeCount(uint256 bondId) external view returns (uint256);
 }
 
@@ -44,18 +91,25 @@ contract KlerosJudge is IArbitrable, IEvidence {
 
     // --- Constants -----------------------------------------------------------
 
+    /// @notice Returns the number of non-zero ruling options Kleros may choose from.
     uint256 public constant RULING_CHOICES = 2;
+    /// @notice Returns the ERC-792 ruling value that resolves a dispute in favor of the poster.
     uint256 public constant RULING_POSTER = 1;
+    /// @notice Returns the ERC-792 ruling value that resolves a dispute in favor of the challenger.
     uint256 public constant RULING_CHALLENGER = 2;
 
     // --- Immutables ----------------------------------------------------------
 
+    /// @notice Returns the Kleros arbitrator contract used to create and receive disputes.
     IArbitrator public immutable arbitrator;
+    /// @notice Returns the SimpleBondV4 contract this adapter executes rulings against.
     ISimpleBondV4 public immutable simpleBond;
 
     // --- State ---------------------------------------------------------------
 
+    /// @notice Returns the arbitrator extra data used for future dispute creations.
     bytes public arbitratorExtraData;
+    /// @notice Returns the address allowed to administer this adapter.
     address public owner;
 
     enum DisputeStatus { None, Active, Ruled, Executed }
@@ -97,6 +151,8 @@ contract KlerosJudge is IArbitrable, IEvidence {
     // --- Constructor ---------------------------------------------------------
 
     /**
+     * @notice Initializes the adapter, registers it as a SimpleBondV4 judge,
+     *         and emits the ERC-1497 meta-evidence reference.
      * @param _arbitrator       Kleros arbitrator contract (e.g., KlerosLiquid)
      * @param _simpleBond       SimpleBondV4 contract
      * @param _arbitratorExtraData  Encodes subcourt ID + juror count
