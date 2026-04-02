@@ -108,6 +108,8 @@ contract KlerosJudge is IArbitrable, IEvidence {
     error DisputeNotActive();
     error InvalidRuling();
     error NoDisputeForChallenge();
+    error DisputeNotRuled();
+    error BeforeRulingWindow();
 
     // --- Constants -----------------------------------------------------------
 
@@ -281,15 +283,15 @@ contract KlerosJudge is IArbitrable, IEvidence {
      */
     function executeRuling(uint256 _disputeID) external {
         DisputeData storage d = disputes[_disputeID];
-        require(d.status == DisputeStatus.Ruled, "Not yet ruled");
+        if (d.status != DisputeStatus.Ruled) revert DisputeNotRuled();
 
         uint256 bondId = d.bondId;
 
         // Verify ruling window is open
         uint256 windowStart = simpleBond.rulingWindowStart(bondId);
-        require(block.timestamp >= windowStart, "Before ruling window");
+        if (block.timestamp < windowStart) revert BeforeRulingWindow();
         uint256 deadline = simpleBond.rulingDeadline(bondId);
-        require(block.timestamp <= deadline, "Past ruling deadline");
+        if (block.timestamp > deadline) revert BondPastRulingDeadline();
 
         d.status = DisputeStatus.Executed;
 

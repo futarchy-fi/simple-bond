@@ -504,7 +504,7 @@ describe("KlerosJudge", function () {
       // Don't advance time — still before ruling window
       await expect(
         klerosJudge.connect(outsider).executeRuling(0)
-      ).to.be.revertedWith("Before ruling window");
+      ).to.be.revertedWithCustomError(klerosJudge, "BeforeRulingWindow");
     });
 
     it("reverts after ruling deadline", async function () {
@@ -518,7 +518,7 @@ describe("KlerosJudge", function () {
 
       await expect(
         klerosJudge.connect(outsider).executeRuling(0)
-      ).to.be.revertedWith("Past ruling deadline");
+      ).to.be.revertedWithCustomError(klerosJudge, "BondPastRulingDeadline");
     });
 
     it("reverts if not yet ruled", async function () {
@@ -533,7 +533,7 @@ describe("KlerosJudge", function () {
 
       await expect(
         klerosJudge.connect(outsider).executeRuling(0)
-      ).to.be.revertedWith("Not yet ruled");
+      ).to.be.revertedWithCustomError(klerosJudge, "DisputeNotRuled");
     });
 
     it("reverts if already executed", async function () {
@@ -549,7 +549,7 @@ describe("KlerosJudge", function () {
 
       await expect(
         klerosJudge.connect(outsider).executeRuling(0)
-      ).to.be.revertedWith("Not yet ruled");
+      ).to.be.revertedWithCustomError(klerosJudge, "DisputeNotRuled");
     });
   });
 
