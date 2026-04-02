@@ -312,6 +312,7 @@ contract SimpleBondV4 {
      * @param _metadata Poster's concession statement
      */
     function concede(uint256 bondId, string calldata _metadata) external {
+        _requireBondExists(bondId);
         Bond storage b = bonds[bondId];
         require(!b.settled, "Already settled");
         require(!b.conceded, "Already conceded");
@@ -343,6 +344,7 @@ contract SimpleBondV4 {
      * @param feeCharged Amount judge charges (0 to judgeFee). Allows fee waiver.
      */
     function ruleForChallenger(uint256 bondId, uint256 feeCharged) external {
+        _requireBondExists(bondId);
         Bond storage b = bonds[bondId];
         require(!b.settled, "Already settled");
         require(!b.conceded, "Claim conceded");
@@ -381,6 +383,7 @@ contract SimpleBondV4 {
      * @param feeCharged Amount judge charges (0 to judgeFee). Allows fee waiver.
      */
     function ruleForPoster(uint256 bondId, uint256 feeCharged) external {
+        _requireBondExists(bondId);
         Bond storage b = bonds[bondId];
         require(!b.settled, "Already settled");
         require(!b.conceded, "Claim conceded");
@@ -418,6 +421,7 @@ contract SimpleBondV4 {
      *      period during which the poster is forced to keep the bond open.
      */
     function withdrawBond(uint256 bondId) external {
+        _requireBondExists(bondId);
         Bond storage b = bonds[bondId];
         require(!b.settled, "Already settled");
         require(!b.conceded, "Claim conceded");
@@ -438,6 +442,7 @@ contract SimpleBondV4 {
      *         Judge gets nothing (punished for inaction).
      */
     function claimTimeout(uint256 bondId) external {
+        _requireBondExists(bondId);
         Bond storage b = bonds[bondId];
         require(!b.settled, "Already settled");
         require(!b.conceded, "Claim conceded");
@@ -494,6 +499,10 @@ contract SimpleBondV4 {
     }
 
     // --- Internal ---------------------------------------------------------
+
+    function _requireBondExists(uint256 bondId) internal view {
+        require(bonds[bondId].poster != address(0), "Bond does not exist");
+    }
 
     function _requireRulingWindow(uint256 bondId) internal view {
         Bond storage b = bonds[bondId];

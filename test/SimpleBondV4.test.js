@@ -432,6 +432,38 @@ describe("SimpleBondV4", function () {
     });
   });
 
+  describe("Invalid Settlement Bond IDs", function () {
+    it("concede reverts for a nonexistent bond", async function () {
+      await expect(
+        bond.connect(poster).concede(0, "")
+      ).to.be.revertedWith("Bond does not exist");
+    });
+
+    it("ruleForPoster reverts for a nonexistent bond", async function () {
+      await expect(
+        bond.connect(judge).ruleForPoster(0, JUDGE_FEE)
+      ).to.be.revertedWith("Bond does not exist");
+    });
+
+    it("ruleForChallenger reverts for a nonexistent bond", async function () {
+      await expect(
+        bond.connect(judge).ruleForChallenger(0, JUDGE_FEE)
+      ).to.be.revertedWith("Bond does not exist");
+    });
+
+    it("withdrawBond reverts for a nonexistent bond", async function () {
+      await expect(
+        bond.connect(poster).withdrawBond(0)
+      ).to.be.revertedWith("Bond does not exist");
+    });
+
+    it("claimTimeout reverts for a nonexistent bond", async function () {
+      await expect(
+        bond.connect(outsider).claimTimeout(0)
+      ).to.be.revertedWith("Bond does not exist");
+    });
+  });
+
   // =====================================================================
   // 4. DEREGISTERED JUDGE CAN STILL RULE ON EXISTING BONDS
   // =====================================================================
