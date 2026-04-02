@@ -104,6 +104,10 @@ contract KlerosJudge is IArbitrable, IEvidence {
     error NoPendingChallenge();
     error ChallengeNotPending();
     error CallerNotPosterOrChallenger();
+    error CallerNotArbitrator();
+    error DisputeNotActive();
+    error InvalidRuling();
+    error NoDisputeForChallenge();
 
     // --- Constants -----------------------------------------------------------
 
@@ -260,11 +264,11 @@ contract KlerosJudge is IArbitrable, IEvidence {
      * @param _ruling    0=refused, 1=poster, 2=challenger
      */
     function rule(uint256 _disputeID, uint256 _ruling) external override {
-        require(msg.sender == address(arbitrator), "Only arbitrator");
+        if (msg.sender != address(arbitrator)) revert CallerNotArbitrator();
 
         DisputeData storage d = disputes[_disputeID];
-        require(d.status == DisputeStatus.Active, "Dispute not active");
-        require(_ruling <= RULING_CHOICES, "Invalid ruling");
+        if (d.status != DisputeStatus.Active) revert DisputeNotActive();
+        if (_ruling > RULING_CHOICES) revert InvalidRuling();
 
         d.ruling = _ruling;
         d.status = DisputeStatus.Ruled;
@@ -315,11 +319,11 @@ contract KlerosJudge is IArbitrable, IEvidence {
         uint256 challengeIndex,
         string calldata _evidence
     ) external {
-        require(hasDispute[bondId][challengeIndex], "No dispute for this challenge");
+        if (!hasDispute[bondId][challengeIndex]) revert NoDisputeForChallenge();
 
         uint256 dID = bondChallengeToDispute[bondId][challengeIndex];
         DisputeData storage d = disputes[dID];
-        require(d.status == DisputeStatus.Active, "Dispute not active");
+        if (d.status != DisputeStatus.Active) revert DisputeNotActive();
 
         uint256 evidenceGroupID = _evidenceGroupID(bondId, challengeIndex);
         emit Evidence(arbitrator, evidenceGroupID, msg.sender, _evidence);

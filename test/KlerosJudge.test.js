@@ -339,7 +339,7 @@ describe("KlerosJudge", function () {
 
       await expect(
         klerosJudge.connect(outsider).rule(0, 1)
-      ).to.be.revertedWith("Only arbitrator");
+      ).to.be.revertedWithCustomError(klerosJudge, "CallerNotArbitrator");
     });
 
     it("arbitrator delivers ruling via MockArbitrator.giveRuling", async function () {
@@ -636,7 +636,7 @@ describe("KlerosJudge", function () {
 
       await expect(
         klerosJudge.connect(poster).submitEvidence(bondId, 0, "/ipfs/QmEvidence")
-      ).to.be.revertedWith("No dispute for this challenge");
+      ).to.be.revertedWithCustomError(klerosJudge, "NoDisputeForChallenge");
     });
 
     it("reverts if dispute already ruled", async function () {
@@ -649,7 +649,7 @@ describe("KlerosJudge", function () {
 
       await expect(
         klerosJudge.connect(poster).submitEvidence(bondId, 0, "/ipfs/QmLate")
-      ).to.be.revertedWith("Dispute not active");
+      ).to.be.revertedWithCustomError(klerosJudge, "DisputeNotActive");
     });
   });
 
