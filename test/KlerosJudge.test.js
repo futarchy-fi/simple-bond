@@ -85,6 +85,40 @@ describe("KlerosJudge", function () {
   });
 
   // =====================================================================
+  // 0. PUBLIC ABI SURFACE
+  // =====================================================================
+  describe("Public ABI surface", function () {
+
+    it("keeps the expected public and external function signatures", async function () {
+      const signatures = klerosJudge.interface.fragments
+        .filter((fragment) => fragment.type === "function")
+        .map((fragment) => fragment.format("minimal"))
+        .sort();
+
+      expect(signatures).to.deep.equal([
+        "function RULING_CHALLENGER() view returns (uint256)",
+        "function RULING_CHOICES() view returns (uint256)",
+        "function RULING_POSTER() view returns (uint256)",
+        "function arbitrator() view returns (address)",
+        "function arbitratorExtraData() view returns (bytes)",
+        "function bondChallengeToDispute(uint256,uint256) view returns (uint256)",
+        "function disputes(uint256) view returns (uint256,uint256,address,uint8,uint256)",
+        "function executeRuling(uint256)",
+        "function getArbitrationCost() view returns (uint256)",
+        "function hasDispute(uint256,uint256) view returns (bool)",
+        "function owner() view returns (address)",
+        "function requestArbitration(uint256) payable returns (uint256)",
+        "function rule(uint256,uint256)",
+        "function simpleBond() view returns (address)",
+        "function submitEvidence(uint256,uint256,string)",
+        "function transferOwnership(address)",
+        "function updateArbitratorExtraData(bytes)",
+        "function withdrawFees(address,address,uint256)",
+      ]);
+    });
+  });
+
+  // =====================================================================
   // 1. DEPLOYMENT & REGISTRATION
   // =====================================================================
   describe("Deployment", function () {
