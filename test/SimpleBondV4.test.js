@@ -612,7 +612,9 @@ describe("SimpleBondV4", function () {
           CHALLENGE_AMOUNT + 1n,
           judge.address, deadline, ACCEPTANCE_DELAY, RULING_BUFFER, ""
         )
-      ).to.be.revertedWith("Fee > challenge amount");
+      )
+        .to.be.revertedWithCustomError(bond, "InsufficientChallengeAmount")
+        .withArgs(CHALLENGE_AMOUNT, CHALLENGE_AMOUNT + 1n);
     });
 
     it("allows zero judge fee (when judge has no per-token min fee)", async function () {
