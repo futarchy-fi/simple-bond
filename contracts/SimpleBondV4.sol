@@ -196,12 +196,18 @@ contract SimpleBondV4 {
 
     /**
      * @notice Create a bond asserting a claim. Caller deposits bondAmount.
+     * @dev This contract intentionally accepts arbitrary ERC-20 tokens and does
+     *      not maintain a token allowlist. That maximizes flexibility, but users
+     *      must trust the chosen token's transfer semantics and overall behavior.
      * @param token            ERC-20 token to lock (sDAI recommended for yield)
      * @param bondAmount       Amount the poster locks as collateral
      * @param challengeAmount  Amount each challenger must deposit
      * @param judgeFee         Max fee paid to judge per ruling (judge may waive)
      * @param judge            Address authorized to rule on disputes
-     * @param deadline         Challenges accepted before this timestamp
+     * @param deadline         Latest time challenges may be filed while the bond
+     *                         remains active; this is not a guaranteed open
+     *                         challenge window because the poster may withdraw
+     *                         earlier if no challenge is pending
      * @param acceptanceDelay  Seconds after a challenge before judge can rule
      * @param rulingBuffer     Seconds judge has to rule once window opens
      * @param _metadata        Claim description / assertion text
@@ -259,6 +265,11 @@ contract SimpleBondV4 {
 
     /**
      * @notice Challenge a bond. Caller deposits challengeAmount.
+     * @dev This entrypoint is intentionally permissionless and the queue is left
+     *      uncapped: anyone may challenge, including multiple challengers in
+     *      sequence. Spam resistance is economic because every queued challenge
+     *      must escrow the full `challengeAmount`, which frontends commonly
+     *      default to 50% of the bond.
      * @param bondId   Bond to challenge
      * @param _metadata Challenger's reasoning / evidence
      */
@@ -398,6 +409,10 @@ contract SimpleBondV4 {
     /**
      * @notice Poster withdraws their bond.
      *         Allowed anytime there are no pending challenges (before or after deadline).
+     * @dev This is intentional: a bond is revocable until someone actually
+     *      challenges it. The `deadline` therefore marks the last time a
+     *      challenge may be filed if the bond is still active, not a guaranteed
+     *      period during which the poster is forced to keep the bond open.
      */
     function withdrawBond(uint256 bondId) external {
         Bond storage b = bonds[bondId];
@@ -496,6 +511,13 @@ contract SimpleBondV4 {
         return bonds[bondId].currentChallenge >= len;
     }
 
+    /**
+     * @dev Refunds every still-pending challenger from `startIdx` onward.
+     *      This is intentionally O(n) in the remaining queue length. The design
+     *      relies on the fact that each additional queue entry had to post the
+     *      full `challengeAmount`, making very large queues economically costly
+     *      rather than free spam.
+     */
     function _refundRemaining(uint256 bondId, uint256 startIdx) internal {
         Bond storage b = bonds[bondId];
         uint256 len = challenges[bondId].length;
