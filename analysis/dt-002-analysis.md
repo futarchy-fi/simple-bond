@@ -43,6 +43,61 @@ There is a small ambiguity in the task wording:
 
 The decomposition assumes the safer interpretation: document every undocumented public-facing callable surface in this file without changing behavior.
 
+## Audited Surface Inventory
+
+### Explicitly documented already
+
+- `KlerosJudge.requestArbitration(uint256)` with `@notice`, `@param`, and `@return`
+- `KlerosJudge.rule(uint256,uint256)` with `@notice` and `@param`
+- `KlerosJudge.executeRuling(uint256)` with `@notice` and `@param`
+- `KlerosJudge.submitEvidence(uint256,uint256,string)` with `@notice` and `@param`
+- `KlerosJudge.withdrawFees(address,address,uint256)` with `@notice` and `@param`
+- `KlerosJudge.updateArbitratorExtraData(bytes)` with `@notice` and `@param`
+- `KlerosJudge.transferOwnership(address)` with `@notice` and `@param`
+- `KlerosJudge.getArbitrationCost()` with `@notice` and `@return`
+- public mappings `disputes`, `bondChallengeToDispute`, and `hasDispute` via `/// @notice`
+
+### Undocumented interface entrypoints
+
+These external declarations on `ISimpleBondV4` currently have no NatSpec:
+
+- `registerAsJudge()`
+- `ruleForChallenger(uint256 bondId, uint256 feeCharged)`
+- `ruleForPoster(uint256 bondId, uint256 feeCharged)`
+- `rejectBond(uint256 bondId)`
+- `rulingWindowStart(uint256 bondId) returns (uint256)`
+- `rulingDeadline(uint256 bondId) returns (uint256)`
+- `getChallenge(uint256 bondId, uint256 index) returns (address challenger, uint8 status, string memory metadata)`
+- `getChallengeCount(uint256 bondId) returns (uint256)`
+
+### Undocumented generated getters
+
+These `public` state variables generate ABI getter functions but currently have no NatSpec comments:
+
+- `RULING_CHOICES`
+- `RULING_POSTER`
+- `RULING_CHALLENGER`
+- `arbitrator`
+- `simpleBond`
+- `arbitratorExtraData`
+- `owner`
+
+### Partially documented constructor
+
+The constructor has `@param` tags for all arguments, but it is still missing a top-level `@notice` summary describing the deployment side effects:
+
+- stores the arbitrator, bond adapter target, and extra data
+- registers itself as a judge in `SimpleBondV4`
+- emits the initial ERC-1497 `MetaEvidence`
+
+### Out of scope for the NatSpec patch
+
+These items do not appear to require action for the parent task:
+
+- internal helper functions already documented with `@dev`
+- private/internal constants and storage that do not generate public ABI surface
+- events, which are part of the ABI but are not the "public functions" named by the parent task
+
 ## Implementation Risk
 
 This should be a low-risk patch:
