@@ -481,13 +481,15 @@ describe("SimpleBondV4", function () {
       expect(await token.balanceOf(await bond.getAddress())).to.equal(BOND_AMOUNT);
     });
 
-    it("reverts on zero bond amount", async function () {
+    it("createBond reverts when bondAmount is 0", async function () {
       await expect(
         bond.connect(poster).createBond(
           tokenAddr, 0, CHALLENGE_AMOUNT, JUDGE_FEE,
           judge.address, deadline, ACCEPTANCE_DELAY, RULING_BUFFER, ""
         )
       ).to.be.revertedWith("Zero bond amount");
+
+      expect(await bond.nextBondId()).to.equal(0n);
     });
 
     it("reverts if judgeFee > challengeAmount", async function () {
