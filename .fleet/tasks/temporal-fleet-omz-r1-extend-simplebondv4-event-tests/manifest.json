@@ -1,0 +1,20 @@
+{
+  "task_id": "temporal-fleet-omz-r1-extend-simplebondv4-event-tests",
+  "harness_version": "v1",
+  "branch": "ff/Ttemporal-fleet-omz-r1-extend-simplebondv4-event-tests",
+  "base_branch": "ff/Ttemporal-fleet-omz",
+  "base_commit": "729ca4c1cab6df77a17d40a17b093c3f5cd87533",
+  "head_commit": "99190abd832af254ef93ac857abde1262231f091",
+  "changed_files": [
+    ".fleet/tasks/temporal-fleet-omz-r1-extend-simplebondv4-event-tests/analysis.md",
+    "analysis/temporal-fleet-omz-r1-review-overloaded-bondcreated-consumers.md",
+    "test/SimpleBondV4.test.js"
+  ],
+  "lines_added": 81,
+  "lines_removed": 67,
+  "commit_count": 2,
+  "start_ts": "2026-04-03T22:36:38.418Z",
+  "end_ts": "2026-04-03T22:40:58.169Z",
+  "provider": "codex",
+  "status": "completed"
+}
