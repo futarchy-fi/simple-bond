@@ -7,6 +7,7 @@
 <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.4/dist/ethers.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@web3auth/modal@9/dist/modal.umd.min.js"></script>
 <script src="/runtime-config.js"></script>
+<script src="/judges.js"></script>
 <style>
   :root {
     --bg: #0a0a0f;
@@ -3617,7 +3618,7 @@ async function findRegisteredJudgeChains(address, { excludeChainId = null } = {}
       const cfg = CHAINS[chainId];
       const readProvider = new ethers.JsonRpcProvider(cfg.rpc);
       const readContract = new ethers.Contract(cfg.contract, BOND_ABI, readProvider);
-      return await readContract.judges(address) ? chainId : null;
+      return parseJudgeRegistration(await readContract.judges(address)) ? chainId : null;
     } catch (_) {
       return null;
     }
@@ -3671,7 +3672,7 @@ async function refreshJudgeRegistrationUi() {
   const readContract = new ethers.Contract(chain().contract, BOND_ABI, readProvider);
 
   try {
-    const registered = await readContract.judges(userAddr);
+    const registered = parseJudgeRegistration(await readContract.judges(userAddr));
     if (registered) {
       ownStatusTextEl.textContent = `You are registered as a judge on ${chain().name}.`;
       ownStatusEl.classList.remove("hidden");
@@ -3705,24 +3706,7 @@ async function refreshJudgeRegistrationUi() {
 }
 
 function normalizeJudges(entries) {
-  const merged = new Map();
-  for (const entry of entries) {
-    const key = entry.address.toLowerCase();
-    if (!merged.has(key)) {
-      merged.set(key, {
-        address: entry.address,
-        tokenFees: new Map(entry.tokenFees || []),
-        bondCount: entry.bondCount || 0,
-      });
-      continue;
-    }
-    const current = merged.get(key);
-    current.bondCount = Math.max(current.bondCount, entry.bondCount || 0);
-    for (const [tokenAddr, fee] of (entry.tokenFees || new Map()).entries()) {
-      current.tokenFees.set(tokenAddr.toLowerCase(), fee);
-    }
-  }
-  return [...merged.values()];
+  return dedupeJudgesByAddress(entries);
 }
 
 // Get the currently selected token address on the create bond form
@@ -3792,7 +3776,7 @@ async function loadJudges() {
         // Use checksummed address from events
         const checksumAddr = regEvents.find(e => e.args.judge.toLowerCase() === addr)?.args.judge;
         if (!checksumAddr) continue;
-        const registered = await readContract.judges(checksumAddr);
+        const registered = parseJudgeRegistration(await readContract.judges(checksumAddr));
         if (registered) {
           if (isKlerosJudge(checksumAddr)) continue;
           const bondFilter = readContract.filters.BondCreated(null, null, checksumAddr);
@@ -3916,23 +3900,18 @@ function buildJudgeSelect() {
   const prev = sel.value;
   sel.innerHTML = '<option value="">Select a registered judge...</option>';
   const currentToken = getSelectedTokenAddr().toLowerCase();
-  const klerosAddr = KLEROS_JUDGE[activeChainId];
+  const entries = getJudgeSelectEntries(judgesList, KLEROS_JUDGE[activeChainId]);
 
-  // Deduplicate judgesList by address (race conditions can cause dupes)
-  const seen = new Set();
-  if (klerosAddr) {
+  for (const entry of entries) {
     const opt = document.createElement("option");
-    opt.value = klerosAddr;
-    opt.textContent = "Kleros decentralized court";
-    sel.appendChild(opt);
-    seen.add(klerosAddr.toLowerCase());
-  }
-  for (const j of judgesList) {
-    const key = j.address.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    const opt = document.createElement("option");
-    opt.value = j.address;
+    opt.value = entry.address;
+    if (entry.kind === "kleros") {
+      opt.textContent = "Kleros decentralized court";
+      sel.appendChild(opt);
+      continue;
+    }
+
+    const j = entry.judge;
     const feeStr = formatJudgeFeeForToken(j);
     const tok = getAllTokens().find(t => t.address.toLowerCase() === currentToken);
     const symbol = tok ? tok.symbol : "token";
@@ -3981,7 +3960,7 @@ async function loadJudgeSelectOnCreate() {
       const nextJudges = [];
       for (const [addr, checksumAddr] of judgeAddrs) {
         try {
-          const registered = await readContract.judges(checksumAddr);
+          const registered = parseJudgeRegistration(await readContract.judges(checksumAddr));
           if (registered) {
             if (isKlerosJudge(checksumAddr)) continue;
             nextJudges.push({ address: checksumAddr, tokenFees: feeMap.get(addr) || new Map(), bondCount: 0 });
