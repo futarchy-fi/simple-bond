@@ -161,7 +161,7 @@ contract SimpleBondV4 {
      *         but existing bonds are unaffected — you must still fulfill duty.
      */
     function deregisterAsJudge() external {
-        require(judges[msg.sender].registered, "Not registered");
+        require(judges[msg.sender].registered, "Caller is not a registered judge");
         judges[msg.sender].registered = false;
         emit JudgeDeregistered(msg.sender);
     }
@@ -173,8 +173,8 @@ contract SimpleBondV4 {
      * @param minFee  Minimum fee per ruling in token units (0 = free)
      */
     function setJudgeFee(address token, uint256 minFee) external {
-        require(judges[msg.sender].registered, "Not registered");
-        require(token != address(0), "Zero token");
+        require(judges[msg.sender].registered, "Caller is not a registered judge");
+        require(token != address(0), "Token address cannot be zero");
         judgeMinFees[msg.sender][token] = minFee;
         emit JudgeFeeUpdated(msg.sender, token, minFee);
     }
@@ -185,11 +185,11 @@ contract SimpleBondV4 {
      * @param minFees Array of minimum fees (same length as tokens)
      */
     function setJudgeFees(address[] calldata tokens, uint256[] calldata minFees) external {
-        require(judges[msg.sender].registered, "Not registered");
-        require(tokens.length == minFees.length, "Length mismatch");
-        require(tokens.length > 0, "Empty batch");
+        require(judges[msg.sender].registered, "Caller is not a registered judge");
+        require(tokens.length == minFees.length, "Token and minimum fee array lengths must match");
+        require(tokens.length > 0, "At least one token fee entry is required");
         for (uint256 i = 0; i < tokens.length; i++) {
-            require(tokens[i] != address(0), "Zero token");
+            require(tokens[i] != address(0), "Token address cannot be zero");
             judgeMinFees[msg.sender][tokens[i]] = minFees[i];
             emit JudgeFeeUpdated(msg.sender, tokens[i], minFees[i]);
         }
@@ -203,9 +203,9 @@ contract SimpleBondV4 {
     function rejectBond(uint256 bondId) external {
         Bond storage b = bonds[bondId];
         require(b.poster != address(0), "Bond does not exist");
-        require(!b.settled, "Already settled");
-        require(!b.conceded, "Already conceded");
-        require(msg.sender == b.judge, "Only judge");
+        require(!b.settled, "Bond is already settled");
+        require(!b.conceded, "Claim is already conceded");
+        require(msg.sender == b.judge, "Caller is not the judge for this bond");
 
         b.settled = true;
 
@@ -249,16 +249,16 @@ contract SimpleBondV4 {
         uint256 rulingBuffer,
         string calldata _metadata
     ) external returns (uint256 bondId) {
-        require(bondAmount > 0, "Zero bond amount");
-        require(challengeAmount > 0, "Zero challenge amount");
-        require(judge != address(0), "Zero judge");
-        require(deadline > block.timestamp, "Deadline in past");
-        require(rulingBuffer > 0, "Zero ruling buffer");
+        require(bondAmount > 0, "Bond amount must be greater than zero");
+        require(challengeAmount > 0, "Challenge amount must be greater than zero");
+        require(judge != address(0), "Judge address cannot be zero");
+        require(deadline > block.timestamp, "Challenge deadline must be in the future");
+        require(rulingBuffer > 0, "Ruling buffer must be greater than zero");
         if (judgeFee > challengeAmount) {
             revert InsufficientChallengeAmount(challengeAmount, judgeFee);
         }
-        require(judges[judge].registered, "Judge not registered");
-        require(judgeFee >= judgeMinFees[judge][token], "Fee below judge minimum");
+        require(judges[judge].registered, "Selected judge is not registered");
+        require(judgeFee >= judgeMinFees[judge][token], "Judge fee is below the selected judge's minimum for this token");
 
         bondId = nextBondId++;
 
@@ -305,9 +305,9 @@ contract SimpleBondV4 {
     function challenge(uint256 bondId, string calldata _metadata) external {
         Bond storage b = bonds[bondId];
         require(b.poster != address(0), "Bond does not exist");
-        require(!b.settled, "Already settled");
-        require(!b.conceded, "Claim conceded");
-        require(block.timestamp <= b.deadline, "Past deadline");
+        require(!b.settled, "Bond is already settled");
+        require(!b.conceded, "Claim is already conceded");
+        require(block.timestamp <= b.deadline, "Challenge deadline has passed");
 
         uint256 idx = challenges[bondId].length;
         challenges[bondId].push(Challenge({
@@ -341,11 +341,11 @@ contract SimpleBondV4 {
     function concede(uint256 bondId, string calldata _metadata) external {
         _requireBondExists(bondId);
         Bond storage b = bonds[bondId];
-        require(!b.settled, "Already settled");
-        require(!b.conceded, "Already conceded");
-        require(msg.sender == b.poster, "Only poster");
-        require(!_noPendingChallenges(bondId), "No pending challenges");
-        require(b.currentChallenge == 0, "Ruling already started");
+        require(!b.settled, "Bond is already settled");
+        require(!b.conceded, "Claim is already conceded");
+        require(msg.sender == b.poster, "Caller is not the poster for this bond");
+        require(!_noPendingChallenges(bondId), "Bond has no pending challenges");
+        require(b.currentChallenge == 0, "Ruling has already started");
 
         b.conceded = true;
         b.settled = true;
@@ -374,16 +374,16 @@ contract SimpleBondV4 {
     function ruleForChallenger(uint256 bondId, uint256 feeCharged) external {
         _requireBondExists(bondId);
         Bond storage b = bonds[bondId];
-        require(!b.settled, "Already settled");
-        require(!b.conceded, "Claim conceded");
-        require(msg.sender == b.judge, "Only judge");
-        require(feeCharged <= b.judgeFee, "Fee exceeds max");
+        require(!b.settled, "Bond is already settled");
+        require(!b.conceded, "Claim is already conceded");
+        require(msg.sender == b.judge, "Caller is not the judge for this bond");
+        require(feeCharged <= b.judgeFee, "Fee charged exceeds the bond's maximum judge fee");
         _requireRulingWindow(bondId);
 
         uint256 idx = b.currentChallenge;
-        require(idx < challenges[bondId].length, "No pending challenge");
+        require(idx < challenges[bondId].length, "No pending challenge to rule on");
         Challenge storage c = challenges[bondId][idx];
-        require(c.status == 0, "Challenge not pending");
+        require(c.status == 0, "Current challenge is not pending");
 
         c.status = 1; // won
         b.settled = true;
@@ -414,16 +414,16 @@ contract SimpleBondV4 {
     function ruleForPoster(uint256 bondId, uint256 feeCharged) external {
         _requireBondExists(bondId);
         Bond storage b = bonds[bondId];
-        require(!b.settled, "Already settled");
-        require(!b.conceded, "Claim conceded");
-        require(msg.sender == b.judge, "Only judge");
-        require(feeCharged <= b.judgeFee, "Fee exceeds max");
+        require(!b.settled, "Bond is already settled");
+        require(!b.conceded, "Claim is already conceded");
+        require(msg.sender == b.judge, "Caller is not the judge for this bond");
+        require(feeCharged <= b.judgeFee, "Fee charged exceeds the bond's maximum judge fee");
         _requireRulingWindow(bondId);
 
         uint256 idx = b.currentChallenge;
-        require(idx < challenges[bondId].length, "No pending challenge");
+        require(idx < challenges[bondId].length, "No pending challenge to rule on");
         Challenge storage c = challenges[bondId][idx];
-        require(c.status == 0, "Challenge not pending");
+        require(c.status == 0, "Current challenge is not pending");
 
         c.status = 2; // lost
 
@@ -453,10 +453,10 @@ contract SimpleBondV4 {
     function withdrawBond(uint256 bondId) external {
         _requireBondExists(bondId);
         Bond storage b = bonds[bondId];
-        require(!b.settled, "Already settled");
-        require(!b.conceded, "Claim conceded");
-        require(msg.sender == b.poster, "Only poster");
-        require(_noPendingChallenges(bondId), "Pending challenges");
+        require(!b.settled, "Bond is already settled");
+        require(!b.conceded, "Claim is already conceded");
+        require(msg.sender == b.poster, "Caller is not the poster for this bond");
+        require(_noPendingChallenges(bondId), "Bond still has pending challenges");
 
         b.settled = true;
         IERC20(b.token).safeTransfer(b.poster, b.bondAmount);
@@ -474,12 +474,12 @@ contract SimpleBondV4 {
     function claimTimeout(uint256 bondId) external {
         _requireBondExists(bondId);
         Bond storage b = bonds[bondId];
-        require(!b.settled, "Already settled");
-        require(!b.conceded, "Claim conceded");
-        require(!_noPendingChallenges(bondId), "No pending challenges");
+        require(!b.settled, "Bond is already settled");
+        require(!b.conceded, "Claim is already conceded");
+        require(!_noPendingChallenges(bondId), "Bond has no pending challenges");
 
         uint256 rulingEnd = _rulingDeadline(bondId);
-        require(block.timestamp > rulingEnd, "Before ruling deadline");
+        require(block.timestamp > rulingEnd, "Ruling deadline has not passed");
 
         b.settled = true;
 
@@ -510,8 +510,8 @@ contract SimpleBondV4 {
 
     /// @notice Returns the judge's minimum fee for a specific token.
     function getJudgeMinFee(address judge, address token) external view returns (uint256) {
-        require(judge != address(0), "Zero judge");
-        require(token != address(0), "Zero token");
+        require(judge != address(0), "Judge address cannot be zero");
+        require(token != address(0), "Token address cannot be zero");
         return judgeMinFees[judge][token];
     }
 
@@ -548,8 +548,8 @@ contract SimpleBondV4 {
         Bond storage b = bonds[bondId];
         uint256 start = _rulingWindowStartFor(b);
         uint256 end = start + b.rulingBuffer;
-        require(block.timestamp >= start, "Before ruling window");
-        require(block.timestamp <= end, "Past ruling deadline");
+        require(block.timestamp >= start, "Ruling window has not opened");
+        require(block.timestamp <= end, "Ruling deadline has passed");
     }
 
     function _rulingDeadline(uint256 bondId) internal view returns (uint256) {
