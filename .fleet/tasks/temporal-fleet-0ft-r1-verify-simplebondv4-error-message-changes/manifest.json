@@ -1,0 +1,19 @@
+{
+  "task_id": "temporal-fleet-0ft-r1-verify-simplebondv4-error-message-changes",
+  "harness_version": "v1",
+  "branch": "ff/Ttemporal-fleet-0ft-r1-verify-simplebondv4-error-message-changes",
+  "base_branch": "ff/Ttemporal-fleet-0ft",
+  "base_commit": "8d04596ce710a946465733228d2db5ac4c79cebd",
+  "head_commit": "d43fbc4f4bcc99835e74b66c7c155d5bbf683532",
+  "changed_files": [
+    ".fleet/tasks/temporal-fleet-0ft-r1-verify-simplebondv4-error-message-changes/analysis.md",
+    "test/SimpleBondV4.test.js"
+  ],
+  "lines_added": 136,
+  "lines_removed": 0,
+  "commit_count": 2,
+  "start_ts": "2026-04-03T23:39:55.698Z",
+  "end_ts": "2026-04-03T23:46:17.773Z",
+  "provider": "codex",
+  "status": "completed"
+}

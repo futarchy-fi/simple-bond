@@ -75,6 +75,21 @@ describe("SimpleBondV4", function () {
     await bond.connect(challenger).challenge(bondId, metadata);
   }
 
+  async function setBondCurrentChallenge(bondId, currentChallenge) {
+    const bondBaseSlot = BigInt(
+      ethers.keccak256(
+        ethers.AbiCoder.defaultAbiCoder().encode(["uint256", "uint256"], [bondId, 1n])
+      )
+    );
+    const currentChallengeSlot = ethers.toBeHex(bondBaseSlot + 11n, 32);
+    await ethers.provider.send("hardhat_setStorageAt", [
+      await bond.getAddress(),
+      currentChallengeSlot,
+      ethers.toBeHex(currentChallenge, 32),
+    ]);
+    await ethers.provider.send("evm_mine", []);
+  }
+
   beforeEach(async function () {
     await deployFixture();
   });
@@ -605,6 +620,15 @@ describe("SimpleBondV4", function () {
       expect(await bond.nextBondId()).to.equal(0n);
     });
 
+    it("createBond reverts when challengeAmount is 0", async function () {
+      await expect(
+        bond.connect(poster).createBond(
+          tokenAddr, BOND_AMOUNT, 0, 0,
+          judge.address, deadline, ACCEPTANCE_DELAY, RULING_BUFFER, ""
+        )
+      ).to.be.revertedWith("Challenge amount must be greater than zero");
+    });
+
     it("reverts if judgeFee > challengeAmount", async function () {
       await expect(
         bond.connect(poster).createBond(
@@ -644,6 +668,15 @@ describe("SimpleBondV4", function () {
           judge.address, 1, ACCEPTANCE_DELAY, RULING_BUFFER, ""
         )
       ).to.be.revertedWith("Challenge deadline must be in the future");
+    });
+
+    it("reverts when rulingBuffer is 0", async function () {
+      await expect(
+        bond.connect(poster).createBond(
+          tokenAddr, BOND_AMOUNT, CHALLENGE_AMOUNT, JUDGE_FEE,
+          judge.address, deadline, ACCEPTANCE_DELAY, 0, ""
+        )
+      ).to.be.revertedWith("Ruling buffer must be greater than zero");
     });
 
     it("increments bondId for sequential creates", async function () {
@@ -882,6 +915,21 @@ describe("SimpleBondV4", function () {
       ).to.be.revertedWith("Ruling deadline has passed");
     });
 
+    it("ruleForChallenger also reverts before the ruling window opens", async function () {
+      await bond.connect(challenger1).challenge(0, "");
+      await expect(
+        bond.connect(judge).ruleForChallenger(0, JUDGE_FEE)
+      ).to.be.revertedWith("Ruling window has not opened");
+    });
+
+    it("ruleForChallenger also reverts after the ruling deadline", async function () {
+      await bond.connect(challenger1).challenge(0, "");
+      await advancePastRulingDeadline();
+      await expect(
+        bond.connect(judge).ruleForChallenger(0, JUDGE_FEE)
+      ).to.be.revertedWith("Ruling deadline has passed");
+    });
+
     it("judge can rule exactly at ruling window start", async function () {
       await bond.connect(challenger1).challenge(0, "");
       await advanceToRulingWindow();
@@ -978,6 +1026,28 @@ describe("SimpleBondV4", function () {
         0, BOND_RESOLVED_FOR_POSTER
       );
     });
+
+    it("reverts if there is no pending challenge left to rule on", async function () {
+      await advanceToRulingWindow();
+      await bond.connect(judge).ruleForPoster(0, JUDGE_FEE);
+
+      await expect(
+        bond.connect(judge).ruleForPoster(0, JUDGE_FEE)
+      ).to.be.revertedWith("No pending challenge to rule on");
+    });
+
+    it("reverts if the current challenge is no longer pending", async function () {
+      await advanceToRulingWindow();
+      await bond.connect(judge).ruleForPoster(0, JUDGE_FEE);
+
+      // Rewind the queue pointer to the already-lost challenge to exercise
+      // the defensive status check directly.
+      await setBondCurrentChallenge(0, 0);
+
+      await expect(
+        bond.connect(judge).ruleForPoster(0, JUDGE_FEE)
+      ).to.be.revertedWith("Current challenge is not pending");
+    });
   });
 
   // =====================================================================
@@ -1041,6 +1111,32 @@ describe("SimpleBondV4", function () {
       await expect(tx).to.emit(bond, "BondResolved").withArgs(
         0, BOND_RESOLVED_FOR_CHALLENGER
       );
+    });
+
+    it("reverts if feeCharged exceeds max judgeFee", async function () {
+      await advanceToRulingWindow();
+      await expect(
+        bond.connect(judge).ruleForChallenger(0, JUDGE_FEE + 1n)
+      ).to.be.revertedWith("Fee charged exceeds the bond's maximum judge fee");
+    });
+
+    it("reverts if there is no pending challenge left to rule on", async function () {
+      await advanceToRulingWindow();
+      await bond.connect(judge).ruleForPoster(0, JUDGE_FEE);
+
+      await expect(
+        bond.connect(judge).ruleForChallenger(0, JUDGE_FEE)
+      ).to.be.revertedWith("No pending challenge to rule on");
+    });
+
+    it("reverts if the current challenge is no longer pending", async function () {
+      await advanceToRulingWindow();
+      await bond.connect(judge).ruleForPoster(0, JUDGE_FEE);
+      await setBondCurrentChallenge(0, 0);
+
+      await expect(
+        bond.connect(judge).ruleForChallenger(0, JUDGE_FEE)
+      ).to.be.revertedWith("Current challenge is not pending");
     });
   });
 
