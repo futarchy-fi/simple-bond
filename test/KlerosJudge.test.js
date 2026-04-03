@@ -99,6 +99,9 @@ describe("KlerosJudge", function () {
         "function RULING_CHALLENGER() view returns (uint256)",
         "function RULING_CHOICES() view returns (uint256)",
         "function RULING_POSTER() view returns (uint256)",
+        "function appeal(uint256,bytes) payable",
+        "function appealCost(uint256,bytes) view returns (uint256)",
+        "function appealPeriod(uint256) view returns (uint256,uint256)",
         "function arbitrator() view returns (address)",
         "function arbitratorExtraData() view returns (bytes)",
         "function bondChallengeToDispute(uint256,uint256) view returns (uint256)",
@@ -119,7 +122,31 @@ describe("KlerosJudge", function () {
   });
 
   // =====================================================================
-  // 1. DEPLOYMENT & REGISTRATION
+  // 1. APPEAL STUBS
+  // =====================================================================
+  describe("Appeal stubs", function () {
+
+    it("appeal reverts with the explicit unsupported message", async function () {
+      await expect(
+        klerosJudge.connect(poster).appeal(0, "0x")
+      ).to.be.revertedWith("Appeals not yet supported");
+    });
+
+    it("appealCost reverts with the explicit unsupported message", async function () {
+      await expect(
+        klerosJudge.appealCost(0, "0x")
+      ).to.be.revertedWith("Appeals not yet supported");
+    });
+
+    it("appealPeriod reverts with the explicit unsupported message", async function () {
+      await expect(
+        klerosJudge.appealPeriod(0)
+      ).to.be.revertedWith("Appeals not yet supported");
+    });
+  });
+
+  // =====================================================================
+  // 2. DEPLOYMENT & REGISTRATION
   // =====================================================================
   describe("Deployment", function () {
 
@@ -166,7 +193,7 @@ describe("KlerosJudge", function () {
   });
 
   // =====================================================================
-  // 2. BOND CREATION WITH KLEROS JUDGE
+  // 3. BOND CREATION WITH KLEROS JUDGE
   // =====================================================================
   describe("Bond creation with KlerosJudge", function () {
 
@@ -178,7 +205,7 @@ describe("KlerosJudge", function () {
   });
 
   // =====================================================================
-  // 3. REQUEST ARBITRATION
+  // 4. REQUEST ARBITRATION
   // =====================================================================
   describe("requestArbitration", function () {
 
@@ -326,7 +353,7 @@ describe("KlerosJudge", function () {
   });
 
   // =====================================================================
-  // 4. RULING DELIVERY (rule)
+  // 5. RULING DELIVERY (rule)
   // =====================================================================
   describe("rule", function () {
 
@@ -374,7 +401,7 @@ describe("KlerosJudge", function () {
   });
 
   // =====================================================================
-  // 5. EXECUTE RULING — CHALLENGER WINS
+  // 6. EXECUTE RULING — CHALLENGER WINS
   // =====================================================================
   describe("executeRuling — challenger wins", function () {
 
@@ -425,7 +452,7 @@ describe("KlerosJudge", function () {
   });
 
   // =====================================================================
-  // 6. EXECUTE RULING — POSTER WINS
+  // 7. EXECUTE RULING — POSTER WINS
   // =====================================================================
   describe("executeRuling — poster wins", function () {
 
@@ -455,7 +482,7 @@ describe("KlerosJudge", function () {
   });
 
   // =====================================================================
-  // 7. EXECUTE RULING — REFUSED (0)
+  // 8. EXECUTE RULING — REFUSED (0)
   // =====================================================================
   describe("executeRuling — refused to arbitrate", function () {
 
@@ -489,7 +516,7 @@ describe("KlerosJudge", function () {
   });
 
   // =====================================================================
-  // 8. EXECUTE RULING — TIMING CHECKS
+  // 9. EXECUTE RULING — TIMING CHECKS
   // =====================================================================
   describe("executeRuling — timing", function () {
 
@@ -554,7 +581,7 @@ describe("KlerosJudge", function () {
   });
 
   // =====================================================================
-  // 9. JUDGE FEE COLLECTION
+  // 10. JUDGE FEE COLLECTION
   // =====================================================================
   describe("Judge fee collection", function () {
 
@@ -598,7 +625,7 @@ describe("KlerosJudge", function () {
   });
 
   // =====================================================================
-  // 10. EVIDENCE
+  // 11. EVIDENCE
   // =====================================================================
   describe("submitEvidence", function () {
 

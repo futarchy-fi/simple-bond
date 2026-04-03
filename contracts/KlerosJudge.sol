@@ -331,6 +331,59 @@ contract KlerosJudge is IArbitrable, IEvidence {
         emit Evidence(arbitrator, evidenceGroupID, msg.sender, _evidence);
     }
 
+    // --- Appeal Stubs -------------------------------------------------------
+
+    /**
+     * @notice ERC-792 and Kleros define an appeal lifecycle for disputes.
+     *         This adapter does not yet support safely propagating appeals
+     *         through the current SimpleBondV4 timing model, so the appeal
+     *         entrypoint is exposed as an explicit stub for interface clarity
+     *         and as a future extension point.
+     * @param _disputeID The dispute to appeal
+     * @param _extraData Arbitrator-defined appeal metadata
+     */
+    function appeal(uint256 _disputeID, bytes calldata _extraData) external payable {
+        _disputeID;
+        _extraData;
+        revert("Appeals not yet supported");
+    }
+
+    /**
+     * @notice ERC-792 and Kleros define an appeal-cost query for disputes.
+     *         This adapter does not yet support safely propagating appeals
+     *         through the current SimpleBondV4 timing model, so the function
+     *         is exposed as an explicit stub for interface clarity and as a
+     *         future extension point.
+     * @param _disputeID The dispute to inspect
+     * @param _extraData Arbitrator-defined appeal metadata
+     * @return cost The appeal cost, once appeal support exists
+     */
+    function appealCost(
+        uint256 _disputeID,
+        bytes calldata _extraData
+    ) external view returns (uint256) {
+        _disputeID;
+        _extraData;
+        revert("Appeals not yet supported");
+    }
+
+    /**
+     * @notice ERC-792 and Kleros define an appeal period for disputes.
+     *         This adapter does not yet support safely propagating appeals
+     *         through the current SimpleBondV4 timing model, so the function
+     *         is exposed as an explicit stub for interface clarity and as a
+     *         future extension point.
+     * @param _disputeID The dispute to inspect
+     * @return start The appeal period start, once appeal support exists
+     * @return end The appeal period end, once appeal support exists
+     */
+    function appealPeriod(
+        uint256 _disputeID
+    ) external view returns (uint256, uint256) {
+        _disputeID;
+        revert("Appeals not yet supported");
+    }
+
     // --- Owner Functions -----------------------------------------------------
 
     /**
