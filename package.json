@@ -6,6 +6,7 @@
   "scripts": {
     "clean": "npx hardhat clean",
     "compile": "hardhat compile",
+    "size": "hardhat size-contracts",
     "test": "hardhat test",
     "notify": "node backend/server.mjs",
     "notify:api": "node backend/api.mjs",
