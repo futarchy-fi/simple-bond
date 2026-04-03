@@ -1,0 +1,19 @@
+{
+  "task_id": "sb-009b",
+  "harness_version": "v1",
+  "branch": "futarchy-fleet/Tsb-009b",
+  "base_branch": "main",
+  "base_commit": "1011036b386f382450aac77347e57e18b2531129",
+  "head_commit": "826f7fbd8eff72d9fedd3c0f94145bd11f3db519",
+  "changed_files": [
+    ".fleet/tasks/sb-009b/analysis.md",
+    ".fleet/tasks/sb-009b/review.json"
+  ],
+  "lines_added": 63,
+  "lines_removed": 0,
+  "commit_count": 3,
+  "start_ts": "2026-04-03T07:18:22.112Z",
+  "end_ts": "2026-04-03T07:22:21.682Z",
+  "provider": "codex",
+  "status": "completed"
+}
