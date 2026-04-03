@@ -1,0 +1,19 @@
+{
+  "task_id": "temporal-fleet-9wi-r1-comment-batch-and-ruling-paths",
+  "harness_version": "v1",
+  "branch": "ff/Ttemporal-fleet-9wi-r1-comment-batch-and-ruling-paths",
+  "base_branch": "ff/Ttemporal-fleet-9wi",
+  "base_commit": "5bfc1a0dbd5df5b7b7b2c252781eadbe7894588c",
+  "head_commit": "52029dc08333a1b15c3d041c33ca4eed04e060c9",
+  "changed_files": [
+    ".fleet/tasks/temporal-fleet-9wi-r1-comment-batch-and-ruling-paths/analysis.md",
+    "contracts/SimpleBondV4.sol"
+  ],
+  "lines_added": 76,
+  "lines_removed": 7,
+  "commit_count": 2,
+  "start_ts": "2026-04-03T23:52:59.333Z",
+  "end_ts": "2026-04-03T23:55:59.580Z",
+  "provider": "codex",
+  "status": "completed"
+}
