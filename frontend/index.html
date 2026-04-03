@@ -1020,6 +1020,10 @@ const BOND_ABI = [
   "event BondRejectedByJudge(uint256 indexed bondId, address indexed judge)",
 ];
 
+const DETAILED_BOND_CREATED_SIGNATURE =
+  "BondCreated(uint256,address,address,address,uint256,uint256,uint256,uint256,uint256,uint256,string)";
+const DETAILED_BOND_CREATED_TOPIC = ethers.id(DETAILED_BOND_CREATED_SIGNATURE);
+
 const KLEROS_JUDGE_ABI = [
   "function requestArbitration(uint256 bondId) payable returns (uint256 disputeID)",
   "function executeRuling(uint256 disputeID)",
@@ -2268,10 +2272,11 @@ async function smartCreateBond() {
         const iface = new ethers.Interface(BOND_ABI);
         let bondId = null;
         for (const log of receipt.logs) {
-          try {
-            const parsed = iface.parseLog({ topics: log.topics, data: log.data });
-            if (parsed && parsed.name === "BondCreated") { bondId = parsed.args.bondId; break; }
-          } catch (_) {}
+          const parsed = parseDetailedBondCreatedLog(iface, log);
+          if (parsed) {
+            bondId = parsed.args.bondId;
+            break;
+          }
         }
 
         updateStepStatus(stepperEl, stepIdx, 'done');
@@ -2877,8 +2882,8 @@ async function loadBrowseBonds() {
     const readProvider = new ethers.JsonRpcProvider(chain().rpc);
     const readContract = new ethers.Contract(chain().contract, BOND_ABI, readProvider);
 
-    const filter = readContract.filters.BondCreated();
-    const events = await readContract.queryFilter(filter, chain().deployBlock).catch(() => []);
+    const createLogs = await queryDetailedBondCreatedLogs(readProvider).catch(() => []);
+    const iface = readContract.interface;
 
     const now = BigInt(Math.floor(Date.now() / 1000));
     const allBonds = [];
@@ -2892,7 +2897,9 @@ async function loadBrowseBonds() {
       } catch (_) {}
     }
 
-    for (const ev of events) {
+    for (const log of createLogs) {
+      const ev = parseDetailedBondCreatedLog(iface, log);
+      if (!ev) continue;
       const bondId = Number(ev.args.bondId);
       try {
         const b = await readContract.bonds(bondId);
@@ -2912,7 +2919,7 @@ async function loadBrowseBonds() {
         else { status = "Active"; statusClass = "status-active"; }
 
         // Sort key: most recent activity (challenge time or block timestamp)
-        const lastActivity = lastChallengeTime > 0n ? Number(lastChallengeTime) : Number(ev.blockNumber);
+        const lastActivity = lastChallengeTime > 0n ? Number(lastChallengeTime) : Number(log.blockNumber);
 
         allBonds.push({ bondId, judge, token, bondAmount, challengeAmount, deadline, metadata, symbol, decimals, status, statusClass, lastActivity, settled, conceded });
       } catch (_) {}
@@ -3006,6 +3013,33 @@ function setAcceptanceDelay(days) {
 }
 
 function short(addr) { return addr.slice(0, 6) + "..." + addr.slice(-4); }
+
+function indexedAddressTopic(addr) {
+  if (!addr) return null;
+  return ethers.zeroPadValue(ethers.getAddress(addr), 32);
+}
+
+function parseDetailedBondCreatedLog(iface, log) {
+  if (!log?.topics || log.topics[0] !== DETAILED_BOND_CREATED_TOPIC) return null;
+  try {
+    return iface.parseLog({ topics: log.topics, data: log.data });
+  } catch (_) {
+    return null;
+  }
+}
+
+async function queryDetailedBondCreatedLogs(readProvider, { poster = null, judge = null } = {}) {
+  return readProvider.getLogs({
+    address: chain().contract,
+    fromBlock: chain().deployBlock,
+    topics: [
+      DETAILED_BOND_CREATED_TOPIC,
+      null,
+      indexedAddressTopic(poster),
+      indexedAddressTopic(judge),
+    ],
+  });
+}
 
 // ─── ENS Resolution (always via Ethereum mainnet) ─────────────────────
 const ensCache = {};
@@ -3176,19 +3210,20 @@ async function loadMyBonds() {
       } catch (_) {}
     }
 
-    const posterFilter = readContract.filters.BondCreated(null, userAddr);
-    const judgeFilter = readContract.filters.BondCreated(null, null, userAddr);
     const challengerFilter = readContract.filters.Challenged(null, null, userAddr);
 
-    const [posterEvents, judgeEvents, challengerEvents] = await Promise.all([
-      readContract.queryFilter(posterFilter, chain().deployBlock).catch(() => []),
-      readContract.queryFilter(judgeFilter, chain().deployBlock).catch(() => []),
+    const [posterLogs, judgeLogs, challengerEvents] = await Promise.all([
+      queryDetailedBondCreatedLogs(readProvider, { poster: userAddr }).catch(() => []),
+      queryDetailedBondCreatedLogs(readProvider, { judge: userAddr }).catch(() => []),
       readContract.queryFilter(challengerFilter, chain().deployBlock).catch(() => []),
     ]);
+    const iface = readContract.interface;
 
     const seen = new Set();
     const allBondIds = [];
-    for (const ev of [...posterEvents, ...judgeEvents]) {
+    for (const log of [...posterLogs, ...judgeLogs]) {
+      const ev = parseDetailedBondCreatedLog(iface, log);
+      if (!ev) continue;
       const id = Number(ev.args.bondId);
       if (!seen.has(id)) { seen.add(id); allBondIds.push(id); }
     }
@@ -3779,12 +3814,11 @@ async function loadJudges() {
         const registered = parseJudgeRegistration(await readContract.judges(checksumAddr));
         if (registered) {
           if (isKlerosJudge(checksumAddr)) continue;
-          const bondFilter = readContract.filters.BondCreated(null, null, checksumAddr);
-          const bondEvents = await readContract.queryFilter(bondFilter, chain().deployBlock).catch(() => []);
+          const bondLogs = await queryDetailedBondCreatedLogs(readProvider, { judge: checksumAddr }).catch(() => []);
           nextJudges.push({
             address: checksumAddr,
             tokenFees: feeMap.get(addr) || new Map(),
-            bondCount: bondEvents.length,
+            bondCount: bondLogs.length,
           });
         }
       } catch (_) {}
