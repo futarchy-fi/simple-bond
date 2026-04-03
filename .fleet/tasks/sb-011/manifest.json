@@ -1,0 +1,21 @@
+{
+  "task_id": "sb-011",
+  "harness_version": "v1",
+  "branch": "futarchy-fleet/Tsb-011",
+  "base_branch": "main",
+  "base_commit": "ff6d47a172064e794ae90226044258c8556bb123",
+  "head_commit": "2b95b18e9716b2c90e01faa011a21475b2862cc1",
+  "changed_files": [
+    ".fleet/tasks/sb-011/analysis.md",
+    ".fleet/tasks/sb-011/review.json",
+    "contracts/KlerosJudge.sol",
+    "test/KlerosJudge.test.js"
+  ],
+  "lines_added": 175,
+  "lines_removed": 10,
+  "commit_count": 3,
+  "start_ts": "2026-04-03T12:47:53.434Z",
+  "end_ts": "2026-04-03T12:54:33.822Z",
+  "provider": "codex",
+  "status": "completed"
+}
