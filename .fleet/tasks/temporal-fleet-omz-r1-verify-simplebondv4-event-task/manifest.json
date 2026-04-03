@@ -1,0 +1,19 @@
+{
+  "task_id": "temporal-fleet-omz-r1-verify-simplebondv4-event-task",
+  "harness_version": "v1",
+  "branch": "ff/Ttemporal-fleet-omz-r1-verify-simplebondv4-event-task",
+  "base_branch": "ff/Ttemporal-fleet-omz",
+  "base_commit": "253cc93df2efefcc721cac37f1b23a945f1bd4af",
+  "head_commit": "2c3c49f5bd0a3455e175ba0f41a0cbbb14020440",
+  "changed_files": [
+    ".fleet/tasks/temporal-fleet-omz-r1-verify-simplebondv4-event-task/analysis.md",
+    "test/SimpleBondV4EventConsumers.test.js"
+  ],
+  "lines_added": 197,
+  "lines_removed": 0,
+  "commit_count": 2,
+  "start_ts": "2026-04-03T22:40:59.897Z",
+  "end_ts": "2026-04-03T22:48:16.372Z",
+  "provider": "codex",
+  "status": "completed"
+}
