@@ -1172,7 +1172,8 @@ describe("SimpleBondV4", function () {
 
     it("poster withdraws with no challenges — before deadline", async function () {
       const before = await token.balanceOf(poster.address);
-      await bond.connect(poster).withdrawBond(0);
+      const tx = bond.connect(poster).withdrawBond(0);
+      await expect(tx).to.emit(bond, "BondWithdrawn").withArgs(0);
       expect(await token.balanceOf(poster.address) - before).to.equal(BOND_AMOUNT);
     });
 
@@ -1182,7 +1183,8 @@ describe("SimpleBondV4", function () {
       await bond.connect(judge).ruleForPoster(0, JUDGE_FEE);
 
       const before = await token.balanceOf(poster.address);
-      await bond.connect(poster).withdrawBond(0);
+      const tx = bond.connect(poster).withdrawBond(0);
+      await expect(tx).to.emit(bond, "BondWithdrawn").withArgs(0);
       expect(await token.balanceOf(poster.address) - before).to.equal(BOND_AMOUNT);
     });
 
