@@ -6,7 +6,7 @@ This is a verification-only task on the current branch. The relevant Solidity an
 
 The correct verification surface is the full [`test/SimpleBondV4.test.js`](/tmp/temporal-worktrees/task-temporal-fleet-jnz-r3-verify-simplebondv4-suite/test/SimpleBondV4.test.js) file, not a narrower grep-based subset. The three accounting invariants the task cares about are embedded inside the same suite that exercises the surrounding challenge-flow behavior, so a single-file Hardhat run is what proves both the invariant checks and the adjacent lifecycle coverage still pass together.
 
-One practical setup note matters in this worktree: `node_modules/` was absent, so `npx hardhat test test/SimpleBondV4.test.js` initially failed with Hardhat `HHE22` until local dependencies were installed with `npm ci`.
+If `node_modules/` is missing in a fresh checkout, the only setup prerequisite is to install dependencies before running Hardhat.
 
 ## Relevant Coverage Already Present
 
@@ -44,14 +44,19 @@ These functions are exactly the ones exercised by the invariant and surrounding 
 
 ## Runtime Verification
 
-I executed the target verification flow in this worktree:
+I executed the verification flow in this worktree:
 
-1. `npm ci`
-2. `npx hardhat test test/SimpleBondV4.test.js`
+1. `npx hardhat test test/SimpleBondV4.test.js`
+2. `npx hardhat test`
 
-Result: the targeted V4 suite passed unchanged with `126 passing (7s)`.
+Results:
 
-`hardhat test` also recompiled the contracts successfully. The run emitted two non-blocking Solidity warnings in [`contracts/KlerosJudge.sol`](/tmp/temporal-worktrees/task-temporal-fleet-jnz-r3-verify-simplebondv4-suite/contracts/KlerosJudge.sol) about functions whose mutability could be restricted to `pure`; those warnings do not affect this task’s verification result.
+- the targeted V4 suite passed unchanged with `126 passing (7s)`
+- the full Hardhat suite passed with `256 passing (13s)`
+
+That second run confirms the focused V4 verification did not regress the surrounding repo test surface.
+
+Both runs recompiled the contracts successfully. The compilation emitted two non-blocking Solidity warnings in [`contracts/KlerosJudge.sol`](/tmp/temporal-worktrees/task-temporal-fleet-jnz-r3-verify-simplebondv4-suite/contracts/KlerosJudge.sol) about functions whose mutability could be restricted to `pure`; those warnings do not affect this task’s verification result.
 
 ## Recommended Approach
 
