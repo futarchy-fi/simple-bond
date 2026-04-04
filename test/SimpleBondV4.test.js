@@ -1,82 +1,60 @@
 const { expect } = require("chai");
 const { ethers } = require("hardhat");
 const { time } = require("@nomicfoundation/hardhat-network-helpers");
+const {
+  ACCEPTANCE_DELAY,
+  BOND_AMOUNT,
+  BOND_RESOLVED_FOR_CHALLENGER,
+  BOND_RESOLVED_FOR_POSTER,
+  CHALLENGE_AMOUNT,
+  DETAILED_BOND_CREATED_EVENT,
+  JUDGE_FEE,
+  LIGHTWEIGHT_BOND_CREATED_EVENT,
+  ONE_DAY,
+  RULING_BUFFER,
+  deploySimpleBondV4FuzzFixture,
+} = require("./helpers/simpleBondV4Fuzz");
 
 // --- Constants -----------------------------------------------------------
 // Robin Hanson's preferred numbers: bond=$10K, challenge=$3K, judgeFee=$0.5K
-const BOND_AMOUNT = ethers.parseEther("10000");
-const CHALLENGE_AMOUNT = ethers.parseEther("3000");
-const JUDGE_FEE = ethers.parseEther("500");
-const ACCEPTANCE_DELAY = 3 * 86400; // 3 days
-const RULING_BUFFER = 30 * 86400;   // 30 days
-
-const ONE_DAY = 86400;
-const ONE_MONTH = 30 * ONE_DAY;
-const DETAILED_BOND_CREATED_EVENT =
-  "BondCreated(uint256,address,address,address,uint256,uint256,uint256,uint256,uint256,uint256,string)";
-const LIGHTWEIGHT_BOND_CREATED_EVENT =
-  "BondCreated(uint256,address,address,uint256)";
-const BOND_RESOLVED_FOR_POSTER = 1n;
-const BOND_RESOLVED_FOR_CHALLENGER = 2n;
 
 describe("SimpleBondV4", function () {
   let bond, token;
   let poster, judge, challenger1, challenger2, challenger3, outsider;
   let deadline;
   let tokenAddr;
-
-  async function deployFixture() {
-    [poster, judge, challenger1, challenger2, challenger3, outsider] = await ethers.getSigners();
-
-    const Token = await ethers.getContractFactory("TestToken");
-    token = await Token.deploy();
-    tokenAddr = await token.getAddress();
-
-    const Bond = await ethers.getContractFactory("SimpleBondV4");
-    bond = await Bond.deploy();
-
-    // Mint tokens to all participants
-    for (const acct of [poster, challenger1, challenger2, challenger3]) {
-      await token.mint(acct.address, ethers.parseEther("100000"));
-      await token.connect(acct).approve(await bond.getAddress(), ethers.MaxUint256);
-    }
-
-    deadline = (await time.latest()) + 3 * ONE_MONTH;
-
-    // Register judge by default for most tests and set per-token fee
-    await bond.connect(judge).registerAsJudge();
-    await bond.connect(judge).setJudgeFee(tokenAddr, JUDGE_FEE);
-  }
+  let fixture;
 
   async function createDefaultBond() {
-    const tx = await bond.connect(poster).createBond(
-      tokenAddr,
-      BOND_AMOUNT, CHALLENGE_AMOUNT, JUDGE_FEE,
-      judge.address,
-      deadline, ACCEPTANCE_DELAY, RULING_BUFFER,
-      "My article has no significant errors"
-    );
-    const receipt = await tx.wait();
-    return 0; // first bond is always ID 0
+    const { bondId } = await fixture.actions.createBond();
+    return bondId;
   }
 
   // Advance past deadline + acceptance delay so judge can rule on bond `id`
   async function advanceToRulingWindow(id = 0) {
-    const start = await bond.rulingWindowStart(id);
-    await time.increaseTo(start);
+    await fixture.actions.advanceToRulingWindow({ bondId: id });
   }
 
   async function advancePastRulingDeadline(id = 0) {
-    const end = await bond.rulingDeadline(id);
-    await time.increaseTo(Number(end) + 1);
+    await fixture.actions.advancePastRulingDeadline({ bondId: id });
   }
 
   async function challengeBond(bondId, challenger, metadata = "I found errors") {
-    await bond.connect(challenger).challenge(bondId, metadata);
+    await fixture.actions.challenge({ bondId, challenger, metadata });
   }
 
   beforeEach(async function () {
-    await deployFixture();
+    fixture = await deploySimpleBondV4FuzzFixture();
+    bond = fixture.bond;
+    token = fixture.token;
+    tokenAddr = fixture.addresses.token;
+    deadline = fixture.defaults.deadline;
+    poster = fixture.actors.poster;
+    judge = fixture.actors.judge;
+    challenger1 = fixture.actors.challenger1;
+    challenger2 = fixture.actors.challenger2;
+    challenger3 = fixture.actors.challenger3;
+    outsider = fixture.actors.outsider;
   });
 
   // =====================================================================
