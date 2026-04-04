@@ -4,16 +4,17 @@
   "branch": "ff/Ttemporal-fleet-jnz-r3-verify-simplebondv4-suite",
   "base_branch": "ff/Ttemporal-fleet-jnz",
   "base_commit": "ee65d6d32a75b104faf4cada3fea1b25bb164e84",
-  "head_commit": "a5c55dd368e003c185540039b281d95bb6c49826",
+  "head_commit": "4bc8bca089c19e4450f037e7b4028dc1c1ee8a33",
   "changed_files": [
     ".fleet/tasks/temporal-fleet-jnz-r3-verify-simplebondv4-suite/analysis.md",
+    ".fleet/tasks/temporal-fleet-jnz-r3-verify-simplebondv4-suite/manifest.json",
     ".fleet/tasks/temporal-fleet-jnz-r3-verify-simplebondv4-suite/review.json"
   ],
-  "lines_added": 99,
+  "lines_added": 118,
   "lines_removed": 0,
-  "commit_count": 2,
-  "start_ts": "2026-04-04T18:35:07.000Z",
-  "end_ts": "2026-04-04T18:38:11.000Z",
+  "commit_count": 3,
+  "start_ts": "2026-04-04T18:32:36.491Z",
+  "end_ts": "2026-04-04T18:38:51.884Z",
   "provider": "codex",
   "status": "completed"
 }
