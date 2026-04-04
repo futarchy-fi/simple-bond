@@ -1,0 +1,27 @@
+[
+  {
+    "id": "analyze-simplebondv4-storage-surface",
+    "title": "Analyze SimpleBondV4 storage surface",
+    "description": "Inspect the SimpleBondV4 state-variable block and determine the current top-level storage ordering that the comments need to document.",
+    "dependsOn": [],
+    "level": "analysis"
+  },
+  {
+    "id": "add-simplebondv4-storage-layout-comments",
+    "title": "Add storage layout comments to SimpleBondV4",
+    "description": "Update contracts/SimpleBondV4.sol to add concise comments around the existing state-variable declarations that document the current storage layout without changing behavior, names, or ordering.",
+    "dependsOn": [
+      "analyze-simplebondv4-storage-surface"
+    ],
+    "level": "task"
+  },
+  {
+    "id": "verify-comment-only-simplebondv4-change",
+    "title": "Verify the change stays comment-only",
+    "description": "Review the diff and, if dependencies are available, compile the contracts to confirm the storage layout documentation introduces no functional or ABI changes.",
+    "dependsOn": [
+      "add-simplebondv4-storage-layout-comments"
+    ],
+    "level": "task"
+  }
+]
