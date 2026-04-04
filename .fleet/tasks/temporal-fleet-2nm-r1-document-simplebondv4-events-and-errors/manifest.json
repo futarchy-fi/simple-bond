@@ -1,0 +1,18 @@
+{
+  "task_id": "temporal-fleet-2nm-r1-document-simplebondv4-events-and-errors",
+  "harness_version": "v1",
+  "branch": "ff/Ttemporal-fleet-2nm-r1-document-simplebondv4-events-and-errors",
+  "base_branch": "ff/Ttemporal-fleet-2nm",
+  "base_commit": "94d984e872de0fb086c895f9b6fe988ba7df3231",
+  "head_commit": "3b969535dc386541c89348ec0e77d1752d0d6103",
+  "changed_files": [
+    ".fleet/tasks/temporal-fleet-2nm-r1-document-simplebondv4-events-and-errors/analysis.md"
+  ],
+  "lines_added": 98,
+  "lines_removed": 0,
+  "commit_count": 1,
+  "start_ts": "2026-04-04T00:09:07.961Z",
+  "end_ts": "2026-04-04T00:12:03.691Z",
+  "provider": "codex",
+  "status": "completed"
+}
