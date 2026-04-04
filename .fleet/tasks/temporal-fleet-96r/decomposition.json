@@ -18,7 +18,7 @@
   {
     "id": "sbv4-fuzz-invariants",
     "title": "Encode reusable invariants for seeded core-flow runs",
-    "description": "Implement assertion helpers that verify token conservation, queue monotonicity, currentChallenge bounds, poster-win pool preservation, and correct terminal-state balance outcomes so fuzz-style tests can validate behavior without duplicating bookkeeping.",
+    "description": "Implement assertion helpers that verify token conservation, queue monotonicity, currentChallenge bounds, preservation of the poster's locked bond across poster-win rulings while later queued challenge deposits remain untouched, and correct terminal-state balance outcomes so fuzz-style tests can validate behavior without duplicating bookkeeping.",
     "dependsOn": [
       "sbv4-fuzz-fixture-actions"
     ],
