@@ -1,0 +1,18 @@
+{
+  "task_id": "temporal-fleet-96r-r2-sbv4-fuzz-fixture-actions",
+  "harness_version": "v1",
+  "branch": "ff/Ttemporal-fleet-96r-r2-sbv4-fuzz-fixture-actions",
+  "base_branch": "ff/Ttemporal-fleet-96r",
+  "base_commit": "c928d085782a3b2a360053e9458e6e278e10dd34",
+  "head_commit": "f9a4297f6dbf25d78ad97f6b108315e932b34ba1",
+  "changed_files": [
+    ".fleet/tasks/temporal-fleet-96r-r2-sbv4-fuzz-fixture-actions/analysis.md"
+  ],
+  "lines_added": 191,
+  "lines_removed": 0,
+  "commit_count": 1,
+  "start_ts": "2026-04-04T08:23:19.158Z",
+  "end_ts": "2026-04-04T08:27:09.560Z",
+  "provider": "codex",
+  "status": "completed"
+}
