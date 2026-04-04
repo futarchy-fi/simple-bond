@@ -1,0 +1,18 @@
+{
+  "task_id": "temporal-fleet-1ko-r2-implement-simplebond-checklist-helper",
+  "harness_version": "v1",
+  "branch": "ff/Ttemporal-fleet-1ko-r2-implement-simplebond-checklist-helper",
+  "base_branch": "ff/Ttemporal-fleet-1ko",
+  "base_commit": "8c9e27443af0ec94139e61d2d3df663a65c8aa01",
+  "head_commit": "c7691df6065ad265b43b1314596c7bceaa56dea1",
+  "changed_files": [
+    ".fleet/tasks/temporal-fleet-1ko-r2-implement-simplebond-checklist-helper/analysis.md"
+  ],
+  "lines_added": 197,
+  "lines_removed": 0,
+  "commit_count": 1,
+  "start_ts": "2026-04-04T15:10:59.828Z",
+  "end_ts": "2026-04-04T15:15:14.571Z",
+  "provider": "codex",
+  "status": "completed"
+}
