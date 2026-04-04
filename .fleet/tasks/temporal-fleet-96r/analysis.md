@@ -115,3 +115,13 @@ After implementation:
 - Time-gated actions need explicit helper support. `ruleForPoster`, `ruleForChallenger`, and `claimTimeout` cannot be treated as generic random actions unless the helper first advances the chain to a legal timestamp.
 - Repeated challenge flows need adequate challenger balances and approvals. The helper should provision those up front or top them up deterministically.
 - The helper should stay focused on `SimpleBondV4` core flows. Pulling judge-registry edge cases and every revert-path matrix into the same fuzz layer would make the state machine harder to reason about and slower to run.
+
+## Round 6 Checkpoint Re-Analysis
+
+- Reviewed the merged `sbv4-fuzz-tests` work as integrated on `ff/Ttemporal-fleet-96r`.
+- Verified that the new helper layer in `test/helpers/simpleBondV4Fuzz.js`, invariant assertions in `test/helpers/simpleBondV4Invariants.js`, and seeded flows in `test/SimpleBondV4.fuzz.test.js` all compose cleanly with the existing deterministic suite.
+- Installed local dependencies with `npm ci` because the worktree did not include `node_modules`, then ran:
+  - `npx hardhat test test/SimpleBondV4.fuzz.test.js`
+  - `npx hardhat test test/SimpleBondV4.test.js`
+- Result: both suites passed (`10 passing` for the seeded fuzz suite, `127 passing` for the main `SimpleBondV4` suite).
+- Verdict: no additional decomposition is needed at this checkpoint; the integrated branch remains `INTEGRATION_OK`.
