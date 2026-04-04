@@ -1,0 +1,46 @@
+[
+  {
+    "id": "sbv4-fuzz-scope",
+    "title": "Define SimpleBondV4 fuzz-helper scope and reusable properties",
+    "description": "Map the current SimpleBondV4 lifecycle coverage into a bounded fuzz target: core flows are bond creation, challenge queueing, ruling-window transitions, poster win, challenger win, concession, judge rejection, timeout, and final withdrawal. Identify the reusable invariants the helper must check after seeded action sequences.",
+    "dependsOn": [],
+    "level": "analysis"
+  },
+  {
+    "id": "sbv4-fuzz-fixture-actions",
+    "title": "Add a reusable SimpleBondV4 fuzz fixture and action driver",
+    "description": "Create a test helper module under test/helpers that deploys TestToken and SimpleBondV4, provisions actors and approvals, registers a judge, and exposes deterministic action wrappers for createBond, challenge, time advancement, ruleForPoster, ruleForChallenger, concede, rejectBond, withdrawBond, and claimTimeout.",
+    "dependsOn": [
+      "sbv4-fuzz-scope"
+    ],
+    "level": "task"
+  },
+  {
+    "id": "sbv4-fuzz-invariants",
+    "title": "Encode reusable invariants for seeded core-flow runs",
+    "description": "Implement assertion helpers that verify token conservation, queue monotonicity, currentChallenge bounds, poster-win pool preservation, and correct terminal-state balance outcomes so fuzz-style tests can validate behavior without duplicating bookkeeping.",
+    "dependsOn": [
+      "sbv4-fuzz-fixture-actions"
+    ],
+    "level": "task"
+  },
+  {
+    "id": "sbv4-fuzz-tests",
+    "title": "Add bounded fuzz-style tests for SimpleBondV4 core flows",
+    "description": "Introduce a dedicated Hardhat test file that consumes the new helper and runs deterministic seeded sequences over the supported lifecycle actions, covering both sequential poster-win paths and terminal paths such as challenger win, concession, rejection, timeout, and withdrawal.",
+    "dependsOn": [
+      "sbv4-fuzz-fixture-actions",
+      "sbv4-fuzz-invariants"
+    ],
+    "level": "task"
+  },
+  {
+    "id": "sbv4-fuzz-verification",
+    "title": "Verify determinism, runtime, and helper integration",
+    "description": "Run the targeted Hardhat fuzz-style test file, rerun the existing SimpleBondV4 suite if shared helpers were extracted, and tune seed count or helper behavior until failures are reproducible and runtime remains practical for normal development workflows.",
+    "dependsOn": [
+      "sbv4-fuzz-tests"
+    ],
+    "level": "task"
+  }
+]
