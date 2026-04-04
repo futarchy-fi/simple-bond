@@ -8,6 +8,8 @@ On the current repo state, the requested invariant coverage already appears to b
 
 That means this ticket is effectively already satisfied on `ff/Ttemporal-fleet-jnz` as checked out here. The branch `ff/Ttemporal-fleet-jnz` is currently at the same HEAD as `main` (`557990c`), so there is no task-specific implementation diff to add beyond this analysis metadata.
 
+Comparing the suites directly makes the intent clearer: `SimpleBondV3.test.js` contains 79 `it(...)` cases and `SimpleBondV4.test.js` contains 126, but the invariant subset is still the same three accounting assertions. V4 adds registry, rejection, and invalid-bond-ID coverage around them; it does not introduce a different notion of invariant testing.
+
 ## Current State
 
 - [`test/SimpleBondV3.test.js`](/tmp/temporal-worktrees/task-temporal-fleet-jnz/test/SimpleBondV3.test.js#L454), [`test/SimpleBondV3.test.js`](/tmp/temporal-worktrees/task-temporal-fleet-jnz/test/SimpleBondV3.test.js#L644), and [`test/SimpleBondV3.test.js`](/tmp/temporal-worktrees/task-temporal-fleet-jnz/test/SimpleBondV3.test.js#L944) already established the three precedent invariants in the V3 suite:
@@ -20,6 +22,24 @@ That means this ticket is effectively already satisfied on `ff/Ttemporal-fleet-j
   - [`contracts/SimpleBondV4.sol`](/tmp/temporal-worktrees/task-temporal-fleet-jnz/contracts/SimpleBondV4.sol#L414) pays the poster from the current challenge escrow, pays any judge fee, and advances `currentChallenge` without mutating `bondAmount`, `challengeAmount`, or `judgeFee`.
   - [`contracts/SimpleBondV4.sol`](/tmp/temporal-worktrees/task-temporal-fleet-jnz/contracts/SimpleBondV4.sol#L374) settles the bond on a challenger win by paying out the poster stake plus the current challenge, then refunding remaining queued challengers.
   - [`contracts/SimpleBondV4.sol`](/tmp/temporal-worktrees/task-temporal-fleet-jnz/contracts/SimpleBondV4.sol#L341) and [`contracts/SimpleBondV4.sol`](/tmp/temporal-worktrees/task-temporal-fleet-jnz/contracts/SimpleBondV4.sol#L474) refund escrow on concession and timeout paths.
+
+## V3 vs V4 Comparison
+
+- In V3, "invariant" shows up in exactly three accounting-oriented examples:
+  - `test/SimpleBondV3.test.js:454` checks that a poster-favorable ruling leaves exactly `bondAmount` in escrow.
+  - `test/SimpleBondV3.test.js:644` checks that sequential poster wins leave only the unresolved challenge escrows in the contract while `bondAmount`, `challengeAmount`, and `judgeFee` stay unchanged.
+  - `test/SimpleBondV3.test.js:944` checks token conservation by summing balances across the funded actors plus the bond contract before and after challenge/ruling transitions.
+- V4 ports those same checks almost verbatim:
+  - `test/SimpleBondV4.test.js:949` is the direct counterpart to the V3 bond-pool assertion.
+  - `test/SimpleBondV4.test.js:1147` is the direct counterpart to the V3 sequential-threshold assertion.
+  - `test/SimpleBondV4.test.js:1344` is the direct counterpart to the V3 total-token-conservation assertion.
+- The surrounding V4-only sections, such as `Judge Registry`, `Reject Bond`, `Invalid Settlement Bond IDs`, and `View Helpers`, expand functional coverage for new V4 features but do not change what this repo means by an invariant check.
+
+## Branch State
+
+- `git merge-base HEAD main` resolves to `557990c`, and `git diff main...HEAD` shows only `.fleet/tasks/temporal-fleet-jnz/analysis.md` and `.fleet/tasks/temporal-fleet-jnz/decomposition.json`.
+- There is no branch-specific diff in `test/SimpleBondV3.test.js`, `test/SimpleBondV4.test.js`, or `contracts/SimpleBondV4.sol` relative to `main`.
+- So the current branch already contains the expected invariant coverage, but it inherits that coverage from `main`; this branch is analysis-only and does not add or remove any of the relevant tests.
 
 ## Key Interpretation
 
