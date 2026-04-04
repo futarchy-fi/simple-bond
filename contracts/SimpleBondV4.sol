@@ -61,9 +61,13 @@ contract SimpleBondV4 {
         bool registered;
     }
 
+    /// @notice Returns the next bond ID that will be assigned by createBond().
     uint256 public nextBondId;
+    /// @notice Returns the stored bond fields for a bond ID.
     mapping(uint256 => Bond) public bonds;
+    /// @notice Returns the stored challenge fields for a bond ID and challenge index.
     mapping(uint256 => Challenge[]) public challenges;
+    /// @notice Returns the judge registry record for a judge address.
     mapping(address => JudgeInfo) public judges;
     /// @notice Per-token minimum fee: judgeMinFees[judge][token] = minFee
     mapping(address => mapping(address => uint256)) public judgeMinFees;
@@ -237,6 +241,7 @@ contract SimpleBondV4 {
      * @param acceptanceDelay  Seconds after a challenge before judge can rule
      * @param rulingBuffer     Seconds judge has to rule once window opens
      * @param _metadata        Claim description / assertion text
+     * @return bondId          The new bond ID
      */
     function createBond(
         address token,
@@ -449,6 +454,7 @@ contract SimpleBondV4 {
      *      challenges it. The `deadline` therefore marks the last time a
      *      challenge may be filed if the bond is still active, not a guaranteed
      *      period during which the poster is forced to keep the bond open.
+     * @param bondId Bond to withdraw
      */
     function withdrawBond(uint256 bondId) external {
         _requireBondExists(bondId);
@@ -470,6 +476,7 @@ contract SimpleBondV4 {
      * @notice Anyone can call after the ruling deadline if the judge hasn't
      *         finished ruling. Refunds poster's bond and all pending challengers.
      *         Judge gets nothing (punished for inaction).
+     * @param bondId Bond whose unresolved challenge queue has timed out
      */
     function claimTimeout(uint256 bondId) external {
         _requireBondExists(bondId);
@@ -494,11 +501,24 @@ contract SimpleBondV4 {
 
     // --- Views ------------------------------------------------------------
 
+    /**
+     * @notice Returns how many challenges have been recorded for a bond.
+     * @param bondId Bond to inspect
+     * @return count The total number of challenges filed against the bond
+     */
     function getChallengeCount(uint256 bondId) external view returns (uint256) {
         _requireBondExists(bondId);
         return challenges[bondId].length;
     }
 
+    /**
+     * @notice Returns the stored data for a specific challenge on a bond.
+     * @param bondId Bond to inspect
+     * @param index Challenge index to read
+     * @return challenger The challenger address
+     * @return status The recorded challenge status
+     * @return metadata The challenger-supplied metadata string
+     */
     function getChallenge(uint256 bondId, uint256 index)
         external view returns (address challenger, uint8 status, string memory metadata)
     {
@@ -508,7 +528,12 @@ contract SimpleBondV4 {
         return (c.challenger, c.status, c.metadata);
     }
 
-    /// @notice Returns the judge's minimum fee for a specific token.
+    /**
+     * @notice Returns the judge's minimum fee for a specific token.
+     * @param judge Judge address to inspect
+     * @param token ERC-20 token address to inspect
+     * @return minFee The configured minimum fee in token units
+     */
     function getJudgeMinFee(address judge, address token) external view returns (uint256) {
         require(judge != address(0), "Zero judge");
         require(token != address(0), "Zero token");
@@ -518,6 +543,8 @@ contract SimpleBondV4 {
     /**
      * @notice Returns the earliest time the judge can start ruling.
      *         max(deadline, lastChallengeTime + acceptanceDelay)
+     * @param bondId Bond to inspect
+     * @return windowStart The timestamp when the ruling window opens
      */
     function rulingWindowStart(uint256 bondId) public view returns (uint256) {
         _requireBondExists(bondId);
@@ -526,6 +553,8 @@ contract SimpleBondV4 {
 
     /**
      * @notice Returns the deadline by which the judge must finish ruling.
+     * @param bondId Bond to inspect
+     * @return deadline The timestamp when the ruling window closes
      */
     function rulingDeadline(uint256 bondId) public view returns (uint256) {
         _requireBondExists(bondId);
