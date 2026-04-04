@@ -31,6 +31,14 @@ describe("SimpleBondV4 fuzz fixture helper", function () {
     expect(remainingLeadTime).to.be.greaterThan(0);
     expect(remainingLeadTime).to.be.lessThan(customLeadTime + ONE_DAY);
   });
+
+  it("skips default judge fee setup when judge registration is disabled", async function () {
+    const customFixture = await deploySimpleBondV4FuzzFixture({ registerJudge: false });
+
+    expect(await customFixture.bond.judges(customFixture.actors.judge.address)).to.equal(false);
+    expect(await customFixture.read.getJudgeMinFee()).to.equal(0n);
+    await expect(customFixture.actions.createBond()).to.be.revertedWith("Judge not registered");
+  });
 });
 
 describe("SimpleBondV4", function () {

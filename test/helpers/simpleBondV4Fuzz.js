@@ -93,11 +93,14 @@ async function deploySimpleBondV4FuzzFixture(options = {}) {
     concessionMetadata: options.concessionMetadata ?? DEFAULTS.concessionMetadata,
   };
 
-  if (options.registerJudge !== false) {
+  const shouldRegisterJudge = options.registerJudge !== false;
+  const shouldSetJudgeFee = shouldRegisterJudge && options.setJudgeFee !== false;
+
+  if (shouldRegisterJudge) {
     await bond.connect(judge).registerAsJudge();
   }
 
-  if (options.setJudgeFee !== false) {
+  if (shouldSetJudgeFee) {
     await bond.connect(judge).setJudgeFee(tokenAddress, defaults.judgeMinFee);
   }
 
