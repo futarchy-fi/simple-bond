@@ -28,6 +28,8 @@ Because the coverage is already present, the correct implementation approach for
 
 ## Verification Status
 
-I confirmed the coverage by reading the current sources, but runtime verification is blocked in this worktree because local Hardhat dependencies are not installed. Running `npx hardhat test test/SimpleBondV4.test.js --grep "Sequential Challenge Queue|token accounting invariant"` fails with `HHE22` complaining about a non-local Hardhat installation.
+Runtime verification now succeeds in this worktree after installing local dependencies with `npm ci`.
 
-Given the current repository state, this ticket should be treated as already satisfied and verification-only.
+I ran `npx hardhat test test/SimpleBondV4.test.js` and the full V4 suite passed unchanged with `126 passing`.
+
+Given the current repository state, this ticket remains verification-only: the requested invariant checks were already implemented, and no contract or test changes were needed beyond recording the successful runtime validation.
