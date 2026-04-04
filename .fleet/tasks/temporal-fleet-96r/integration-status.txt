@@ -1,1 +1,1 @@
-NEEDS_REDECOMP: round-2 marked sbv4-fuzz-fixture-actions complete but only added analysis/manifest files; the reusable fuzz fixture/action helper and downstream invariants/tests are still missing
+INTEGRATION_OK
