@@ -1,0 +1,18 @@
+{
+  "task_id": "temporal-fleet-jnz-r2-ensure-v4-invariant-checks",
+  "harness_version": "v1",
+  "branch": "ff/Ttemporal-fleet-jnz-r2-ensure-v4-invariant-checks",
+  "base_branch": "ff/Ttemporal-fleet-jnz",
+  "base_commit": "a502fa7f6ae8a61d56c7ea8ee8bf05f4227eb488",
+  "head_commit": "b24aa00b094009b0fd194a0a8a9231e6cf2768ad",
+  "changed_files": [
+    ".fleet/tasks/temporal-fleet-jnz-r2-ensure-v4-invariant-checks/analysis.md"
+  ],
+  "lines_added": 35,
+  "lines_removed": 0,
+  "commit_count": 2,
+  "start_ts": "2026-04-04T18:26:15.032Z",
+  "end_ts": "2026-04-04T18:30:30.665Z",
+  "provider": "codex",
+  "status": "completed"
+}
