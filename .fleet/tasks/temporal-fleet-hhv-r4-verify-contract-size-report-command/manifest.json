@@ -1,0 +1,19 @@
+{
+  "task_id": "temporal-fleet-hhv-r4-verify-contract-size-report-command",
+  "harness_version": "v1",
+  "branch": "ff/Ttemporal-fleet-hhv-r4-verify-contract-size-report-command",
+  "base_branch": "ff/Ttemporal-fleet-hhv",
+  "base_commit": "86d789d71e265cea62e93323c0bf3d0ba5fff92b",
+  "head_commit": "86dee9085cba6fa90c5aa6fc75633e20bc038153",
+  "changed_files": [
+    ".fleet/tasks/temporal-fleet-hhv-r4-verify-contract-size-report-command/analysis.md",
+    "test/sizeContractsCommand.test.js"
+  ],
+  "lines_added": 153,
+  "lines_removed": 0,
+  "commit_count": 2,
+  "start_ts": "2026-04-04T10:04:48.398Z",
+  "end_ts": "2026-04-04T10:10:43.642Z",
+  "provider": "codex",
+  "status": "completed"
+}
