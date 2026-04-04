@@ -1,0 +1,1 @@
+NEEDS_REDECOMP: branch only contains analysis; scripts/deploy.js still lacks the SimpleBond checklist helper and integration
