@@ -1,0 +1,20 @@
+{
+  "task_id": "temporal-fleet-1ko-r3-wire-checklist-into-simplebond-deploy",
+  "harness_version": "v1",
+  "branch": "ff/Ttemporal-fleet-1ko-r3-wire-checklist-into-simplebond-deploy",
+  "base_branch": "ff/Ttemporal-fleet-1ko",
+  "base_commit": "414cc2ceb67128d02f7d8735fab8e7e92e0c703d",
+  "head_commit": "6f915011e5d76e8dba6e17ee20b30fe5763c190d",
+  "changed_files": [
+    ".fleet/tasks/temporal-fleet-1ko-r3-wire-checklist-into-simplebond-deploy/analysis.md",
+    "scripts/deploy.js",
+    "test/deployScript.test.js"
+  ],
+  "lines_added": 204,
+  "lines_removed": 11,
+  "commit_count": 2,
+  "start_ts": "2026-04-04T15:19:25.450Z",
+  "end_ts": "2026-04-04T15:24:40.831Z",
+  "provider": "codex",
+  "status": "completed"
+}
