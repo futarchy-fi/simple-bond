@@ -6,7 +6,7 @@ This is a test-suite task, not a contract task. The relevant behavior already ex
 
 On the current repo state, the requested invariant coverage already appears to be present. [`test/SimpleBondV4.test.js`](/tmp/temporal-worktrees/task-temporal-fleet-jnz/test/SimpleBondV4.test.js#L949) already asserts the bond-pool invariant after `ruleForPoster`, [`test/SimpleBondV4.test.js`](/tmp/temporal-worktrees/task-temporal-fleet-jnz/test/SimpleBondV4.test.js#L1147) already asserts fixed thresholds across sequential challenges, and [`test/SimpleBondV4.test.js`](/tmp/temporal-worktrees/task-temporal-fleet-jnz/test/SimpleBondV4.test.js#L1344) already asserts total-token conservation across actors plus the contract.
 
-That means this ticket is effectively already satisfied on `ff/Ttemporal-fleet-jnz` as checked out here. The branch `ff/Ttemporal-fleet-jnz` is currently at the same HEAD as `main` (`557990c`), so there is no task-specific implementation diff to add beyond this analysis metadata.
+That means this ticket is effectively already satisfied on the inherited codebase. The base task branch started from the same contract and test state as `main` (`557990c`), and this checkpoint branch still adds no task-specific implementation diff beyond analysis metadata.
 
 Comparing the suites directly makes the intent clearer: `SimpleBondV3.test.js` contains 79 `it(...)` cases and `SimpleBondV4.test.js` contains 126, but the invariant subset is still the same three accounting assertions. V4 adds registry, rejection, and invalid-bond-ID coverage around them; it does not introduce a different notion of invariant testing.
 
@@ -37,7 +37,7 @@ Comparing the suites directly makes the intent clearer: `SimpleBondV3.test.js` c
 
 ## Branch State
 
-- `git merge-base HEAD main` resolves to `557990c`, and `git diff main...HEAD` shows only `.fleet/tasks/temporal-fleet-jnz/analysis.md` and `.fleet/tasks/temporal-fleet-jnz/decomposition.json`.
+- `git merge-base HEAD main` resolves to `557990c`, and `git diff main...HEAD` shows only analysis artifacts: `.fleet/tasks/temporal-fleet-jnz/analysis.md`, `.fleet/tasks/temporal-fleet-jnz/decomposition.json`, and `analysis/temporal-fleet-jnz-r1-map-v4-accounting-invariants.md`.
 - There is no branch-specific diff in `test/SimpleBondV3.test.js`, `test/SimpleBondV4.test.js`, or `contracts/SimpleBondV4.sol` relative to `main`.
 - So the current branch already contains the expected invariant coverage, but it inherits that coverage from `main`; this branch is analysis-only and does not add or remove any of the relevant tests.
 
@@ -61,17 +61,15 @@ If this task were still unimplemented, the smallest correct change would be test
 
 No change should be required in [`contracts/SimpleBondV4.sol`](/tmp/temporal-worktrees/task-temporal-fleet-jnz/contracts/SimpleBondV4.sol), because the task is about coverage, not behavior.
 
-## Verification Plan
+## Verification
 
-This worktree does not currently have `node_modules/`, so I could not execute Hardhat locally during this analysis pass.
+Checkpoint verification executed successfully in this worktree:
 
-Once dependencies are installed, verify with:
+1. `npm ci`
+2. `npx hardhat test test/SimpleBondV4.test.js` (`126 passing`)
+3. `npx hardhat test test/SimpleBondV3.test.js` (`79 passing`)
 
-1. `npm install`
-2. `npx hardhat test test/SimpleBondV4.test.js`
-3. Optionally, `npx hardhat test test/SimpleBondV3.test.js test/SimpleBondV4.test.js` to confirm the V4 suite still mirrors the V3 invariant coverage
-
-The pass condition is that the V4 suite includes and passes the three invariant checks already visible at lines 949, 1147, and 1344.
+That confirms the V4 suite includes and passes the three invariant checks already visible at lines 949, 1147, and 1344, and that the V3 precedent suite still passes unchanged.
 
 ## Open Question
 
