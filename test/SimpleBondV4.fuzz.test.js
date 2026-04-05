@@ -16,11 +16,15 @@ const {
 } = require("./helpers/simpleBondV4Invariants");
 
 function createPrng(seed) {
-  let state = BigInt(seed >>> 0);
+  // Mulberry32 keeps adjacent small integer seeds from collapsing into the same path shape.
+  let state = seed >>> 0;
 
   return function nextUint32() {
-    state = (state * 1664525n + 1013904223n) % 4294967296n;
-    return Number(state);
+    state = (state + 0x6D2B79F5) >>> 0;
+    let value = state;
+    value = Math.imul(value ^ (value >>> 15), value | 1);
+    value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
+    return (value ^ (value >>> 14)) >>> 0;
   };
 }
 
@@ -143,17 +147,32 @@ async function runSeededConcedeFlow(seed) {
 }
 
 describe("SimpleBondV4 seeded fuzz flows", function () {
-  const posterFlowSeeds = [7, 11, 23, 31, 47, 61];
-  const concedeFlowSeeds = [13, 19, 29, 37];
+  const posterFlowCases = [
+    { seed: 47, challengeCount: 2, posterWins: 1, terminal: "challenger win" },
+    { seed: 48, challengeCount: 3, posterWins: 2, terminal: "rejection" },
+    { seed: 50, challengeCount: 4, posterWins: 3, terminal: "timeout" },
+    { seed: 24, challengeCount: 5, posterWins: 4, terminal: "rejection" },
+    { seed: 23, challengeCount: 5, posterWins: 5, terminal: "withdrawal" },
+  ];
+  const concedeFlowCases = [
+    { seed: 4, challengeCount: 1 },
+    { seed: 6, challengeCount: 2 },
+    { seed: 7, challengeCount: 3 },
+    { seed: 13, challengeCount: 4 },
+    { seed: 29, challengeCount: 5 },
+  ];
 
-  for (const seed of posterFlowSeeds) {
-    it(`replays seeded poster-side queue flow for seed ${seed}`, async function () {
-      await runSeededPosterFlow(seed);
-    });
+  for (const { seed, challengeCount, posterWins, terminal } of posterFlowCases) {
+    it(
+      `replays seeded ${terminal} flow for seed ${seed} (${posterWins}/${challengeCount} poster wins)`,
+      async function () {
+        await runSeededPosterFlow(seed);
+      }
+    );
   }
 
-  for (const seed of concedeFlowSeeds) {
-    it(`replays seeded concession flow for seed ${seed}`, async function () {
+  for (const { seed, challengeCount } of concedeFlowCases) {
+    it(`replays seeded concession flow for seed ${seed} (${challengeCount} challenges)`, async function () {
       await runSeededConcedeFlow(seed);
     });
   }
