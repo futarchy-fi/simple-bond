@@ -1,0 +1,46 @@
+[
+  {
+    "id": "analyze-simplebond-deployment-surface",
+    "title": "Map the current SimpleBond deployment surface and downstream config touchpoints",
+    "description": "Inspect scripts/deploy.js, hardhat.config.js, README.md, frontend/index.html, and backend/config.mjs to determine what a post-deploy checklist for the active SimpleBond deployment must cover and which networks are actually wired into the product.",
+    "dependsOn": [],
+    "level": "analysis"
+  },
+  {
+    "id": "implement-simplebond-checklist-helper",
+    "title": "Add a reusable deployment checklist helper for SimpleBond deployments",
+    "description": "Create a new script under scripts/ that accepts deployed-contract context such as network, contract name, address, and block metadata, then prints the post-deploy checklist items required after a SimpleBond deployment.",
+    "dependsOn": [
+      "analyze-simplebond-deployment-surface"
+    ],
+    "level": "task"
+  },
+  {
+    "id": "wire-checklist-into-simplebond-deploy",
+    "title": "Invoke the checklist helper from the SimpleBond deployment flow",
+    "description": "Update scripts/deploy.js so the normal SimpleBondV4 deployment path automatically prints the new checklist after logging the deployed address, transaction hash, and mined block number.",
+    "dependsOn": [
+      "implement-simplebond-checklist-helper"
+    ],
+    "level": "task"
+  },
+  {
+    "id": "expose-checklist-entrypoint",
+    "title": "Expose or document the checklist command for operators",
+    "description": "If the helper is intended to be reused outside deploy.js, add the minimal package.json or README wiring needed so operators know how to invoke it and what follow-up updates it covers.",
+    "dependsOn": [
+      "wire-checklist-into-simplebond-deploy"
+    ],
+    "level": "task"
+  },
+  {
+    "id": "verify-simplebond-checklist-output",
+    "title": "Verify checklist output and supported-network guidance",
+    "description": "Run the deployment flow in a safe environment such as Hardhat local, or otherwise review the generated output, to confirm the checklist prints the expected verification command and the correct frontend, backend, and README follow-up steps without overstating unsupported chain support.",
+    "dependsOn": [
+      "wire-checklist-into-simplebond-deploy",
+      "expose-checklist-entrypoint"
+    ],
+    "level": "task"
+  }
+]
