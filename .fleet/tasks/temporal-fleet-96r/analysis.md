@@ -26,7 +26,7 @@ The repository already has broad deterministic coverage for `SimpleBondV4` in [`
   - `challengeBond`
 - The current suite already encodes the invariants a fuzz helper should preserve:
   - token accounting stays balanced
-  - poster-win rulings leave the bond pool at `bondAmount`
+  - poster-win rulings preserve the poster's locked `bondAmount`, with contract balance dropping only by the resolved challenge while any later queued challenges remain locked
   - sequential challenges advance through a FIFO queue
   - terminal paths such as concession, rejection, challenger win, timeout, and final withdrawal drain the contract correctly
 - [`package.json`](../../../package.json) and [`hardhat.config.js`](../../../hardhat.config.js) show a Hardhat + Mocha/Chai setup only. There is no Foundry test harness, no existing fuzz dependency, and no separate `test/helpers/` module yet.
@@ -67,7 +67,7 @@ Moving the repo to a new fuzzing framework would be much larger than the ticket 
    - total token conservation across known actors plus the bond contract
    - `currentChallenge <= getChallengeCount`
    - pending-challenge semantics remain consistent with queue length and statuses
-   - poster-win rulings preserve the locked `bondAmount`
+   - poster-win rulings preserve the locked `bondAmount` while leaving any later queued challenge deposits untouched
    - terminal states drain or preserve balances exactly as expected for that path
 6. Consume the helper from a new targeted test file, for example `test/SimpleBondV4.fuzz.test.js`, that runs a bounded set of seeds and sequence lengths against the core flows.
 
