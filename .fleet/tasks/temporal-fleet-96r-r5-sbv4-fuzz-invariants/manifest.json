@@ -1,0 +1,20 @@
+{
+  "task_id": "temporal-fleet-96r-r5-sbv4-fuzz-invariants",
+  "harness_version": "v1",
+  "branch": "ff/Ttemporal-fleet-96r-r5-sbv4-fuzz-invariants",
+  "base_branch": "ff/Ttemporal-fleet-96r",
+  "base_commit": "ee0e57f998339f01631bc22d0f3f1c361de489e1",
+  "head_commit": "3178c3a67ee162228039d2aa5465999c73df39cf",
+  "changed_files": [
+    ".fleet/tasks/temporal-fleet-96r-r5-sbv4-fuzz-invariants/analysis.md",
+    "test/SimpleBondV4.invariants.test.js",
+    "test/helpers/simpleBondV4Invariants.js"
+  ],
+  "lines_added": 723,
+  "lines_removed": 0,
+  "commit_count": 2,
+  "start_ts": "2026-04-04T08:48:15.252Z",
+  "end_ts": "2026-04-04T08:56:52.787Z",
+  "provider": "codex",
+  "status": "completed"
+}
