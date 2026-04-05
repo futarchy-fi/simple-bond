@@ -1,0 +1,20 @@
+{
+  "task_id": "temporal-fleet-0ft-r1-update-simplebondv4-revert-tests",
+  "harness_version": "v1",
+  "branch": "ff/Ttemporal-fleet-0ft-r1-update-simplebondv4-revert-tests",
+  "base_branch": "ff/Ttemporal-fleet-0ft",
+  "base_commit": "89175584c77641cfff80449a7ddf90c7a205d28e",
+  "head_commit": "ad03118700ee2ec8e09a3597343b3ae048c39e07",
+  "changed_files": [
+    ".fleet/tasks/temporal-fleet-0ft-r1-update-simplebondv4-revert-tests/analysis.md",
+    "contracts/SimpleBondV4.sol",
+    "test/SimpleBondV4.test.js"
+  ],
+  "lines_added": 226,
+  "lines_removed": 92,
+  "commit_count": 2,
+  "start_ts": "2026-04-03T23:33:07.730Z",
+  "end_ts": "2026-04-03T23:39:53.859Z",
+  "provider": "codex",
+  "status": "completed"
+}
