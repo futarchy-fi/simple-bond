@@ -76,7 +76,8 @@ async function deploySimpleBondV4FuzzFixture(options = {}) {
     await token.connect(account).approve(bondAddress, ethers.MaxUint256);
   }
 
-  const deadline = options.deadline ?? (await time.latest()) + DEFAULTS.deadlineLeadTime;
+  const deadlineLeadTime = options.deadlineLeadTime ?? DEFAULTS.deadlineLeadTime;
+  const deadline = options.deadline ?? (await time.latest()) + deadlineLeadTime;
   const defaults = {
     bondAmount: options.bondAmount ?? DEFAULTS.bondAmount,
     challengeAmount: options.challengeAmount ?? DEFAULTS.challengeAmount,
@@ -85,7 +86,7 @@ async function deploySimpleBondV4FuzzFixture(options = {}) {
     acceptanceDelay: options.acceptanceDelay ?? DEFAULTS.acceptanceDelay,
     rulingBuffer: options.rulingBuffer ?? DEFAULTS.rulingBuffer,
     participantFunding,
-    deadlineLeadTime: DEFAULTS.deadlineLeadTime,
+    deadlineLeadTime,
     deadline,
     bondMetadata: options.bondMetadata ?? DEFAULTS.bondMetadata,
     challengeMetadata: options.challengeMetadata ?? DEFAULTS.challengeMetadata,

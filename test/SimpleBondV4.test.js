@@ -18,6 +18,21 @@ const {
 // --- Constants -----------------------------------------------------------
 // Robin Hanson's preferred numbers: bond=$10K, challenge=$3K, judgeFee=$0.5K
 
+describe("SimpleBondV4 fuzz fixture helper", function () {
+  it("honors deadlineLeadTime overrides when deriving the default deadline", async function () {
+    const customLeadTime = 5 * ONE_DAY;
+    const customFixture = await deploySimpleBondV4FuzzFixture({ deadlineLeadTime: customLeadTime });
+    const { bondId } = await customFixture.actions.createBond();
+    const createdBond = await customFixture.read.getBond(bondId);
+    const remainingLeadTime = customFixture.defaults.deadline - await time.latest();
+
+    expect(customFixture.defaults.deadlineLeadTime).to.equal(customLeadTime);
+    expect(createdBond.deadline).to.equal(customFixture.defaults.deadline);
+    expect(remainingLeadTime).to.be.greaterThan(0);
+    expect(remainingLeadTime).to.be.lessThan(customLeadTime + ONE_DAY);
+  });
+});
+
 describe("SimpleBondV4", function () {
   let bond, token;
   let poster, judge, challenger1, challenger2, challenger3, outsider;
