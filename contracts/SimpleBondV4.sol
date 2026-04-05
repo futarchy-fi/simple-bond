@@ -181,6 +181,9 @@ contract SimpleBondV4 {
 
     /**
      * @notice Set minimum fees for multiple tokens in one transaction.
+     * @dev Batching amortizes fixed transaction overhead for judge admin updates,
+     *      but each entry still does its own validation, storage write, and event.
+     *      Large batches therefore remain linear in `tokens.length`.
      * @param tokens  Array of ERC-20 token addresses
      * @param minFees Array of minimum fees (same length as tokens)
      */
@@ -212,7 +215,7 @@ contract SimpleBondV4 {
         // Refund poster's bond
         IERC20(b.token).safeTransfer(b.poster, b.bondAmount);
 
-        // Refund all pending challengers
+        // Terminal path accepts the shared refund-loop cost once.
         _refundRemaining(bondId, 0);
 
         emit BondRejectedByJudge(bondId, msg.sender);
@@ -353,7 +356,7 @@ contract SimpleBondV4 {
         // Refund poster's bond
         IERC20(b.token).safeTransfer(b.poster, b.bondAmount);
 
-        // Refund all pending challengers
+        // Terminal path accepts the shared refund-loop cost once.
         _refundRemaining(bondId, 0);
 
         emit ClaimConceded(bondId, b.poster, _metadata);
@@ -367,6 +370,8 @@ contract SimpleBondV4 {
      *         Challenger receives bondAmount + challengeAmount - feeCharged.
      *         Judge receives feeCharged. All remaining challengers refunded.
      *         Bond is settled.
+     * @dev This is the terminal challenger-win path, so it deliberately pays the
+     *      one-time cost of refunding every later pending challenger.
      *
      * @param bondId     Bond to rule on
      * @param feeCharged Amount judge charges (0 to judgeFee). Allows fee waiver.
@@ -407,6 +412,9 @@ contract SimpleBondV4 {
      * @notice Judge rules in favor of the poster on the current challenge.
      *         Poster receives challengeAmount - feeCharged.
      *         Judge receives feeCharged. Queue advances.
+     * @dev In multi-challenge bonds this path can run repeatedly, so it only
+     *      settles the current challenge and advances the pointer. Remaining
+     *      queue cleanup is deferred to terminal paths.
      *
      * @param bondId     Bond to rule on
      * @param feeCharged Amount judge charges (0 to judgeFee). Allows fee waiver.
@@ -486,7 +494,7 @@ contract SimpleBondV4 {
         // Refund poster's bond
         IERC20(b.token).safeTransfer(b.poster, b.bondAmount);
 
-        // Refund all pending challengers
+        // Terminal path accepts the shared refund-loop cost once.
         _refundRemaining(bondId, b.currentChallenge);
 
         emit BondTimedOut(bondId);
@@ -568,10 +576,12 @@ contract SimpleBondV4 {
 
     /**
      * @dev Refunds every still-pending challenger from `startIdx` onward.
-     *      This is intentionally O(n) in the remaining queue length. The design
-     *      relies on the fact that each additional queue entry had to post the
-     *      full `challengeAmount`, making very large queues economically costly
-     *      rather than free spam.
+     *      This is intentionally O(n) in the remaining queue length and is kept
+     *      centralized in terminal or escape-hatch paths instead of being spread
+     *      across repeated rulings. Each additional refund also performs an
+     *      ERC-20 transfer and emits a `ChallengeRefunded` event. The design
+     *      relies on each queue entry posting the full `challengeAmount`,
+     *      making very large queues economically costly rather than free spam.
      */
     function _refundRemaining(uint256 bondId, uint256 startIdx) internal {
         Bond storage b = bonds[bondId];
