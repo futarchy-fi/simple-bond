@@ -1,0 +1,37 @@
+[
+  {
+    "id": "analyze-simplebondv4-gas-comment-targets",
+    "title": "Identify the gas-sensitive comment targets in SimpleBondV4",
+    "description": "Review contracts/SimpleBondV4.sol and confirm which existing paths have non-obvious gas tradeoffs worth documenting, especially batch fee updates, ruling hot paths, and the shared refund loop.",
+    "dependsOn": [],
+    "level": "analysis"
+  },
+  {
+    "id": "comment-batch-and-ruling-paths",
+    "title": "Add gas comments to batch updates and ruling hot paths",
+    "description": "Update SimpleBondV4 comments around setJudgeFees, ruleForChallenger, and ruleForPoster to explain the intended gas-saving patterns such as batching, local caching, and skipping zero-value judge transfers.",
+    "dependsOn": [
+      "analyze-simplebondv4-gas-comment-targets"
+    ],
+    "level": "task"
+  },
+  {
+    "id": "comment-refund-loop-gas-tradeoff",
+    "title": "Document the refund-loop gas tradeoff",
+    "description": "Expand or refine the SimpleBondV4 comments around _refundRemaining and its callers so the linear gas cost of refunding pending challengers is explicit and tied to rejectBond, concede, claimTimeout, and challenger-win settlement.",
+    "dependsOn": [
+      "analyze-simplebondv4-gas-comment-targets"
+    ],
+    "level": "task"
+  },
+  {
+    "id": "verify-comments-only-scope",
+    "title": "Verify the change stays documentation-only",
+    "description": "Review the final diff to ensure the task only adds or adjusts comments in SimpleBondV4, with no ABI, logic, storage-layout, or test-behavior changes.",
+    "dependsOn": [
+      "comment-batch-and-ruling-paths",
+      "comment-refund-loop-gas-tradeoff"
+    ],
+    "level": "task"
+  }
+]
