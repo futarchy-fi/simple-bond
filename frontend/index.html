@@ -1365,6 +1365,7 @@ const SDAI_ABI = [
   "function withdraw(uint256 assets, address receiver, address owner) returns (uint256 shares)",
   "function convertToShares(uint256 assets) view returns (uint256)",
   "function convertToAssets(uint256 shares) view returns (uint256)",
+  "function previewMint(uint256 shares) view returns (uint256 assets)",
 ];
 
 // ─── State ────────────────────────────────────────────────────────────
@@ -1705,6 +1706,24 @@ function formatUsdPreview(value) {
   return `$${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 }
 
+function formatTokenAmount(value, decimals = 18) {
+  return parseFloat(ethers.formatUnits(value, decimals)).toLocaleString(undefined, {
+    maximumFractionDigits: 2,
+  });
+}
+
+function formatUsdAmount(value, decimals = 18) {
+  return `$${formatTokenAmount(value, decimals)}`;
+}
+
+function buildSdaiFundingBreakdown(state) {
+  const parts = [];
+  if (state.sdaiAssets > 0n) parts.push(`sDAI ${formatTokenAmount(state.sdaiAssets)}`);
+  if (state.wxdaiBalance > 0n) parts.push(`WXDAI ${formatTokenAmount(state.wxdaiBalance)}`);
+  if (state.usableXdai > 0n) parts.push(`xDAI ${formatTokenAmount(state.usableXdai)}`);
+  return parts.join(" + ");
+}
+
 function refreshCreateProgressiveDisclosure() {
   refreshCreateWizard();
 }
@@ -1774,7 +1793,7 @@ async function updateTokenExplainer() {
         const sdaiKey = SDAI_ADDRESS.toLowerCase();
         const cached = tokenCache[sdaiKey];
         const hasSdai = cached && cached.balance > 0n;
-        suffix = hasSdai ? ' You have sDAI ready to use.' : ' Your xDAI will be auto-converted.';
+        suffix = hasSdai ? ' You have sDAI ready to use.' : ' The app will automatically convert xDAI into sDAI (yield-bearing) for bond creation.';
       }
       el.innerHTML = `Stored as <b>sDAI</b> — a savings token that earns yield. 1 sDAI = ${rate} xDAI = ${rate} USD.${suffix}`;
     } catch {
@@ -1786,6 +1805,104 @@ async function updateTokenExplainer() {
   } else {
     el.textContent = '';
   }
+}
+
+async function getCreateFundingState() {
+  const tokenAddr = getSelectedToken();
+  const amountStr = document.getElementById("bondAmount")?.value.trim() || "";
+
+  if (!userAddr || !tokenAddr || !amountStr || isNaN(amountStr) || parseFloat(amountStr) <= 0) {
+    return null;
+  }
+
+  const chainProvider = provider || new ethers.JsonRpcProvider(chain().rpc);
+  const readContext = signer || chainProvider;
+
+  if (needsWrapping(tokenAddr)) {
+    const sdaiToken = new ethers.Contract(SDAI_ADDRESS, ERC20_ABI, readContext);
+    const sdaiVault = new ethers.Contract(SDAI_ADDRESS, SDAI_ABI, readContext);
+    const wxdaiToken = new ethers.Contract(WXDAI_ADDRESS, ERC20_ABI, readContext);
+    const requiredAssets = ethers.parseUnits(amountStr, 18);
+    const gasReserve = ethers.parseEther("0.01");
+
+    const [requiredShares, sdaiBalance, sdaiAllowance, nativeBalance, wxdaiBalance] = await Promise.all([
+      sdaiVault.convertToShares(requiredAssets),
+      sdaiToken.balanceOf(userAddr),
+      sdaiToken.allowance(userAddr, chain().contract),
+      chainProvider.getBalance(userAddr),
+      wxdaiToken.balanceOf(userAddr),
+    ]);
+
+    let sdaiAssets = 0n;
+    try {
+      sdaiAssets = await sdaiVault.convertToAssets(sdaiBalance);
+    } catch (_) {}
+
+    const usableXdai = nativeBalance > gasReserve ? nativeBalance - gasReserve : 0n;
+    const liquidAssets = wxdaiBalance + usableXdai;
+    const totalAvailableAssets = sdaiAssets + liquidAssets;
+
+    let shareDeficit = 0n;
+    let depositAssetsNeeded = 0n;
+    if (sdaiBalance < requiredShares) {
+      shareDeficit = requiredShares - sdaiBalance;
+      try {
+        depositAssetsNeeded = await sdaiVault.previewMint(shareDeficit);
+      } catch (_) {
+        depositAssetsNeeded = await sdaiVault.convertToAssets(shareDeficit);
+      }
+    }
+
+    const sufficientBalance = shareDeficit === 0n || depositAssetsNeeded <= liquidAssets;
+    const assetShortfall = totalAvailableAssets >= requiredAssets ? 0n : requiredAssets - totalAvailableAssets;
+    const mintShortfall = depositAssetsNeeded > liquidAssets ? depositAssetsNeeded - liquidAssets : 0n;
+    const shortfallAssets = mintShortfall > assetShortfall ? mintShortfall : assetShortfall;
+
+    return {
+      kind: "sdai",
+      tokenAddr,
+      requiredAssets,
+      requiredShares,
+      balance: sdaiBalance,
+      allowance: sdaiAllowance,
+      allowanceSufficient: sdaiAllowance >= requiredShares,
+      sdaiAssets,
+      nativeBalance,
+      wxdaiBalance,
+      usableXdai,
+      liquidAssets,
+      totalAvailableAssets,
+      sufficientBalance,
+      shortfallAssets,
+      needsConversion: shareDeficit > 0n && sufficientBalance,
+      depositAssetsNeeded,
+      wrapAmount: depositAssetsNeeded > wxdaiBalance ? depositAssetsNeeded - wxdaiBalance : 0n,
+    };
+  }
+
+  const token = new ethers.Contract(tokenAddr, ERC20_ABI, readContext);
+  const [balance, allowance, decimals, symbol] = await Promise.all([
+    token.balanceOf(userAddr),
+    token.allowance(userAddr, chain().contract),
+    token.decimals(),
+    token.symbol(),
+  ]);
+  const normalizedDecimals = Number(decimals);
+  const amount = ethers.parseUnits(amountStr, normalizedDecimals);
+  tokenCache[tokenAddr.toLowerCase()] = { symbol, decimals: normalizedDecimals, balance, allowance };
+
+  return {
+    kind: "erc20",
+    tokenAddr,
+    amount,
+    balance,
+    allowance,
+    allowanceSufficient: allowance >= amount,
+    decimals: normalizedDecimals,
+    symbol,
+    sufficientBalance: balance >= amount,
+    shortfall: balance >= amount ? 0n : amount - balance,
+  };
 }
 
 async function updateBalanceDisplay(tokenAddr) {
@@ -1832,6 +1949,8 @@ async function checkApproval() {
 
 async function _doCheckApproval() {
   const statusEl = document.getElementById("approvalStatus");
+  const balanceEl = document.getElementById("tokenBalanceInfo");
+  const createBtn = document.getElementById("createBtn");
   const tokenAddr = getSelectedToken();
   const amountStr = document.getElementById("bondAmount").value.trim();
 
@@ -1840,70 +1959,52 @@ async function _doCheckApproval() {
     return;
   }
 
-  const key = tokenAddr.toLowerCase();
-  let cached = tokenCache[key];
-
-  if (!cached) {
-    try {
-      const token = new ethers.Contract(tokenAddr, ERC20_ABI, signer || new ethers.JsonRpcProvider(chain().rpc));
-      const [balance, allowance, decimals, symbol] = await Promise.all([
-        token.balanceOf(userAddr),
-        token.allowance(userAddr, chain().contract),
-        token.decimals(),
-        token.symbol(),
-      ]);
-      cached = { symbol, decimals: Number(decimals), balance, allowance };
-      tokenCache[key] = cached;
-    } catch (_) { return; }
-  }
-
   try {
-    const amount = ethers.parseUnits(amountStr, cached.decimals);
-    if (cached.balance < amount) {
-      if (activeChainId === 100) {
-        // Check if user has WXDAI or xDAI that can be wrapped (Gnosis only)
-        const totalAvailable = await getTotalAvailableFunds();
-        if (totalAvailable >= amount) {
-          statusEl.innerHTML = `<span class="approval-ok">Funds available (will auto-convert)</span>`;
-        } else {
-          const need = ethers.formatUnits(amount - totalAvailable, 18);
-          statusEl.innerHTML = `<span class="approval-need">Need ${parseFloat(need).toLocaleString(undefined, {maximumFractionDigits: 2})} more USD — <span class="browse-link" onclick="openFundingGuide()" style="font-size:inherit;">How to get funds</span></span>`;
-        }
-      } else {
-        const need = ethers.formatUnits(amount - cached.balance, cached.decimals);
-        statusEl.innerHTML = `<span class="approval-need">Need ${parseFloat(need).toLocaleString(undefined, {maximumFractionDigits: 2})} more ${cached.symbol} — <span class="browse-link" onclick="openFundingGuide()" style="font-size:inherit;">How to get funds</span></span>`;
-      }
+    const fundingState = await getCreateFundingState();
+    if (!fundingState) {
+      statusEl.innerHTML = "";
       return;
     }
-    if (cached.allowance >= amount) {
+
+    if (fundingState.kind === "sdai") {
+      const breakdown = buildSdaiFundingBreakdown(fundingState);
+      if (balanceEl) {
+        balanceEl.innerHTML = `Available now: <span class="bal">${formatUsdAmount(fundingState.totalAvailableAssets)}</span>${breakdown ? `<div class="hint">${breakdown}</div>` : ""}`;
+      }
+
+      if (!fundingState.sufficientBalance) {
+        statusEl.innerHTML = `<span class="approval-need">Need ${formatUsdAmount(fundingState.shortfallAssets)} more — <span class="browse-link" onclick="openFundingGuide()" style="font-size:inherit;">How to get funds</span></span>`;
+        if (createBtn && signer) createBtn.textContent = "Get Funds to Create";
+        return;
+      }
+
+      if (fundingState.needsConversion) {
+        statusEl.innerHTML = `<span class="approval-ok">Convert and Create will convert only ${formatTokenAmount(fundingState.depositAssetsNeeded)} into sDAI (yield-bearing)</span>`;
+        if (createBtn && signer) createBtn.textContent = "Convert and Create";
+        return;
+      }
+
+      if (createBtn && signer) createBtn.textContent = "Create Bond";
+      statusEl.innerHTML = fundingState.allowanceSufficient
+        ? `<span class="approval-ok">Ready to create</span>`
+        : `<span class="approval-ok">Will auto-approve</span>`;
+      return;
+    }
+
+    if (!fundingState.sufficientBalance) {
+      statusEl.innerHTML = `<span class="approval-need">Need ${formatTokenAmount(fundingState.shortfall, fundingState.decimals)} more ${fundingState.symbol} — <span class="browse-link" onclick="openFundingGuide()" style="font-size:inherit;">How to get funds</span></span>`;
+      if (createBtn && signer) createBtn.textContent = "Get Funds to Create";
+      return;
+    }
+
+    if (createBtn && signer) createBtn.textContent = "Create Bond";
+    if (fundingState.allowanceSufficient) {
       statusEl.innerHTML = `<span class="approval-ok">Ready to create</span>`;
     } else {
       statusEl.innerHTML = `<span class="approval-ok">Will auto-approve</span>`;
     }
   } catch (_) {
     statusEl.innerHTML = "";
-  }
-}
-
-// ─── Get total available funds across xDAI/WXDAI/sDAI (Gnosis only) ─
-async function getTotalAvailableFunds() {
-  if (!userAddr || activeChainId !== 100) return 0n;
-  const readProv = signer || new ethers.JsonRpcProvider(chain().rpc);
-  try {
-    const [nativeBalance, wxdaiContract, sdaiContract] = [
-      await (provider || new ethers.JsonRpcProvider(chain().rpc)).getBalance(userAddr),
-      new ethers.Contract(WXDAI_ADDRESS, ERC20_ABI, readProv),
-      new ethers.Contract(SDAI_ADDRESS, SDAI_ABI, readProv),
-    ];
-    const [wxdaiBal, sdaiBal, sdaiAssets] = await Promise.all([
-      wxdaiContract.balanceOf(userAddr),
-      sdaiContract.balanceOf(userAddr),
-      sdaiContract.convertToAssets(await sdaiContract.balanceOf(userAddr)).catch(() => 0n),
-    ]);
-    // sDAI balance is already in "assets" terms via convertToAssets
-    return nativeBalance + wxdaiBal + sdaiAssets;
-  } catch (_) {
-    return 0n;
   }
 }
 
@@ -2484,17 +2585,17 @@ function openFundingGuide() {
     gnosis: `
       <div class="funding-option">
         <h4>Ask someone to send you funds</h4>
-        <p>Share your wallet address with someone who already has xDAI on Gnosis Chain.</p>
+        <p>Share your wallet address with someone who already has xDAI on Gnosis Chain. The app will convert it into sDAI (yield-bearing) for bond creation.</p>
         <div class="fo-fee fo-fee-free">Fee: $0</div>
       </div>
       <div class="funding-option">
         <h4>Send from another wallet</h4>
-        <p>If you have xDAI in MetaMask, Rabby, or any wallet on Gnosis Chain, send it to the address above.</p>
+        <p>If you have xDAI in MetaMask, Rabby, or any wallet on Gnosis Chain, send it to the address above. The app will convert it into sDAI (yield-bearing) for bond creation.</p>
         <div class="fo-fee fo-fee-free">Fee: &lt;$0.01 (gas only)</div>
       </div>
       <div class="funding-option">
         <h4>Bridge from Ethereum</h4>
-        <p>Have DAI on Ethereum? Bridge it to Gnosis Chain where it becomes xDAI.</p>
+        <p>Have DAI on Ethereum? Bridge it to Gnosis Chain where it becomes xDAI, then the app will convert it into sDAI (yield-bearing) for bond creation.</p>
         <div class="fo-fee fo-fee-low">Fee: Ethereum gas (~$1-5)</div>
         <ol class="fo-steps">
           <li>Go to <a href="https://bridge.gnosischain.com" target="_blank" style="color:var(--accent)">bridge.gnosischain.com</a></li>
@@ -2505,7 +2606,7 @@ function openFundingGuide() {
       </div>
       <div class="funding-option">
         <h4>Buy with fiat</h4>
-        <p>Purchase xDAI directly with a bank transfer or card.</p>
+        <p>Purchase xDAI directly with a bank transfer or card. The app will convert it into sDAI (yield-bearing) for bond creation.</p>
         <ol class="fo-steps">
           <li><a href="https://www.mtpelerin.com/buy-xdai" target="_blank" style="color:var(--accent)">Mt Pelerin</a> &mdash; bank transfer, low fees</li>
           <li><a href="https://ramp.network" target="_blank" style="color:var(--accent)">Ramp Network</a> &mdash; card or bank transfer</li>
@@ -2769,48 +2870,39 @@ async function smartCreateBond() {
     // Build dynamic steps based on user's balance state
     const steps = [];
     const isSdai = needsWrapping(tokenAddr);
-    let sdaiBal = 0n;
+    const fundingState = await getCreateFundingState();
+
+    if (!fundingState) {
+      showMsg(msg, "Could not check your funding state. Please try again.", "error");
+      btn.disabled = false; btn.textContent = "Create Bond"; return;
+    }
 
     if (isSdai) {
-      // Gnosis sDAI: auto-wrap from xDAI/WXDAI if needed
-      sdaiBal = await getBalance(SDAI_ADDRESS);
-      if (sdaiBal < bondAmount) {
-        const wxdaiBal = await getBalance(WXDAI_ADDRESS);
-        const nativeBal = await (provider || new ethers.JsonRpcProvider(chain().rpc)).getBalance(userAddr);
+      if (!fundingState.sufficientBalance) {
+        showMsg(msg, `You have ${formatUsdAmount(fundingState.totalAvailableAssets)} available. Need ${formatUsdAmount(fundingState.shortfallAssets)} more before creating this bond.`, "error");
+        openFundingGuide();
+        btn.disabled = false; btn.textContent = "Get Funds to Create"; return;
+      }
 
-        // Convert sDAI share deficit to WXDAI (assets) needed
-        const sdaiVault = new ethers.Contract(SDAI_ADDRESS, SDAI_ABI, signer);
-        const sdaiShareDeficit = bondAmount - sdaiBal;
-        const wxdaiNeededRaw = await sdaiVault.convertToAssets(sdaiShareDeficit);
-        const wxdaiNeeded = wxdaiNeededRaw + (wxdaiNeededRaw / 500n); // 0.2% buffer for rounding
-
-        if (wxdaiBal < wxdaiNeeded) {
-          const wxdaiDeficit = wxdaiNeeded - wxdaiBal;
-          const gasReserve = ethers.parseEther("0.01");
-          if (nativeBal > gasReserve + wxdaiDeficit) {
-            steps.push({ label: "Wrap xDAI to WXDAI", action: "wrapXdai", amount: wxdaiDeficit });
-          } else if (nativeBal > gasReserve) {
-            steps.push({ label: "Wrap xDAI to WXDAI", action: "wrapXdai", amount: nativeBal - gasReserve });
-          } else {
-            showMsg(msg, "Insufficient funds. Buy some USD first.", "error");
-            btn.disabled = false; btn.textContent = "Create Bond"; return;
-          }
+      if (fundingState.needsConversion) {
+        if (fundingState.wrapAmount > 0n) {
+          steps.push({ label: "Wrap xDAI to WXDAI", action: "wrapXdai", amount: fundingState.wrapAmount });
         }
-        steps.push({ label: "Approve WXDAI for vault", action: "approveWxdai" });
-        steps.push({ label: "Deposit to USD Savings", action: "depositSdai" });
+        if (fundingState.depositAssetsNeeded > 0n) {
+          steps.push({ label: "Approve WXDAI for vault", action: "approveWxdai", amount: fundingState.depositAssetsNeeded });
+          steps.push({ label: "Deposit to USD Savings", action: "depositSdai", amount: fundingState.depositAssetsNeeded });
+        }
       }
     } else {
-      // Non-Gnosis or non-sDAI: just check balance directly
-      const tokenBal = await getBalance(tokenAddr);
-      if (tokenBal < bondAmount) {
-        const need = ethers.formatUnits(bondAmount - tokenBal, decimals);
-        showMsg(msg, `Insufficient ${friendlyTokenName(tokenAddr, '')} balance. Need ${parseFloat(need).toLocaleString(undefined, {maximumFractionDigits: 2})} more.`, "error");
-        btn.disabled = false; btn.textContent = "Create Bond"; return;
+      if (!fundingState.sufficientBalance) {
+        showMsg(msg, `Insufficient ${friendlyTokenName(tokenAddr, '')} balance. Need ${formatTokenAmount(fundingState.shortfall, fundingState.decimals)} more.`, "error");
+        openFundingGuide();
+        btn.disabled = false; btn.textContent = "Get Funds to Create"; return;
       }
     }
 
     // Check if token needs approval for the bond contract
-    const currentAllowance = await tokenContract.allowance(userAddr, chain().contract);
+    const currentAllowance = fundingState.allowance;
     if (currentAllowance < bondAmount) {
       steps.push({ label: `Approve ${friendlyTokenName(tokenAddr, '')}`, action: "approveToken" });
     }
@@ -2828,16 +2920,11 @@ async function smartCreateBond() {
       if (step.action === "wrapXdai") {
         await wrapXdaiToWxdai(step.amount);
       } else if (step.action === "approveWxdai") {
-        const wxdaiBal2 = await getBalance(WXDAI_ADDRESS);
-        await ensureApproval(WXDAI_ADDRESS, wxdaiBal2, SDAI_ADDRESS);
+        await ensureApproval(WXDAI_ADDRESS, step.amount, SDAI_ADDRESS);
       } else if (step.action === "depositSdai") {
-        const wxdaiBal2 = await getBalance(WXDAI_ADDRESS);
-        await wrapWxdaiToSdai(wxdaiBal2);
+        await wrapWxdaiToSdai(step.amount);
       } else if (step.action === "approveToken") {
-        // Re-read balance after potential wrapping
-        const bal = await getBalance(tokenAddr);
-        const approveAmt = bal > bondAmount ? bondAmount : bal;
-        await ensureApproval(tokenAddr, approveAmt, chain().contract);
+        await ensureApproval(tokenAddr, bondAmount, chain().contract);
       } else if (step.action === "createBond") {
         const metadata = document.getElementById("bondMetadata").value.trim();
         const tx = await bondContract.createBond(tokenAddr, bondAmount, challengeAmount, judgeFee, judgeAddr, deadline, acceptanceDelay, rulingBuffer, metadata);
