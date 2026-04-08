@@ -771,6 +771,9 @@
         <input type="number" id="bondIdInput" placeholder="Bond ID (e.g. 0)" min="0" style="flex:1">
         <button class="secondary" onclick="loadBond()">Load</button>
       </div>
+      <div id="bondLoading" class="hidden" style="color:var(--muted);text-align:center;padding:20px;">
+        <span class="spinner"></span> Loading bond...
+      </div>
       <div id="bondDisplay" class="hidden">
         <div class="bond-detail">
           <div class="bond-field">
@@ -2576,8 +2579,10 @@ async function loadBond() {
   if (idStr === "") return;
   const bondId = parseInt(idStr);
   const msg = document.getElementById("viewMsg");
+  const loadingEl = document.getElementById("bondLoading");
 
   // Hide previous bond display and clear messages
+  if (loadingEl) loadingEl.classList.remove("hidden");
   document.getElementById("bondDisplay").classList.add("hidden");
   document.getElementById("bondActions").classList.add("hidden");
   msg.innerHTML = "";
@@ -2593,6 +2598,7 @@ async function loadBond() {
       } else {
         showMsg(msg, `Bond #${bondId} does not exist on ${chain().name}. Latest bond is #${Number(nextId) - 1}.`, "error");
       }
+      if (loadingEl) loadingEl.classList.add("hidden");
       return;
     }
 
@@ -2914,6 +2920,8 @@ async function loadBond() {
     msg.innerHTML = "";
   } catch (err) {
     showMsg(msg, err.reason || err.message, "error");
+  } finally {
+    if (loadingEl) loadingEl.classList.add("hidden");
   }
 }
 
