@@ -1,4 +1,5 @@
-# SimpleBond v3
+![Tests](https://img.shields.io/badge/tests-passing-green)
+# SimpleBond v4
 
 A truth-machine bond contract. Make a claim, back it with money, and let the world challenge you. Designed by Robin Hanson, built by Futarchy.
 
@@ -156,10 +157,13 @@ Sample systemd units live in `deploy/systemd/`:
 
 ## Addresses
 
+`KlerosJudge` is available on Gnosis as a deployed judge adapter for `SimpleBondV4`.
+
 | Asset | Chain | Address |
 |-------|-------|---------|
-| SimpleBond v3 | Gnosis | `0x90b8d22456E8b6d8Dea3DDc28E025940335ffC02` |
-| SimpleBond v2 | Gnosis | `0xfB3623bd169E5D3dB275BB0644219a5aBA73108D` |
+| SimpleBondV4 | Gnosis | `0xCe8799303AeaEC861142470d754F74E09EfD1C45` |
+| SimpleBondV4 | Polygon | `0x6B24380B1980db3e2DfDd2b62f5ed3E7E88DFA43` |
+| KlerosJudge | Gnosis | `0x71e15D42bE15BAE117096E12C9dBA25E67d14C67` |
 | sDAI | Gnosis | `0xaf204776c7245bF4147c2612BF6e5972Ee483701` |
 | WXDAI | Gnosis | `0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d` |
 
