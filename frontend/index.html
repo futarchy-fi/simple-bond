@@ -139,6 +139,7 @@
   .bond-item .bi-judge { font-size: 11px; color: var(--muted); margin-top: 4px; }
   .bond-item .bi-judge a { color: var(--accent); text-decoration: none; }
   .bond-item .bi-judge a:hover { text-decoration: underline; }
+  .token-warning-mark { color: var(--red); font-weight: 700; margin-left: 6px; }
   .success-card {
     background: rgba(0,184,148,0.08); border: 1px solid var(--green);
     border-radius: 10px; padding: 20px; text-align: center; margin-top: 16px;
@@ -516,7 +517,7 @@
   </header>
 
   <!-- CONNECTION SCREEN -->
-  <div id="connectScreen" class="connect-screen">
+  <div id="connectScreen" class="connect-screen hidden">
     <h2>Put your money where your mouth is</h2>
     <p class="subtitle">Create and challenge bonds with real stakes. No crypto experience needed.</p>
     <div class="connect-options">
@@ -674,15 +675,18 @@
               <button id="judgeOnboardingInlineEditBtn" class="secondary hidden" onclick="openOwnJudgeProfile()">Edit Profile</button>
             </div>
           </div>
-          <div class="form-group" id="judgeExistingAddressRow" style="margin-top:12px;margin-bottom:0;">
-            <label>I already have a judge contract</label>
+          <div class="form-group hidden" id="judgeExistingAddressRow" style="margin-top:12px;margin-bottom:0;">
+            <label>Import Custom Contract</label>
             <input type="text" id="judgeExistingAddress" placeholder="Paste an existing judge contract address">
-            <div class="hint">Use this if your judge already exists on-chain but was not created by this browser.</div>
+            <div class="hint">Use this only if your judge already exists on-chain and you want to register it as your canonical judge.</div>
+            <div class="judge-inline-actions">
+              <button id="judgeOnboardingUseExistingBtn" class="secondary" onclick="useExistingJudgeAddress()">Use Existing Judge</button>
+            </div>
           </div>
           <div class="judge-onboarding-actions">
             <button id="judgeOnboardingConnectBtn" class="secondary" onclick="showConnectScreen()">Sign In</button>
-            <button id="judgeOnboardingUseExistingBtn" class="secondary" onclick="useExistingJudgeAddress()">Use Existing Judge</button>
-            <button id="judgeOnboardingDeployBtn" class="hidden" onclick="deployOwnJudge()">Create My Judge</button>
+            <button id="judgeOnboardingDeployBtn" class="hidden" onclick="deployOwnJudge()">Become a Judge</button>
+            <button id="judgeOnboardingToggleExistingBtn" class="secondary hidden" onclick="toggleJudgeExistingAddressRow()">Import Custom Contract</button>
             <button id="judgeOnboardingActivateBtn" class="secondary hidden" onclick="acceptOwnJudgeRole()">Activate Judge</button>
             <button id="judgeOnboardingEditBtn" class="secondary hidden" onclick="openOwnJudgeProfile()">Edit Public Profile</button>
             <button id="judgeOnboardingCopyBtn" class="secondary hidden" onclick="copyOwnJudgeAddress()">Copy Address</button>
@@ -3176,10 +3180,17 @@ async function loadBrowseBonds() {
         else if (now > deadline) { status = "Expired"; statusClass = "status-expired"; }
         else { status = "Active"; statusClass = "status-active"; }
 
-        // Sort key: most recent activity (challenge time or block timestamp)
+        const isOpen = !settled && !conceded;
+        const isSdai = token.toLowerCase() === SDAI_ADDRESS.toLowerCase();
+        let sortBondAmount = bondAmount;
+        if (sdaiRate && isSdai) {
+          sortBondAmount = bondAmount * sdaiRate / ethers.parseUnits('1', 18);
+        }
+
+        // Sort key fallback: most recent activity (challenge time or block timestamp)
         const lastActivity = lastChallengeTime > 0n ? Number(lastChallengeTime) : Number(log.blockNumber);
 
-        allBonds.push({ bondId, judge, token, bondAmount, challengeAmount, deadline, metadata, symbol, decimals, status, statusClass, lastActivity, settled, conceded });
+        allBonds.push({ bondId, judge, token, bondAmount, challengeAmount, deadline, metadata, symbol, decimals, status, statusClass, lastActivity, settled, conceded, isOpen, isSdai, sortBondAmount });
       } catch (_) {}
     }
 
@@ -3191,13 +3202,7 @@ async function loadBrowseBonds() {
       return;
     }
 
-    // Sort: active bonds first, then by most recent activity
-    allBonds.sort((a, b) => {
-      const aActive = a.status === "Active" ? 1 : 0;
-      const bActive = b.status === "Active" ? 1 : 0;
-      if (aActive !== bActive) return bActive - aActive;
-      return b.lastActivity - a.lastActivity;
-    });
+    allBonds.sort(compareBondListPriority);
 
     for (const bond of allBonds) {
       let dispBond = bond.bondAmount, dispChallenge = bond.challengeAmount;
@@ -3210,6 +3215,7 @@ async function loadBrowseBonds() {
       const desc = bond.metadata || "No description";
       const isActive = bond.status === "Active";
       const deadlineInfo = isActive ? `Deadline: <span class="countdown">${formatCountdown(Number(bond.deadline))}</span>` : `<span class="status-badge ${bond.statusClass}" style="font-size:10px;">${bond.status}</span>`;
+      const tokenWarning = bond.isSdai ? "" : `<span class="token-warning-mark" title="Non-sDAI bond (${escapeHtml(friendlyTokenName(bond.token, bond.symbol))})">(!)</span>`;
 
       const card = document.createElement("div");
       card.className = "bond-browse-item";
@@ -3219,7 +3225,7 @@ async function loadBrowseBonds() {
         <div class="bb-desc">${escapeHtml(desc)}</div>
         <div class="bb-judge">Judge: <a href="#"></a></div>
         <div class="bond-browse-stats">
-          <span>Bond: <span class="stat-val">$${bondAmt}</span></span>
+          <span>Bond: <span class="stat-val">$${bondAmt}</span>${tokenWarning}</span>
           <span>Challenge: <span class="stat-val">$${challengeAmt}</span></span>
           <span>${deadlineInfo}</span>
         </div>`;
@@ -3644,16 +3650,26 @@ async function loadMyBonds() {
 
       const desc = metadata || "No description";
       let dispAmt = bondAmount;
-      if (myBondsSdaiRate && token.toLowerCase() === SDAI_ADDRESS.toLowerCase()) {
+      const isOpen = !settled && !conceded;
+      const isSdai = token.toLowerCase() === SDAI_ADDRESS.toLowerCase();
+      if (myBondsSdaiRate && isSdai) {
         dispAmt = bondAmount * myBondsSdaiRate / ethers.parseUnits('1', 18);
       }
       const amtStr = parseFloat(ethers.formatUnits(dispAmt, decimals)).toLocaleString(undefined, { maximumFractionDigits: 2 });
       const displayName = friendlyTokenName(token, symbol);
+      let sortBondAmount = bondAmount;
+      if (myBondsSdaiRate && isSdai) {
+        sortBondAmount = bondAmount * myBondsSdaiRate / ethers.parseUnits('1', 18);
+      }
+      const lastActivity = lastChallengeTime > 0n ? Number(lastChallengeTime) : id;
 
-      bondRows.push({ id, judge, status, statusClass, desc, amtStr, role });
+      bondRows.push({ id, judge, status, statusClass, desc, amtStr, role, isOpen, isSdai, sortBondAmount, lastActivity, displayName });
     }
 
+    bondRows.sort(compareBondListPriority);
+
     for (const bond of bondRows) {
+      const tokenWarning = bond.isSdai ? "" : `<span class="token-warning-mark" title="Non-sDAI bond (${escapeHtml(bond.displayName)})">(!)</span>`;
       const item = document.createElement("div");
       item.className = "bond-item";
       item.onclick = () => viewBondById(bond.id);
@@ -3664,7 +3680,7 @@ async function loadMyBonds() {
           <div class="bi-judge">Judge: <a href="#"></a></div>
         </div>
         <div class="bi-right">
-          <div class="bi-amount">$${bond.amtStr}</div>
+          <div class="bi-amount">$${bond.amtStr}${tokenWarning}</div>
           <div class="bi-role">${bond.role}</div>
         </div>`;
       const judgeLink = item.querySelector(".bi-judge a");
@@ -3752,10 +3768,34 @@ async function getControlledJudgeContracts(readProvider = null) {
 }
 
 function setJudgeOnboardingBusy(isBusy) {
-  for (const id of ["judgeOnboardingUseExistingBtn", "judgeOnboardingDeployBtn", "judgeOnboardingActivateBtn", "judgeOnboardingEditBtn", "judgeOnboardingInlineEditBtn", "judgeOnboardingCopyBtn"]) {
+  for (const id of ["judgeOnboardingUseExistingBtn", "judgeOnboardingDeployBtn", "judgeOnboardingToggleExistingBtn", "judgeOnboardingActivateBtn", "judgeOnboardingEditBtn", "judgeOnboardingInlineEditBtn", "judgeOnboardingCopyBtn"]) {
     const el = document.getElementById(id);
     if (el) el.disabled = isBusy;
   }
+}
+
+function syncJudgeExistingAddressRow() {
+  const existingAddressRow = document.getElementById("judgeExistingAddressRow");
+  const toggleBtn = document.getElementById("judgeOnboardingToggleExistingBtn");
+  if (!existingAddressRow || !toggleBtn) return;
+  existingAddressRow.classList.toggle("hidden", !judgeExistingAddressRowOpen);
+  toggleBtn.textContent = judgeExistingAddressRowOpen ? "Hide Import" : "Import Custom Contract";
+}
+
+function toggleJudgeExistingAddressRow(forceOpen = null) {
+  judgeExistingAddressRowOpen = forceOpen == null ? !judgeExistingAddressRowOpen : !!forceOpen;
+  syncJudgeExistingAddressRow();
+}
+
+function compareBondListPriority(a, b) {
+  if (a.isOpen !== b.isOpen) return Number(b.isOpen) - Number(a.isOpen);
+  if (a.isOpen && b.isOpen) {
+    if (a.isSdai !== b.isSdai) return Number(b.isSdai) - Number(a.isSdai);
+    if (a.isSdai && b.isSdai && a.sortBondAmount !== b.sortBondAmount) {
+      return a.sortBondAmount > b.sortBondAmount ? -1 : 1;
+    }
+  }
+  return b.lastActivity - a.lastActivity;
 }
 
 function setJudgeOnboardingAddress(address) {
@@ -3784,8 +3824,8 @@ async function refreshJudgeOnboarding() {
   const statusEl = document.getElementById("judgeOnboardingStatus");
   const existingAddressRow = document.getElementById("judgeExistingAddressRow");
   const connectBtn = document.getElementById("judgeOnboardingConnectBtn");
-  const useExistingBtn = document.getElementById("judgeOnboardingUseExistingBtn");
   const deployBtn = document.getElementById("judgeOnboardingDeployBtn");
+  const toggleExistingBtn = document.getElementById("judgeOnboardingToggleExistingBtn");
   const activateBtn = document.getElementById("judgeOnboardingActivateBtn");
   const editBtn = document.getElementById("judgeOnboardingEditBtn");
   const inlineEditBtn = document.getElementById("judgeOnboardingInlineEditBtn");
@@ -3793,13 +3833,15 @@ async function refreshJudgeOnboarding() {
 
   titleEl.textContent = "Become a Judge";
   connectBtn.classList.toggle("hidden", !!userAddr);
-  useExistingBtn.classList.toggle("hidden", !userAddr);
-  existingAddressRow.classList.toggle("hidden", !userAddr);
+  toggleExistingBtn.classList.add("hidden");
+  existingAddressRow.classList.add("hidden");
   deployBtn.classList.add("hidden");
   activateBtn.classList.add("hidden");
   editBtn.classList.add("hidden");
   inlineEditBtn.classList.add("hidden");
   copyBtn.classList.add("hidden");
+  judgeExistingAddressRowOpen = false;
+  syncJudgeExistingAddressRow();
   setJudgeOnboardingAddress(null);
 
   if (!userAddr) {
@@ -3813,14 +3855,15 @@ async function refreshJudgeOnboarding() {
 
   if (!primaryJudge) {
     hintEl.textContent = "No canonical judge is registered for this wallet yet.";
-    statusEl.textContent = "Register an existing judge contract or create a new one. Once registered, the app will treat it as your canonical judge everywhere.";
+    statusEl.textContent = "Create a judge for this wallet. If you already deployed one elsewhere, you can import it as your canonical judge.";
     deployBtn.classList.remove("hidden");
+    toggleExistingBtn.classList.remove("hidden");
     return;
   }
 
   titleEl.textContent = "Your Judge";
   existingAddressRow.classList.add("hidden");
-  useExistingBtn.classList.add("hidden");
+  toggleExistingBtn.classList.add("hidden");
   deployBtn.classList.add("hidden");
   primaryJudge.profile = await fetchJudgeProfileByAddress(primaryJudge.address, activeChainId, { force: true });
   setJudgeOnboardingAddress(primaryJudge.address);
@@ -4634,6 +4677,7 @@ async function showJudgeProfilePage(profileRef) {
 let judgesLoaded = false;
 let judgesList = []; // cached list of {address, bondCount, kind, operator, active}
 let judgesLoadRequestId = 0;
+let judgeExistingAddressRowOpen = false;
 
 function normalizeJudges(entries) {
   return dedupeJudgesByAddress(entries);
@@ -4644,7 +4688,7 @@ function formatJudgeDescriptor(judge) {
   if (judge.kind === "manual") {
     const operatorText = judge.operator ? short(judge.operator) : "unknown operator";
     const activeText = judge.active === false ? "inactive" : "active";
-    const prefix = judge.official ? "Official manual judge" : "Manual judge";
+    const prefix = judge.official ? "Official manual" : "Manual";
     return `${prefix} · ${activeText} · operator ${operatorText}`;
   }
   return judge.official ? "Official custom judge contract" : "Custom judge contract";
