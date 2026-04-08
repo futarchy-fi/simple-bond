@@ -400,6 +400,44 @@
     color: var(--muted);
     font-size: 13px;
   }
+  .create-stage {
+    margin-top: 18px;
+    padding-top: 18px;
+    border-top: 1px solid var(--border);
+  }
+  .create-stage:first-of-type {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: none;
+  }
+  .create-stage-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+  .create-stage-number {
+    width: 24px;
+    height: 24px;
+    border-radius: 999px;
+    background: rgba(108,92,231,0.14);
+    color: var(--accent);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+  .create-stage-title {
+    font-size: 15px;
+    font-weight: 600;
+  }
+  .create-stage-hint {
+    margin-bottom: 12px;
+    color: var(--muted);
+    font-size: 12px;
+  }
   .create-summary-card {
     margin: 18px 0 14px;
     padding: 16px;
@@ -614,44 +652,57 @@
         <div id="fundingBanner" class="funding-banner hidden"></div>
         <div class="create-lead">Start with the claim, amount, judge, and deadline. The app fills in the standard economics by default, and you can override them only if you need to.</div>
 
-        <div class="form-group">
-          <label for="bondAmount">Amount (USD)</label>
-          <input type="text" id="bondAmount" placeholder="100.00" oninput="onAmountChange()">
-          <div id="tokenExplainer" class="hint"></div>
-          <div id="tokenBalanceInfo" class="token-balance"></div>
-          <div id="approvalStatus" class="approval-status"></div>
-        </div>
-
-        <div class="form-group">
-          <label for="bondMetadata">What is this bond for?</label>
-          <textarea id="bondMetadata" placeholder="e.g. &quot;All statistical claims in my March 2026 blog post are accurate and properly sourced.&quot;" rows="2"></textarea>
-        </div>
-
-        <div class="form-group">
-          <label for="judgeSelect">Judge</label>
-          <select id="judgeSelect" onchange="onJudgeSelectChange()">
-            <option value="">Select a judge contract...</option>
-          </select>
-          <div id="judgeMinFeeHint" class="hint">Pick a judge contract both parties trust. The bond contract rejects EOAs and judges that refuse the proposed terms.</div>
-          <div id="judgeCustomField" class="hidden" style="margin-top:8px;">
-            <input type="text" id="judgeAddr" placeholder="0x... or name.eth" oninput="resolveJudgeEns()">
-            <div id="judgeEnsHint" class="hint"></div>
+        <div class="create-stage">
+          <div class="create-stage-header">
+            <div class="create-stage-number">1</div>
+            <div class="create-stage-title">Define the claim</div>
+          </div>
+          <div class="create-stage-hint">Start with the public claim and the amount you want to put behind it.</div>
+          <div class="form-group">
+            <label for="bondMetadata">What is this bond for?</label>
+            <textarea id="bondMetadata" placeholder="e.g. &quot;All statistical claims in my March 2026 blog post are accurate and properly sourced.&quot;" rows="2" oninput="refreshCreateProgressiveDisclosure()"></textarea>
+          </div>
+          <div class="form-group">
+            <label for="bondAmount">Amount (USD)</label>
+            <input type="text" id="bondAmount" placeholder="100.00" oninput="onAmountChange()">
+            <div id="tokenExplainer" class="hint"></div>
+            <div id="tokenBalanceInfo" class="token-balance"></div>
+            <div id="approvalStatus" class="approval-status"></div>
           </div>
         </div>
 
-        <div class="form-group">
-          <label for="deadline">Deadline</label>
-          <div class="preset-row">
-            <button type="button" class="preset" data-days="30" onclick="setDeadline(30)">1 month</button>
-            <button type="button" class="preset" data-days="90" onclick="setDeadline(90)">3 months</button>
-            <button type="button" class="preset" data-days="180" onclick="setDeadline(180)">6 months</button>
-            <button type="button" class="preset" data-days="365" onclick="setDeadline(365)">1 year</button>
+        <div id="createStageJudge" class="create-stage hidden">
+          <div class="create-stage-header">
+            <div class="create-stage-number">2</div>
+            <div class="create-stage-title">Choose judge and timing</div>
           </div>
-          <input type="date" id="deadline">
-          <div class="hint">Last date someone can challenge this bond.</div>
+          <div class="create-stage-hint">Only after the bond basics are set do you need to pick who judges it and how long challenges stay open.</div>
+          <div class="form-group">
+            <label for="judgeSelect">Judge</label>
+            <select id="judgeSelect" onchange="onJudgeSelectChange()">
+              <option value="">Select a judge contract...</option>
+            </select>
+            <div id="judgeMinFeeHint" class="hint">Pick a judge contract both parties trust. The bond contract rejects EOAs and judges that refuse the proposed terms.</div>
+            <div id="judgeCustomField" class="hidden" style="margin-top:8px;">
+              <input type="text" id="judgeAddr" placeholder="0x... or name.eth" oninput="resolveJudgeEns()">
+              <div id="judgeEnsHint" class="hint"></div>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="deadline">Deadline</label>
+            <div class="preset-row">
+              <button type="button" class="preset" data-days="30" onclick="setDeadline(30)">1 month</button>
+              <button type="button" class="preset" data-days="90" onclick="setDeadline(90)">3 months</button>
+              <button type="button" class="preset" data-days="180" onclick="setDeadline(180)">6 months</button>
+              <button type="button" class="preset" data-days="365" onclick="setDeadline(365)">1 year</button>
+            </div>
+            <input type="date" id="deadline" oninput="refreshCreateProgressiveDisclosure()">
+            <div class="hint">Last date someone can challenge this bond.</div>
+          </div>
         </div>
 
-        <div class="create-summary-card">
+        <div id="createStageReview" class="create-summary-card hidden">
           <div class="create-summary-header">
             <div class="create-summary-title">Recommended Setup</div>
             <button type="button" id="createAdvancedToggleBtn" class="secondary create-summary-toggle" onclick="toggleCreateAdvanced()">Customize</button>
@@ -1452,6 +1503,7 @@ function onAmountChange() {
     if (!feeEl.dataset.userEdited) feeEl.value = (val * 0.05).toFixed(2);
   }
   updateCreateSummary();
+  refreshCreateProgressiveDisclosure();
   checkApproval();
 }
 
@@ -1483,6 +1535,23 @@ function setMode(mode) {
 function formatUsdPreview(value) {
   if (!Number.isFinite(value) || value <= 0) return "$0.00";
   return `$${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+}
+
+function refreshCreateProgressiveDisclosure() {
+  const claim = document.getElementById("bondMetadata")?.value.trim() || "";
+  const amount = parseFloat(document.getElementById("bondAmount")?.value || "");
+  const judgeStage = document.getElementById("createStageJudge");
+  const reviewStage = document.getElementById("createStageReview");
+  const judgeSelectVal = document.getElementById("judgeSelect")?.value || "";
+  const customJudgeVal = document.getElementById("judgeAddr")?.value.trim() || "";
+  const deadlineVal = document.getElementById("deadline")?.value || "";
+
+  const hasBasics = claim.length > 0 && Number.isFinite(amount) && amount > 0;
+  const hasJudge = judgeSelectVal && (judgeSelectVal !== "__custom__" || customJudgeVal);
+  const hasDeadline = !!deadlineVal;
+
+  if (judgeStage) judgeStage.classList.toggle("hidden", !hasBasics);
+  if (reviewStage) reviewStage.classList.toggle("hidden", !(hasBasics && hasJudge && hasDeadline));
 }
 
 function updateCreateSummary() {
@@ -1523,6 +1592,7 @@ function updateCreateSummary() {
   hintEl.textContent = currentMode === "advanced"
     ? "You are overriding the standard bond economics below."
     : "Defaults use the standard bond settings: 50% challenge amount, 5% judge fee, 3-day acceptance delay, and 30-day ruling window.";
+  refreshCreateProgressiveDisclosure();
 }
 
 async function updateTokenExplainer() {
@@ -5122,6 +5192,7 @@ function onJudgeSelectChange() {
     hintEl.textContent = "Pick a judge contract both parties trust. The contract may still reject the proposed terms at bond creation.";
   }
   updateCreateSummary();
+  refreshCreateProgressiveDisclosure();
 }
 
 async function doRejectBond(bondId, judgeAddr) {
@@ -5168,6 +5239,7 @@ function restoreForm() {
     onJudgeSelectChange();
     onAmountChange();
     updateCreateSummary();
+    refreshCreateProgressiveDisclosure();
   } catch (_) {}
 }
 
@@ -5197,6 +5269,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   setMode('simple');
   loadJudgeSelectOnCreate();
   restoreForm();
+  refreshCreateProgressiveDisclosure();
 
   const bondParam = params.get("bond");
   if (judgeProfileRouteId) {
