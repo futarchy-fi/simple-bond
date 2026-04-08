@@ -168,6 +168,14 @@ async function deploySimpleBondV5FuzzFixture(options = {}) {
       return bond.rulingDeadline(bondId);
     },
 
+    async refundCursor(bondId = 0) {
+      return bond.refundCursor(bondId);
+    },
+
+    async refundEnd(bondId = 0) {
+      return bond.refundEnd(bondId);
+    },
+
     async latestTime() {
       return time.latest();
     },
@@ -298,6 +306,35 @@ async function deploySimpleBondV5FuzzFixture(options = {}) {
       const receipt = await tx.wait();
 
       return { bondId, tx, receipt };
+    },
+
+    async claimRefunds({ bondId = 0, maxCount = 1, caller = actors.outsider } = {}) {
+      const tx = await bond.connect(caller).claimRefunds(bondId, maxCount);
+      const receipt = await tx.wait();
+
+      return { bondId, maxCount, tx, receipt };
+    },
+
+    async claimAllRefunds({ bondId = 0, maxCountPerTx = 50, caller = actors.outsider } = {}) {
+      const receipts = [];
+
+      while (true) {
+        const [cursor, end] = await Promise.all([
+          bond.refundCursor(bondId),
+          bond.refundEnd(bondId),
+        ]);
+
+        if (cursor >= end) {
+          break;
+        }
+
+        const remaining = end - cursor;
+        const maxCount = remaining < BigInt(maxCountPerTx) ? remaining : BigInt(maxCountPerTx);
+        const { receipt } = await actions.claimRefunds({ bondId, maxCount, caller });
+        receipts.push(receipt);
+      }
+
+      return { bondId, receipts };
     },
   };
 

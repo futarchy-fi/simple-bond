@@ -107,6 +107,8 @@ async function captureBondSnapshot(fixture, bondId = 0, options = {}) {
     bond,
     challengeCount,
     currentChallenge,
+    refundCursor,
+    refundEnd,
     rawChallenges,
     contractBalance,
     trackedBalances,
@@ -114,6 +116,8 @@ async function captureBondSnapshot(fixture, bondId = 0, options = {}) {
     fixture.read.getBond(bondId),
     fixture.read.getChallengeCount(bondId),
     fixture.read.getCurrentChallenge(bondId),
+    fixture.read.refundCursor(bondId),
+    fixture.read.refundEnd(bondId),
     fixture.read.getChallenges(bondId),
     fixture.read.contractBalance(),
     fixture.read.balancesOf(trackedAddresses),
@@ -157,6 +161,8 @@ async function captureBondSnapshot(fixture, bondId = 0, options = {}) {
     currentChallenge,
     pendingChallengeIndices: pendingChallenges.map(({ index }) => index),
     pendingChallenges,
+    refundCursor,
+    refundEnd,
     refundedChallenges,
     resolvedChallenges,
     roleAddresses,
@@ -253,7 +259,9 @@ function expectConcedeOutcome(before, after) {
 
   expect(after.bond.settled).to.equal(true);
   expect(after.bond.conceded).to.equal(true);
+
   expect(after.contractBalance).to.equal(0n);
+
   expectTrackedBalanceDeltas(before, after, expectedDeltas);
 }
 
@@ -267,7 +275,9 @@ function expectRejectBondOutcome(before, after) {
   }
 
   expect(after.bond.settled).to.equal(true);
+
   expect(after.contractBalance).to.equal(0n);
+
   expectTrackedBalanceDeltas(before, after, expectedDeltas);
 }
 
@@ -284,7 +294,9 @@ function expectTimeoutOutcome(before, after) {
   }
 
   expect(after.bond.settled).to.equal(true);
+
   expect(after.contractBalance).to.equal(0n);
+
   expectTrackedBalanceDeltas(before, after, expectedDeltas);
 }
 
@@ -311,7 +323,9 @@ function expectRuleForChallengerOutcome(before, after, feeCharged) {
   }
 
   expect(after.bond.settled).to.equal(true);
+
   expect(after.contractBalance).to.equal(0n);
+
   expect(after.challenges[Number(before.currentChallenge)].status).to.equal(CHALLENGE_STATUS_WON);
   expectTrackedBalanceDeltas(before, after, expectedDeltas);
 }
