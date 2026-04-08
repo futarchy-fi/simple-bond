@@ -2690,13 +2690,6 @@ async function loadBond() {
         statementEl.textContent = truncateText(judgeProfile.statement, 180);
         judgeProfileHintEl.appendChild(statementEl);
       }
-      const linkRow = document.createElement("div");
-      const profileLink = document.createElement("a");
-      profileLink.href = buildJudgeProfilePath(judgeProfile);
-      profileLink.className = "judge-public-link";
-      profileLink.textContent = "View public judge profile";
-      linkRow.appendChild(profileLink);
-      judgeProfileHintEl.appendChild(linkRow);
     }
     const tokenDisplayName = friendlyTokenName(token, symbol);
     setAddrLink("bToken", token, tokenDisplayName);
