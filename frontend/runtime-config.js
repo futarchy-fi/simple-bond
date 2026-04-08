@@ -2,11 +2,11 @@ window.SIMPLE_BOND_CONFIG = Object.assign(
   {
     // Override these when the static frontend and APIs live on different origins.
     notifyApiBase: "/api/notify",
-    // Provide the deployed SimpleBondV5 address and creation block for Gnosis.
-    gnosisBondContract: null,
-    gnosisDeployBlock: 0,
-    // Optional on-chain public profile registry for judge contracts on Gnosis.
-    gnosisJudgeProfileRegistry: null,
+    // Live Gnosis deployment for bond.futarchy.ai.
+    gnosisBondContract: "0x7dF485C013f8671B656d585f1d1411640B1D2776",
+    gnosisDeployBlock: 45569363,
+    // On-chain public profile registry for judge contracts on Gnosis.
+    gnosisJudgeProfileRegistry: "0x5f2000E438533662A689311672a41aca3EDC88DD",
   },
   window.SIMPLE_BOND_CONFIG || {}
 );

@@ -149,19 +149,18 @@ Both scripts print the post-deploy runtime-config checklist you need for the liv
 
 The frontend is still a static site, but the notification API base is now configurable at runtime in `frontend/runtime-config.js`.
 
-Default:
+Live config:
 
 ```js
 window.SIMPLE_BOND_CONFIG = {
   notifyApiBase: "/api/notify",
-  gnosisBondContract: null,
-  gnosisDeployBlock: 0,
-  gnosisJudgeProfileRegistry: null,
+  gnosisBondContract: "0x7dF485C013f8671B656d585f1d1411640B1D2776",
+  gnosisDeployBlock: 45569363,
+  gnosisJudgeProfileRegistry: "0x5f2000E438533662A689311672a41aca3EDC88DD",
 };
 ```
 
-For a live Gnosis deployment, set `gnosisBondContract` and `gnosisDeployBlock`.
-Set `gnosisJudgeProfileRegistry` once the public judge profile registry is deployed.
+The current product deployment is Gnosis-only and ships those values in `frontend/runtime-config.js`.
 If the frontend moves to Netlify or any other static host, point `notifyApiBase` at the public API origin instead, for example:
 
 ```js
@@ -188,6 +187,11 @@ For a split deployment, set:
 - `backend/config.mjs` `CHAINS[100].contract` to the deployed `SimpleBondV5` address
 - `backend/config.mjs` `CHAINS[100].startBlock` to the deployed `SimpleBondV5` block
 
+The current email worker target is Gnosis-only and watches:
+
+- `CHAINS[100].contract = 0x7dF485C013f8671B656d585f1d1411640B1D2776`
+- `CHAINS[100].startBlock = 45569363`
+
 Sample systemd units live in `deploy/systemd/`:
 
 - `deploy/systemd/bond-notify-api.service`
@@ -195,18 +199,24 @@ Sample systemd units live in `deploy/systemd/`:
 
 ## Addresses
 
-The canonical `SimpleBondV5` and `JudgeProfileRegistry` Gnosis addresses should be added here after deployment.
-The entries below are legacy deployed addresses that remain useful for historical reference.
+Current canonical Gnosis deployment:
 
 `KlerosJudge` is available on Gnosis as a deployed judge adapter for `SimpleBondV4`.
 
 | Asset | Chain | Address |
 |-------|-------|---------|
+| SimpleBondV5 | Gnosis | `0x7dF485C013f8671B656d585f1d1411640B1D2776` |
+| JudgeProfileRegistry | Gnosis | `0x5f2000E438533662A689311672a41aca3EDC88DD` |
 | SimpleBondV4 | Gnosis | `0xCe8799303AeaEC861142470d754F74E09EfD1C45` |
 | SimpleBondV4 | Polygon | `0x6B24380B1980db3e2DfDd2b62f5ed3E7E88DFA43` |
 | KlerosJudge | Gnosis | `0x71e15D42bE15BAE117096E12C9dBA25E67d14C67` |
 | sDAI | Gnosis | `0xaf204776c7245bF4147c2612BF6e5972Ee483701` |
 | WXDAI | Gnosis | `0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d` |
+
+Judge profile registry control:
+
+- owner: `0x645A3D9208523bbFEE980f7269ac72C61Dd3b552`
+- admin: `0x693E3FB46Bb36eE43C702FE94f9463df0691b43d`
 
 ## License
 

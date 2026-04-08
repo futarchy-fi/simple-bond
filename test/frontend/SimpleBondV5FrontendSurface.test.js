@@ -32,9 +32,9 @@ describe("SimpleBondV5 frontend surface", function () {
     expect(frontendSource).to.include('const judgeProfileRouteId = getJudgeProfileRouteId()');
     expect(frontendSource).to.include('const judgeParam = params.get("judge")');
 
-    expect(runtimeConfigSource).to.include("gnosisBondContract: null");
-    expect(runtimeConfigSource).to.include("gnosisDeployBlock: 0");
-    expect(runtimeConfigSource).to.include("gnosisJudgeProfileRegistry: null");
+    expect(runtimeConfigSource).to.include('gnosisBondContract: "0x7dF485C013f8671B656d585f1d1411640B1D2776"');
+    expect(runtimeConfigSource).to.include("gnosisDeployBlock: 45569363");
+    expect(runtimeConfigSource).to.include('gnosisJudgeProfileRegistry: "0x5f2000E438533662A689311672a41aca3EDC88DD"');
     expect(runtimeConfigSource).to.not.include("judgeApiBase");
   });
 });

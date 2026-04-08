@@ -31,7 +31,7 @@ export const FRONTEND_BASE_URL = trimTrailingSlash(process.env.SIMPLE_BOND_FRONT
 export const DB_PATH = resolve(__dirname, '..', 'data', 'bond-notify.db');
 
 export const POLL_INTERVAL_MS = 30_000;
-export const CONFIRMATION_BLOCKS = { 100: 12, 137: 64 };
+export const CONFIRMATION_BLOCKS = { 100: 12 };
 export const BLOCK_CHUNK = 10_000;
 export const TIMESTAMP_WINDOW_SEC = 300; // 5 minutes
 export const RATE_LIMIT_MAX = 3; // per IP per hour
@@ -40,20 +40,13 @@ export const CHAINS = {
   100: {
     name: 'Gnosis',
     rpc: 'https://rpc.gnosischain.com',
-    contract: '0xCe8799303AeaEC861142470d754F74E09EfD1C45',
-    startBlock: 44921914,
+    contract: '0x7dF485C013f8671B656d585f1d1411640B1D2776',
+    startBlock: 45569363,
     explorer: 'https://gnosisscan.io',
-  },
-  137: {
-    name: 'Polygon',
-    rpc: 'https://polygon.drpc.org',
-    contract: '0x6B24380B1980db3e2DfDd2b62f5ed3E7E88DFA43',
-    startBlock: 83608546,
-    explorer: 'https://polygonscan.com',
   },
 };
 
-// SimpleBondV4 ABI — only events + view functions we need
+// SimpleBondV5 ABI subset — only events + view functions the email watcher needs.
 export const CONTRACT_ABI = [
   "event BondCreated(uint256 indexed bondId, address indexed poster, address indexed judge, address token, uint256 bondAmount, uint256 challengeAmount, uint256 judgeFee, uint256 deadline, uint256 acceptanceDelay, uint256 rulingBuffer, string metadata)",
   "event Challenged(uint256 indexed bondId, uint256 challengeIndex, address indexed challenger, string metadata)",
