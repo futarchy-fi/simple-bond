@@ -3147,7 +3147,9 @@ async function loadBrowseBonds() {
   const listEl = document.getElementById("browseBondsList");
   const loadingEl = document.getElementById("browseLoading");
   const emptyEl = document.getElementById("browseEmpty");
-  document.getElementById("browseChainNote").textContent = `Showing bonds on ${chain().name}.`;
+  const noteEl = document.getElementById("browseChainNote");
+  if (!listEl || !loadingEl || !emptyEl || !noteEl) return;
+  noteEl.textContent = `Showing bonds on ${chain().name}.`;
 
   loadingEl.classList.remove("hidden");
   listEl.innerHTML = "";
@@ -3157,7 +3159,7 @@ async function loadBrowseBonds() {
     const readProvider = new ethers.JsonRpcProvider(chain().rpc);
     const readContract = new ethers.Contract(chain().contract, BOND_ABI, readProvider);
 
-    const createLogs = await queryDetailedBondCreatedLogs(readProvider).catch(() => []);
+    const createLogs = await withTimeout(queryDetailedBondCreatedLogs(readProvider).catch(() => null), 12000, null);
     const iface = readContract.interface;
 
     const now = BigInt(Math.floor(Date.now() / 1000));
@@ -3172,12 +3174,29 @@ async function loadBrowseBonds() {
       } catch (_) {}
     }
 
-    for (const log of createLogs) {
-      const ev = parseDetailedBondCreatedLog(iface, log);
-      if (!ev) continue;
-      const bondId = Number(ev.args.bondId);
+    let bondRefs = [];
+    if (Array.isArray(createLogs)) {
+      bondRefs = createLogs
+        .map((log) => {
+          const ev = parseDetailedBondCreatedLog(iface, log);
+          if (!ev) return null;
+          return {
+            bondId: Number(ev.args.bondId),
+            lastActivity: Number(log.blockNumber),
+          };
+        })
+        .filter(Boolean);
+    } else {
+      const nextBondId = await withTimeout(readContract.nextBondId().catch(() => 0n), 5000, 0n);
+      bondRefs = Array.from({ length: Number(nextBondId) }, (_, bondId) => ({
+        bondId,
+        lastActivity: bondId,
+      }));
+    }
+
+    for (const ref of bondRefs) {
       try {
-        const b = await readContract.bonds(bondId);
+        const b = await readContract.bonds(ref.bondId);
         const [, judge, token, bondAmount, challengeAmount, , deadline, , , metadata, settled, conceded, , lastChallengeTime] = b;
 
         let symbol = "???", decimals = 18;
@@ -3201,9 +3220,9 @@ async function loadBrowseBonds() {
         }
 
         // Sort key fallback: most recent activity (challenge time or block timestamp)
-        const lastActivity = lastChallengeTime > 0n ? Number(lastChallengeTime) : Number(log.blockNumber);
+        const lastActivity = lastChallengeTime > 0n ? Number(lastChallengeTime) : ref.lastActivity;
 
-        allBonds.push({ bondId, judge, token, bondAmount, challengeAmount, deadline, metadata, symbol, decimals, status, statusClass, lastActivity, settled, conceded, isOpen, isSdai, sortBondAmount });
+        allBonds.push({ bondId: ref.bondId, judge, token, bondAmount, challengeAmount, deadline, metadata, symbol, decimals, status, statusClass, lastActivity, settled, conceded, isOpen, isSdai, sortBondAmount });
       } catch (_) {}
     }
 
@@ -4717,6 +4736,7 @@ async function loadJudges() {
   const loadingEl = document.getElementById("judgesLoading");
   const emptyEl = document.getElementById("judgesEmpty");
 
+  if (!listEl || !loadingEl || !emptyEl) return;
   if (judgesLoaded) return;
 
   loadingEl.classList.remove("hidden");
