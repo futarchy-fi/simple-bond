@@ -61,6 +61,8 @@ contract SimpleBondV5 {
     uint256 public nextBondId;
     mapping(uint256 => Bond) public bonds;
     mapping(uint256 => Challenge[]) public challenges;
+    mapping(uint256 => uint256) public refundCursor;
+    mapping(uint256 => uint256) public refundEnd;
 
     event BondCreated(
         uint256 indexed bondId,
@@ -107,6 +109,12 @@ contract SimpleBondV5 {
         uint256 indexed bondId,
         uint256 challengeIndex,
         address indexed challenger
+    );
+
+    event ChallengeRefundsEnabled(
+        uint256 indexed bondId,
+        uint256 refundFromIndex,
+        uint256 refundCount
     );
 
     event BondWithdrawn(uint256 indexed bondId);
@@ -216,7 +224,7 @@ contract SimpleBondV5 {
         b.settled = true;
 
         IERC20(b.token).safeTransfer(b.poster, b.bondAmount);
-        _refundRemaining(bondId, b.currentChallenge);
+        _enableRefundClaims(bondId, b.currentChallenge);
 
         emit ClaimConceded(bondId, b.poster, metadata);
     }
@@ -231,7 +239,7 @@ contract SimpleBondV5 {
         b.settled = true;
 
         IERC20(b.token).safeTransfer(b.poster, b.bondAmount);
-        _refundRemaining(bondId, b.currentChallenge);
+        _enableRefundClaims(bondId, b.currentChallenge);
 
         emit BondRejectedByJudge(bondId, msg.sender);
     }
@@ -262,7 +270,7 @@ contract SimpleBondV5 {
 
         emit RuledForChallenger(bondId, idx, c.challenger, feeCharged);
 
-        _refundRemaining(bondId, idx + 1);
+        _enableRefundClaims(bondId, idx + 1);
     }
 
     function ruleForPoster(uint256 bondId, uint256 feeCharged) external {
@@ -279,6 +287,7 @@ contract SimpleBondV5 {
         require(c.status == 0, "Challenge not pending");
 
         c.status = 2;
+        b.currentChallenge = idx + 1;
 
         IERC20(b.token).safeTransfer(b.poster, b.challengeAmount - feeCharged);
         if (feeCharged > 0) {
@@ -287,8 +296,6 @@ contract SimpleBondV5 {
         }
 
         emit RuledForPoster(bondId, idx, c.challenger, feeCharged);
-
-        b.currentChallenge = idx + 1;
     }
 
     function withdrawBond(uint256 bondId) external {
@@ -296,6 +303,7 @@ contract SimpleBondV5 {
         require(!b.settled, "Already settled");
         require(!b.conceded, "Claim conceded");
         require(msg.sender == b.poster, "Only poster");
+        require(block.timestamp > b.deadline, "Before deadline");
         require(_noPendingChallenges(bondId), "Pending challenges");
 
         b.settled = true;
@@ -314,9 +322,39 @@ contract SimpleBondV5 {
         b.settled = true;
 
         IERC20(b.token).safeTransfer(b.poster, b.bondAmount);
-        _refundRemaining(bondId, b.currentChallenge);
+        _enableRefundClaims(bondId, b.currentChallenge);
 
         emit BondTimedOut(bondId);
+    }
+
+    function claimRefunds(uint256 bondId, uint256 maxCount) external {
+        require(maxCount > 0, "Zero max count");
+
+        uint256 cursor = refundCursor[bondId];
+        uint256 end = refundEnd[bondId];
+        require(cursor < end, "No refundable challenges");
+
+        Bond storage b = bonds[bondId];
+        uint256 processed;
+
+        while (cursor < end && processed < maxCount) {
+            Challenge storage c = challenges[bondId][cursor];
+            if (c.status == 0) {
+                c.status = 3;
+                IERC20(b.token).safeTransfer(c.challenger, b.challengeAmount);
+                emit ChallengeRefunded(bondId, cursor, c.challenger);
+            }
+
+            cursor++;
+            processed++;
+        }
+
+        if (cursor >= end) {
+            delete refundCursor[bondId];
+            delete refundEnd[bondId];
+        } else {
+            refundCursor[bondId] = cursor;
+        }
     }
 
     function getChallengeCount(uint256 bondId) external view returns (uint256) {
@@ -385,18 +423,15 @@ contract SimpleBondV5 {
         return bonds[bondId].currentChallenge >= len;
     }
 
-    function _refundRemaining(uint256 bondId, uint256 startIdx) internal {
-        Bond storage b = bonds[bondId];
+    function _enableRefundClaims(uint256 bondId, uint256 startIdx) internal {
         uint256 len = challenges[bondId].length;
-        // Refund the unresolved suffix of the FIFO queue. Earlier challenges
-        // should already have been consumed by rulings before this helper runs.
-        for (uint256 i = startIdx; i < len; i++) {
-            Challenge storage c = challenges[bondId][i];
-            if (c.status == 0) {
-                c.status = 3;
-                IERC20(b.token).safeTransfer(c.challenger, b.challengeAmount);
-                emit ChallengeRefunded(bondId, i, c.challenger);
-            }
+        if (startIdx >= len) {
+            return;
         }
+
+        refundCursor[bondId] = startIdx;
+        refundEnd[bondId] = len;
+
+        emit ChallengeRefundsEnabled(bondId, startIdx, len - startIdx);
     }
 }

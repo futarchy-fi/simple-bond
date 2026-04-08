@@ -61,6 +61,14 @@ describe("SimpleBondV5", function () {
     await fixture.actions.advancePastRulingDeadline({ bondId: id });
   }
 
+  async function advancePastDeadline() {
+    await fixture.actions.advancePastDeadline();
+  }
+
+  async function claimAllRefunds(id = 0) {
+    await fixture.actions.claimAllRefunds({ bondId: id });
+  }
+
   beforeEach(async function () {
     fixture = await deploySimpleBondV5FuzzFixture();
     bond = fixture.bond;
@@ -265,6 +273,7 @@ describe("SimpleBondV5", function () {
     });
 
     it("reverts challenge on settled bond", async function () {
+      await advancePastDeadline();
       await bond.connect(poster).withdrawBond(0);
 
       await expect(
@@ -305,6 +314,7 @@ describe("SimpleBondV5", function () {
       const challenger2Before = await token.balanceOf(challenger2.address);
 
       await fixture.actions.rejectBond();
+      await claimAllRefunds();
 
       expect(await token.balanceOf(poster.address) - posterBefore).to.equal(BOND_AMOUNT);
       expect(await token.balanceOf(challenger1.address) - challenger1Before).to.equal(CHALLENGE_AMOUNT);
@@ -312,14 +322,19 @@ describe("SimpleBondV5", function () {
       expect(await token.balanceOf(bondAddr)).to.equal(0n);
     });
 
-    it("emits ChallengeRefunded for each pending challenger", async function () {
+    it("enables bounded challenger refund claims after rejection", async function () {
       await bond.connect(challenger1).challenge(0, "A");
       await bond.connect(challenger2).challenge(0, "B");
 
-      const tx = manualJudge.connect(judgeOperator).rejectBond(bondAddr, 0);
-      await expect(tx).to.emit(bond, "ChallengeRefunded").withArgs(0, 0, challenger1.address);
-      await expect(tx).to.emit(bond, "ChallengeRefunded").withArgs(0, 1, challenger2.address);
-      await expect(tx).to.emit(bond, "BondRejectedByJudge").withArgs(0, judgeAddr);
+      const rejectTx = manualJudge.connect(judgeOperator).rejectBond(bondAddr, 0);
+      await expect(rejectTx).to.emit(bond, "ChallengeRefundsEnabled").withArgs(0, 0, 2);
+      await expect(rejectTx).to.emit(bond, "BondRejectedByJudge").withArgs(0, judgeAddr);
+
+      const claimTx = bond.connect(outsider).claimRefunds(0, 1);
+      await expect(claimTx).to.emit(bond, "ChallengeRefunded").withArgs(0, 0, challenger1.address);
+
+      expect(await bond.refundCursor(0)).to.equal(1n);
+      expect(await token.balanceOf(bondAddr)).to.equal(CHALLENGE_AMOUNT);
     });
 
     it("reverts for nonexistent bonds", async function () {
@@ -354,7 +369,7 @@ describe("SimpleBondV5", function () {
       expect(await token.balanceOf(poster.address) - before).to.equal(BOND_AMOUNT);
     });
 
-    it("concession refunds all challengers in the queue", async function () {
+    it("concession makes all queued challenger refunds claimable", async function () {
       await bond.connect(challenger1).challenge(0, "");
       await bond.connect(challenger2).challenge(0, "");
       await bond.connect(challenger3).challenge(0, "");
@@ -364,17 +379,23 @@ describe("SimpleBondV5", function () {
       const before3 = await token.balanceOf(challenger3.address);
 
       await bond.connect(poster).concede(0, "All of you are right");
+      await claimAllRefunds();
 
       expect(await token.balanceOf(challenger1.address) - before1).to.equal(CHALLENGE_AMOUNT);
       expect(await token.balanceOf(challenger2.address) - before2).to.equal(CHALLENGE_AMOUNT);
       expect(await token.balanceOf(challenger3.address) - before3).to.equal(CHALLENGE_AMOUNT);
     });
 
-    it("concession leaves zero tokens in the contract", async function () {
+    it("concession keeps challenger refunds in the contract until claimed", async function () {
       await bond.connect(challenger1).challenge(0, "");
       await bond.connect(challenger2).challenge(0, "");
       await bond.connect(poster).concede(0, "");
 
+      expect(await bond.refundCursor(0)).to.equal(0n);
+      expect(await bond.refundEnd(0)).to.equal(2n);
+      expect(await token.balanceOf(bondAddr)).to.equal(CHALLENGE_AMOUNT * 2n);
+
+      await claimAllRefunds();
       expect(await token.balanceOf(bondAddr)).to.equal(0n);
     });
 
@@ -435,13 +456,22 @@ describe("SimpleBondV5", function () {
       ).to.be.revertedWith("Already settled");
     });
 
-    it("emits ChallengeRefunded for each queued challenger", async function () {
+    it("claims concession refunds in bounded batches", async function () {
       await bond.connect(challenger1).challenge(0, "A");
       await bond.connect(challenger2).challenge(0, "B");
 
-      const tx = bond.connect(poster).concede(0, "OK fine");
-      await expect(tx).to.emit(bond, "ChallengeRefunded").withArgs(0, 0, challenger1.address);
-      await expect(tx).to.emit(bond, "ChallengeRefunded").withArgs(0, 1, challenger2.address);
+      const concedeTx = bond.connect(poster).concede(0, "OK fine");
+      await expect(concedeTx).to.emit(bond, "ChallengeRefundsEnabled").withArgs(0, 0, 2);
+
+      const firstClaimTx = bond.connect(outsider).claimRefunds(0, 1);
+      await expect(firstClaimTx).to.emit(bond, "ChallengeRefunded").withArgs(0, 0, challenger1.address);
+
+      const secondClaimTx = bond.connect(outsider).claimRefunds(0, 5);
+      await expect(secondClaimTx).to.emit(bond, "ChallengeRefunded").withArgs(0, 1, challenger2.address);
+
+      await expect(
+        bond.connect(outsider).claimRefunds(0, 1)
+      ).to.be.revertedWith("No refundable challenges");
     });
   });
 
@@ -619,10 +649,13 @@ describe("SimpleBondV5", function () {
       expect(createdBond.settled).to.be.true;
     });
 
-    it("leaves the contract with zero tokens after challenger wins", async function () {
+    it("leaves the contract with zero tokens after challenger wins and refunds claimed", async function () {
+      await bond.connect(challenger2).challenge(0, "Also wrong");
       await advanceToRulingWindow();
       await fixture.actions.ruleForChallenger();
 
+      expect(await token.balanceOf(bondAddr)).to.equal(CHALLENGE_AMOUNT);
+      await claimAllRefunds();
       expect(await token.balanceOf(bondAddr)).to.equal(0n);
     });
 
@@ -635,6 +668,7 @@ describe("SimpleBondV5", function () {
 
       await advanceToRulingWindow();
       await fixture.actions.ruleForChallenger();
+      await claimAllRefunds();
 
       expect(await token.balanceOf(challenger2.address) - before2).to.equal(CHALLENGE_AMOUNT);
       expect(await token.balanceOf(challenger3.address) - before3).to.equal(CHALLENGE_AMOUNT);
@@ -689,6 +723,26 @@ describe("SimpleBondV5", function () {
 
       expect(await token.balanceOf(challenger1.address) - before).to.equal(BOND_AMOUNT + CHALLENGE_AMOUNT);
     });
+
+    it("ManualJudge operator can withdraw earned fees", async function () {
+      await fixture.actions.ruleForPoster();
+
+      const operatorBefore = await token.balanceOf(judgeOperator.address);
+      await expect(
+        manualJudge.connect(judgeOperator).withdrawFees(tokenAddr, judgeOperator.address, JUDGE_FEE)
+      ).to.emit(manualJudge, "FeesWithdrawn").withArgs(tokenAddr, judgeOperator.address, JUDGE_FEE);
+
+      expect(await token.balanceOf(judgeOperator.address) - operatorBefore).to.equal(JUDGE_FEE);
+      expect(await token.balanceOf(judgeAddr)).to.equal(0n);
+    });
+
+    it("non-operators cannot withdraw ManualJudge fees", async function () {
+      await fixture.actions.ruleForPoster();
+
+      await expect(
+        manualJudge.connect(outsider).withdrawFees(tokenAddr, outsider.address, JUDGE_FEE)
+      ).to.be.revertedWith("Only operator");
+    });
   });
 
   describe("Sequential Challenge Queue", function () {
@@ -719,6 +773,7 @@ describe("SimpleBondV5", function () {
       await fixture.actions.ruleForPoster();
       await fixture.actions.ruleForPoster();
 
+      await advancePastDeadline();
       await bond.connect(poster).withdrawBond(0);
       const createdBond = await bond.bonds(0);
 
@@ -733,6 +788,7 @@ describe("SimpleBondV5", function () {
       const challenger3Before = await token.balanceOf(challenger3.address);
 
       await fixture.actions.ruleForChallenger();
+      await claimAllRefunds();
 
       expect(await token.balanceOf(challenger2.address) - challenger2Before)
         .to.equal(BOND_AMOUNT + CHALLENGE_AMOUNT - JUDGE_FEE);
@@ -760,6 +816,7 @@ describe("SimpleBondV5", function () {
     });
 
     it("poster withdraws with no challenges", async function () {
+      await advancePastDeadline();
       const before = await token.balanceOf(poster.address);
       await bond.connect(poster).withdrawBond(0);
 
@@ -770,6 +827,7 @@ describe("SimpleBondV5", function () {
       await bond.connect(challenger1).challenge(0, "");
       await advanceToRulingWindow();
       await fixture.actions.ruleForPoster();
+      await advancePastDeadline();
 
       const before = await token.balanceOf(poster.address);
       await bond.connect(poster).withdrawBond(0);
@@ -779,6 +837,7 @@ describe("SimpleBondV5", function () {
 
     it("reverts withdrawal if challenges are pending", async function () {
       await bond.connect(challenger1).challenge(0, "");
+      await advancePastDeadline();
 
       await expect(
         bond.connect(poster).withdrawBond(0)
@@ -786,17 +845,25 @@ describe("SimpleBondV5", function () {
     });
 
     it("reverts withdrawal by a non-poster", async function () {
+      await advancePastDeadline();
       await expect(
         bond.connect(outsider).withdrawBond(0)
       ).to.be.revertedWith("Only poster");
     });
 
     it("reverts double withdrawal", async function () {
+      await advancePastDeadline();
       await bond.connect(poster).withdrawBond(0);
 
       await expect(
         bond.connect(poster).withdrawBond(0)
       ).to.be.revertedWith("Already settled");
+    });
+
+    it("reverts withdrawal before the challenge deadline", async function () {
+      await expect(
+        bond.connect(poster).withdrawBond(0)
+      ).to.be.revertedWith("Before deadline");
     });
   });
 
@@ -829,6 +896,7 @@ describe("SimpleBondV5", function () {
       const before1 = await token.balanceOf(challenger1.address);
       const before2 = await token.balanceOf(challenger2.address);
       await bond.connect(outsider).claimTimeout(0);
+      await claimAllRefunds();
 
       expect(await token.balanceOf(challenger1.address) - before1).to.equal(CHALLENGE_AMOUNT);
       expect(await token.balanceOf(challenger2.address) - before2).to.equal(CHALLENGE_AMOUNT);
@@ -845,6 +913,7 @@ describe("SimpleBondV5", function () {
     it("leaves zero tokens in the contract after timeout", async function () {
       await advancePastRulingDeadline();
       await bond.connect(outsider).claimTimeout(0);
+      await claimAllRefunds();
 
       expect(await token.balanceOf(bondAddr)).to.equal(0n);
     });
@@ -865,6 +934,7 @@ describe("SimpleBondV5", function () {
       const challenger2Before = await token.balanceOf(challenger2.address);
 
       await bond.connect(outsider).claimTimeout(0);
+      await claimAllRefunds();
 
       expect(await token.balanceOf(poster.address) - posterBefore).to.equal(BOND_AMOUNT);
       expect(await token.balanceOf(challenger2.address) - challenger2Before).to.equal(CHALLENGE_AMOUNT);
@@ -886,6 +956,7 @@ describe("SimpleBondV5", function () {
       await fixture.actions.ruleForPoster();
       await fixture.actions.ruleForPoster();
       await fixture.actions.ruleForPoster();
+      await advancePastDeadline();
       await bond.connect(poster).withdrawBond(0);
 
       expect(await token.balanceOf(poster.address) - posterBefore)
@@ -939,6 +1010,7 @@ describe("SimpleBondV5", function () {
       expect(await totalHeld()).to.equal(initialTotal);
 
       await fixture.actions.ruleForChallenger();
+      await claimAllRefunds();
       expect(await totalHeld()).to.equal(initialTotal);
     });
 
@@ -953,6 +1025,7 @@ describe("SimpleBondV5", function () {
       const judgeBefore = await token.balanceOf(judgeAddr);
 
       await fixture.actions.rejectBond();
+      await claimAllRefunds();
 
       expect(await token.balanceOf(poster.address) - posterBefore).to.equal(BOND_AMOUNT);
       expect(await token.balanceOf(challenger1.address) - challenger1Before).to.equal(CHALLENGE_AMOUNT);
