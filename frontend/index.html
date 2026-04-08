@@ -3672,7 +3672,23 @@ async function loadMyBonds() {
 
       let status, statusClass;
       if (conceded) { status = "Conceded"; statusClass = "status-conceded"; }
-      else if (settled) { status = "Settled"; statusClass = "status-settled"; }
+      else if (settled) {
+        const filter1 = readContract.filters.RuledForChallenger(id);
+        const filter2 = readContract.filters.BondWithdrawn(id);
+        const filter3 = readContract.filters.BondTimedOut(id);
+        const filter4 = readContract.filters.BondRejectedByJudge(id);
+        const [evC, evW, evT, evR] = await Promise.all([
+          withTimeout(readContract.queryFilter(filter1, chain().deployBlock).catch(() => []), 6000, []),
+          withTimeout(readContract.queryFilter(filter2, chain().deployBlock).catch(() => []), 6000, []),
+          withTimeout(readContract.queryFilter(filter3, chain().deployBlock).catch(() => []), 6000, []),
+          withTimeout(readContract.queryFilter(filter4, chain().deployBlock).catch(() => []), 6000, []),
+        ]);
+        if (evR.length > 0) { status = "Rejected by Judge"; statusClass = "status-timedout"; }
+        else if (evC.length > 0) { status = "Challenger Won"; statusClass = "status-forfeited"; }
+        else if (evW.length > 0) { status = "Withdrawn"; statusClass = "status-withdrawn"; }
+        else if (evT.length > 0) { status = "Timed Out"; statusClass = "status-timedout"; }
+        else { status = "Settled"; statusClass = "status-settled"; }
+      }
       else if (rwEnd > 0n && now > rwEnd) { status = "Timeout"; statusClass = "status-expired"; }
       else if (now > deadline) { status = "Ruling"; statusClass = "status-active"; }
       else { status = "Active"; statusClass = "status-active"; }
