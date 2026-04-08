@@ -138,11 +138,18 @@ The judge contract may call:
 - `ruleForChallenger(bondId, feeCharged)`
 - `rejectBond(bondId)`
 
-Resolution is only allowed during the ruling window:
+Merits rulings are only allowed during the ruling window:
 
 ```text
 rulingDeadline(bondId) = rulingWindowStart(bondId) + rulingBuffer
 ```
+
+That ruling-window gate applies to:
+
+- `ruleForPoster(bondId, feeCharged)`
+- `ruleForChallenger(bondId, feeCharged)`
+
+It does not apply to `rejectBond(bondId)`.
 
 ## Judge Fee Semantics
 
@@ -217,6 +224,7 @@ The judge contract may refuse the bond and trigger a full refund path:
 - bond becomes settled
 
 This is intended to support judge refusal without forcing a merits ruling.
+`rejectBond(bondId)` may be called any time before settlement; it is not gated by the ruling window.
 
 ## Poster Withdrawal
 
