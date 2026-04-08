@@ -903,10 +903,17 @@ const CHAINS = {
     contract: window.SIMPLE_BOND_CONFIG?.gnosisBondContract || null,
     deployBlock: Number(window.SIMPLE_BOND_CONFIG?.gnosisDeployBlock || 0),
     judgeProfileRegistry: window.SIMPLE_BOND_CONFIG?.gnosisJudgeProfileRegistry || null,
+    officialDirectory: window.SIMPLE_BOND_CONFIG?.gnosisOfficialDirectory || null,
     nativeCurrency: { name: "xDAI", symbol: "xDAI", decimals: 18 },
-    defaultToken: { address: "0xaf204776c7245bF4147c2612BF6e5972Ee483701", symbol: "sDAI", decimals: 18, displayName: "USD Savings (earns ~8% APY)" },
-    wrappedNative: { address: "0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d", symbol: "WXDAI", decimals: 18 },
+    fallbackDefaultToken: { address: "0xaf204776c7245bF4147c2612BF6e5972Ee483701", symbol: "sDAI", decimals: 18, displayName: "USD Savings (earns ~8% APY)" },
+    fallbackWrappedNative: { address: "0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d", symbol: "WXDAI", decimals: 18, displayName: "Wrapped xDAI" },
     yieldType: "erc4626",
+    fallbackTokens: [
+      { address: "0xaf204776c7245bF4147c2612BF6e5972Ee483701", symbol: "sDAI", decimals: 18 },
+      { address: "0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d", symbol: "WXDAI", decimals: 18 },
+    ],
+    defaultToken: { address: "0xaf204776c7245bF4147c2612BF6e5972Ee483701", symbol: "sDAI", decimals: 18, displayName: "USD Savings (earns ~8% APY)" },
+    wrappedNative: { address: "0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d", symbol: "WXDAI", decimals: 18, displayName: "Wrapped xDAI" },
     tokens: [
       { address: "0xaf204776c7245bF4147c2612BF6e5972Ee483701", symbol: "sDAI", decimals: 18 },
       { address: "0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d", symbol: "WXDAI", decimals: 18 },
@@ -935,8 +942,9 @@ const WXDAI_ADDRESS = "0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d";
 function friendlyTokenName(addr, symbol) {
   const c = chain();
   if (addr.toLowerCase() === c.defaultToken.address.toLowerCase()) return c.defaultToken.displayName || c.defaultToken.symbol;
-  if (c.wrappedNative && addr.toLowerCase() === c.wrappedNative.address.toLowerCase()) return "USD";
-  return symbol || "???";
+  if (c.wrappedNative && addr.toLowerCase() === c.wrappedNative.address.toLowerCase()) return c.wrappedNative.displayName || "USD";
+  const knownToken = getAllTokens().find((token) => token.address.toLowerCase() === addr.toLowerCase());
+  return knownToken?.displayName || symbol || "???";
 }
 
 function getDefaultTokens() { return chain().tokens; }
@@ -998,6 +1006,17 @@ const JUDGE_PROFILE_REGISTRY_ABI = [
   "function clearProfile(address judge)",
 ];
 
+const OFFICIAL_BOND_DIRECTORY_ABI = [
+  "function judgeCount() view returns (uint256)",
+  "function judgeAt(uint256 index) view returns (address)",
+  "function tokenCount() view returns (uint256)",
+  "function tokenAt(uint256 index) view returns (address)",
+  "function defaultToken() view returns (address)",
+  "function wrappedNativeToken() view returns (address)",
+  "function getJudge(address judge) view returns (bool enabled, uint32 sortOrder, string displayName, string statement, string linkURI, uint64 updatedAt)",
+  "function getToken(address token) view returns (bool enabled, bool isDefaultToken, bool isWrappedNative, uint8 decimals, uint32 sortOrder, string symbol, string displayName, uint64 updatedAt)",
+];
+
 const DETAILED_BOND_CREATED_SIGNATURE =
   "BondCreated(uint256,address,address,address,uint256,uint256,uint256,uint256,uint256,uint256,string)";
 const DETAILED_BOND_CREATED_TOPIC = ethers.id(DETAILED_BOND_CREATED_SIGNATURE);
@@ -1040,6 +1059,135 @@ let currentViewBondData = null;
 let myBondsLoaded = false;
 let browseBondsLoaded = false;
 const INJECTED_WALLET_LOGOUT_KEY = "simpleBond.injectedWalletLoggedOut";
+const officialDirectoryCacheByChain = new Map();
+
+function getOfficialDirectoryAddress(chainId = activeChainId) {
+  return CHAINS[chainId]?.officialDirectory || null;
+}
+
+function getOfficialDirectory(chainId = activeChainId, signerOrProvider = null) {
+  const directoryAddress = getOfficialDirectoryAddress(chainId);
+  if (!directoryAddress) return null;
+  const connection = signerOrProvider || new ethers.JsonRpcProvider(CHAINS[chainId].rpc);
+  return new ethers.Contract(directoryAddress, OFFICIAL_BOND_DIRECTORY_ABI, connection);
+}
+
+function normalizeOfficialJudgeEntry(address, rawEntry) {
+  const updatedAt = BigInt(rawEntry.updatedAt ?? rawEntry[5] ?? 0);
+  return {
+    address: ethers.getAddress(address),
+    bondCount: 0,
+    kind: "generic",
+    operator: null,
+    active: null,
+    profile: null,
+    official: !!(rawEntry.enabled ?? rawEntry[0]),
+    officialSortOrder: Number(rawEntry.sortOrder ?? rawEntry[1] ?? 0),
+    officialDisplayName: rawEntry.displayName ?? rawEntry[2] ?? "",
+    officialStatement: rawEntry.statement ?? rawEntry[3] ?? "",
+    officialLinkURI: rawEntry.linkURI ?? rawEntry[4] ?? "",
+    updatedAt,
+  };
+}
+
+function normalizeOfficialTokenEntry(address, rawEntry) {
+  return {
+    address: ethers.getAddress(address),
+    enabled: !!(rawEntry.enabled ?? rawEntry[0]),
+    isDefaultToken: !!(rawEntry.isDefaultToken ?? rawEntry[1]),
+    isWrappedNative: !!(rawEntry.isWrappedNative ?? rawEntry[2]),
+    decimals: Number(rawEntry.decimals ?? rawEntry[3] ?? 18),
+    sortOrder: Number(rawEntry.sortOrder ?? rawEntry[4] ?? 0),
+    symbol: rawEntry.symbol ?? rawEntry[5] ?? "",
+    displayName: rawEntry.displayName ?? rawEntry[6] ?? "",
+    updatedAt: BigInt(rawEntry.updatedAt ?? rawEntry[7] ?? 0),
+  };
+}
+
+function compareOfficialEntries(a, b) {
+  const aOrder = a?.sortOrder ?? a?.officialSortOrder ?? Number.MAX_SAFE_INTEGER;
+  const bOrder = b?.sortOrder ?? b?.officialSortOrder ?? Number.MAX_SAFE_INTEGER;
+  const orderDelta = aOrder - bOrder;
+  if (orderDelta !== 0) return orderDelta;
+  const nameA = String(a?.displayName || a?.officialDisplayName || a?.symbol || a?.address || "").toLowerCase();
+  const nameB = String(b?.displayName || b?.officialDisplayName || b?.symbol || b?.address || "").toLowerCase();
+  if (nameA !== nameB) return nameA.localeCompare(nameB);
+  return (a?.address || "").toLowerCase().localeCompare((b?.address || "").toLowerCase());
+}
+
+async function loadOfficialDirectorySnapshot(chainId = activeChainId, { force = false, readProvider = null } = {}) {
+  const cached = officialDirectoryCacheByChain.get(chainId);
+  if (cached && !force) return cached;
+
+  const chainConfig = CHAINS[chainId];
+  const fallbackSnapshot = {
+    judges: [],
+    tokens: [...chainConfig.fallbackTokens],
+    defaultToken: { ...chainConfig.fallbackDefaultToken },
+    wrappedNative: chainConfig.fallbackWrappedNative ? { ...chainConfig.fallbackWrappedNative } : null,
+  };
+
+  const directory = getOfficialDirectory(chainId, readProvider);
+  if (!directory) {
+    officialDirectoryCacheByChain.set(chainId, fallbackSnapshot);
+    return fallbackSnapshot;
+  }
+
+  try {
+    const [judgeCountRaw, tokenCountRaw, defaultTokenAddress, wrappedNativeAddress] = await Promise.all([
+      directory.judgeCount(),
+      directory.tokenCount(),
+      directory.defaultToken(),
+      directory.wrappedNativeToken(),
+    ]);
+    const judgeCount = Number(judgeCountRaw);
+    const tokenCount = Number(tokenCountRaw);
+    const judgeAddresses = await Promise.all(
+      Array.from({ length: judgeCount }, (_, index) => directory.judgeAt(index))
+    );
+    const tokenAddresses = await Promise.all(
+      Array.from({ length: tokenCount }, (_, index) => directory.tokenAt(index))
+    );
+    const [judgeEntriesRaw, tokenEntriesRaw] = await Promise.all([
+      Promise.all(judgeAddresses.map((address) => directory.getJudge(address))),
+      Promise.all(tokenAddresses.map((address) => directory.getToken(address))),
+    ]);
+
+    const judges = judgeAddresses
+      .map((address, index) => normalizeOfficialJudgeEntry(address, judgeEntriesRaw[index]))
+      .filter((entry) => entry.official)
+      .sort(compareOfficialEntries);
+
+    const tokens = tokenAddresses
+      .map((address, index) => normalizeOfficialTokenEntry(address, tokenEntriesRaw[index]))
+      .filter((entry) => entry.enabled)
+      .sort(compareOfficialEntries);
+
+    const defaultToken = tokens.find((entry) => entry.address.toLowerCase() === defaultTokenAddress.toLowerCase())
+      || tokens.find((entry) => entry.isDefaultToken)
+      || fallbackSnapshot.defaultToken;
+    const wrappedNative = tokens.find((entry) => entry.address.toLowerCase() === wrappedNativeAddress.toLowerCase())
+      || tokens.find((entry) => entry.isWrappedNative)
+      || fallbackSnapshot.wrappedNative;
+
+    const snapshot = {
+      judges,
+      tokens: tokens.length > 0 ? tokens : fallbackSnapshot.tokens,
+      defaultToken,
+      wrappedNative,
+    };
+
+    chainConfig.tokens = snapshot.tokens;
+    chainConfig.defaultToken = snapshot.defaultToken;
+    chainConfig.wrappedNative = snapshot.wrappedNative;
+    officialDirectoryCacheByChain.set(chainId, snapshot);
+    return snapshot;
+  } catch (err) {
+    console.warn("Official directory lookup failed:", err);
+    officialDirectoryCacheByChain.set(chainId, fallbackSnapshot);
+    return fallbackSnapshot;
+  }
+}
 
 // ─── Token list (localStorage) ────────────────────────────────────────
 function getCustomTokens() {
@@ -1614,6 +1762,7 @@ async function switchChain(chainIdStr) {
 
   // Update UI elements
   document.getElementById("chainName").textContent = chain().name;
+  await loadOfficialDirectorySnapshot(activeChainId, { force: true });
   buildTokenSelect();
   const sel = document.getElementById("tokenSelect");
   sel.value = chain().defaultToken.address;
@@ -3149,7 +3298,10 @@ async function getJudgeContractInfos(addresses, { force = false, readProvider = 
 }
 
 async function discoverJudges(readProvider) {
-  const logs = await queryDetailedBondCreatedLogs(readProvider).catch(() => []);
+  const [officialSnapshot, logs] = await Promise.all([
+    loadOfficialDirectorySnapshot(activeChainId, { readProvider }),
+    chain().contract ? queryDetailedBondCreatedLogs(readProvider).catch(() => []) : Promise.resolve([]),
+  ]);
   const iface = new ethers.Interface(BOND_ABI);
   const counts = new Map();
 
@@ -3164,23 +3316,41 @@ async function discoverJudges(readProvider) {
   }
 
   const discovered = [...counts.values()];
-  const infoMap = await getJudgeContractInfos(discovered.map((entry) => entry.address), { readProvider });
+  const officialJudges = officialSnapshot?.judges || [];
+  const allAddresses = [...new Set(
+    [...officialJudges, ...discovered]
+      .map((entry) => entry.address)
+      .filter(Boolean)
+      .map((address) => address.toLowerCase())
+  )];
+  const infoMap = await getJudgeContractInfos(allAddresses, { readProvider });
   return dedupeJudgesByAddress(
-    discovered.map((entry) => ({
+    [...officialJudges, ...discovered].map((entry) => ({
       ...entry,
       ...(infoMap.get(entry.address.toLowerCase()) || {}),
     }))
-  ).sort((a, b) => b.bondCount - a.bondCount);
+  ).sort(compareJudges);
 }
 
-function setJudgeLink(elOrId, addr, { label = null, profile = null, chainId = activeChainId } = {}) {
+function setJudgeLink(elOrId, addr, { label = null, profile = null, judge = null, chainId = activeChainId } = {}) {
   const el = typeof elOrId === "string" ? document.getElementById(elOrId) : elOrId;
   if (!el || !addr) return;
   const cachedProfile = profile || judgeProfileCacheByAddress.get(getJudgeProfileCacheKey(addr, chainId)) || null;
+  const officialJudge = (officialDirectoryCacheByChain.get(chainId)?.judges || [])
+    .find((entry) => entry.address.toLowerCase() === addr.toLowerCase()) || null;
+  const displayJudge = judge || {
+    address: addr,
+    profile: cachedProfile,
+    official: !!officialJudge,
+    officialSortOrder: officialJudge?.officialSortOrder ?? null,
+    officialDisplayName: officialJudge?.officialDisplayName || "",
+    officialStatement: officialJudge?.officialStatement || "",
+    officialLinkURI: officialJudge?.officialLinkURI || "",
+  };
   el.href = buildJudgeProfilePath(cachedProfile || addr, chainId);
   el.removeAttribute("target");
   el.removeAttribute("rel");
-  const displayLabel = label || cachedProfile?.displayName || null;
+  const displayLabel = label || getJudgeDisplayName(displayJudge) || null;
   el.textContent = displayLabel ? `${displayLabel} (${short(addr)})` : short(addr);
   if (!displayLabel) {
     resolveEns(addr).then(name => {
@@ -3621,8 +3791,9 @@ function populateControlledJudgeSelect(controlledJudges) {
   for (const judge of controlledJudges) {
     const opt = document.createElement("option");
     opt.value = judge.address;
-    opt.textContent = judge.profile?.displayName
-      ? `${judge.profile.displayName} (${short(judge.address)})`
+    const label = getJudgeDisplayName(judge);
+    opt.textContent = label && label.toLowerCase() !== judge.address.toLowerCase()
+      ? `${label} (${short(judge.address)})`
       : `${short(judge.address)} — ${formatJudgeDescriptor(judge)}`;
     selectEl.appendChild(opt);
   }
@@ -3870,12 +4041,25 @@ async function showJudgeProfilePage(profileRef) {
     const routeChainId = getJudgeProfileRouteChainId();
     const judgeAddress = ethers.getAddress(profileRef);
     const readProvider = new ethers.JsonRpcProvider(CHAINS[routeChainId].rpc);
-    const [profile, judgeInfo, controller, canEdit] = await Promise.all([
+    const [officialSnapshot, profile, judgeInfo, controller, canEdit] = await Promise.all([
+      loadOfficialDirectorySnapshot(routeChainId, { readProvider }),
       fetchJudgeProfileByAddress(judgeAddress, routeChainId, { force: true, readProvider }),
       getJudgeContractInfo(judgeAddress, { force: true, readProvider }),
       getJudgeProfileController(judgeAddress, { readProvider }),
       userAddr ? canEditJudgeProfile(judgeAddress, userAddr, { readProvider }) : Promise.resolve(false),
     ]);
+    const officialJudge = (officialSnapshot?.judges || [])
+      .find((entry) => entry.address.toLowerCase() === judgeAddress.toLowerCase()) || null;
+    const displayJudge = {
+      ...judgeInfo,
+      address: judgeAddress,
+      profile,
+      official: !!officialJudge,
+      officialSortOrder: officialJudge?.officialSortOrder ?? null,
+      officialDisplayName: officialJudge?.officialDisplayName || "",
+      officialStatement: officialJudge?.officialStatement || "",
+      officialLinkURI: officialJudge?.officialLinkURI || "",
+    };
 
     currentJudgeProfileView = profile || {
       address: judgeAddress,
@@ -3912,26 +4096,31 @@ async function showJudgeProfilePage(profileRef) {
     resolveEns(judgeAddress).then((name) => {
       if (!name) return;
       if (currentJudgeProfileView?.address?.toLowerCase() !== judgeAddress.toLowerCase()) return;
-      if (!currentJudgeProfileView.displayName) {
+      if (!getJudgeDisplayName(displayJudge)) {
         document.getElementById("judgeProfileTitle").textContent = name;
       }
       addressEl.textContent = `${name} (${short(judgeAddress)})`;
     });
 
-    document.getElementById("judgeProfileTitle").textContent = currentJudgeProfileView.displayName || short(judgeAddress);
-    document.getElementById("judgeProfileSubtitle").textContent = `${formatJudgeDescriptor({ ...judgeInfo, profile: currentJudgeProfileView })} on ${profileChain.name}`;
+    document.getElementById("judgeProfileTitle").textContent = getJudgeDisplayName(displayJudge) || short(judgeAddress);
+    document.getElementById("judgeProfileSubtitle").textContent = `${formatJudgeDescriptor(displayJudge)} on ${profileChain.name}`;
     document.getElementById("judgeProfileChain").textContent = profileChain.name;
-    document.getElementById("judgeProfileKind").textContent = judgeInfo.kind === "manual" ? "ManualJudge-compatible contract" : "Custom judge contract";
-    document.getElementById("judgeProfileUpdatedAt").textContent = currentJudgeProfileView.updatedAt
-      ? new Date(Number(currentJudgeProfileView.updatedAt) * 1000).toLocaleString()
+    document.getElementById("judgeProfileKind").textContent = judgeInfo.kind === "manual"
+      ? (officialJudge ? "Official ManualJudge-compatible contract" : "ManualJudge-compatible contract")
+      : (officialJudge ? "Official custom judge contract" : "Custom judge contract");
+    const displayUpdatedAt = currentJudgeProfileView.updatedAt || officialJudge?.updatedAt || 0n;
+    document.getElementById("judgeProfileUpdatedAt").textContent = displayUpdatedAt
+      ? new Date(Number(displayUpdatedAt) * 1000).toLocaleString()
       : "Not published";
-    document.getElementById("judgeProfileStatementView").textContent = currentJudgeProfileView.statement || "This judge has not published a public statement yet.";
+    document.getElementById("judgeProfileStatementView").textContent =
+      getJudgeStatement(displayJudge) || "This judge has not published a public statement yet.";
 
     const externalRow = document.getElementById("judgeProfileExternalRow");
     const externalLink = document.getElementById("judgeProfileExternalLink");
-    if (currentJudgeProfileView.linkURI) {
-      externalLink.href = currentJudgeProfileView.linkURI;
-      externalLink.textContent = currentJudgeProfileView.linkURI;
+    const externalUri = getJudgeExternalLink(displayJudge);
+    if (externalUri) {
+      externalLink.href = externalUri;
+      externalLink.textContent = externalUri;
       externalRow.classList.remove("hidden");
     } else {
       externalLink.href = "#";
@@ -3980,9 +4169,10 @@ function formatJudgeDescriptor(judge) {
   if (judge.kind === "manual") {
     const operatorText = judge.operator ? short(judge.operator) : "unknown operator";
     const activeText = judge.active === false ? "inactive" : "active";
-    return `Manual judge · ${activeText} · operator ${operatorText}`;
+    const prefix = judge.official ? "Official manual judge" : "Manual judge";
+    return `${prefix} · ${activeText} · operator ${operatorText}`;
   }
-  return "Custom judge contract";
+  return judge.official ? "Official custom judge contract" : "Custom judge contract";
 }
 
 async function loadJudges() {
@@ -3998,9 +4188,9 @@ async function loadJudges() {
   emptyEl.classList.add("hidden");
 
   try {
-    if (!chain().contract) {
+    if (!chain().contract && !chain().officialDirectory) {
       loadingEl.classList.add("hidden");
-      listEl.innerHTML = `<div class="msg msg-info">Set a ` + "`SimpleBondV5`" + ` contract address for ${chain().name} to discover judge contracts.</div>`;
+      listEl.innerHTML = `<div class="msg msg-info">Set a ` + "`SimpleBondV5`" + ` contract or ` + "`OfficialBondDirectory`" + ` address for ${chain().name} to load judges.</div>`;
       return;
     }
     const readProvider = new ethers.JsonRpcProvider(chain().rpc);
@@ -4035,7 +4225,7 @@ async function loadJudges() {
       const addrEl = item.querySelector('.ji-addr');
       const addrLink = document.createElement("a");
       addrLink.className = "judge-public-link";
-      setJudgeLink(addrLink, j.address, { profile: j.profile });
+      setJudgeLink(addrLink, j.address, { profile: j.profile, judge: j });
       addrEl.appendChild(addrLink);
       if (isMe) {
         const youEl = document.createElement("span");
@@ -4043,13 +4233,15 @@ async function loadJudges() {
         youEl.textContent = " (you)";
         addrEl.appendChild(youEl);
       }
-      if (j.profile?.statement) {
+      const statement = getJudgeStatement(j);
+      if (statement) {
         const statementEl = document.createElement("div");
         statementEl.className = "ji-statement";
-        statementEl.textContent = truncateText(j.profile.statement, 180);
+        statementEl.textContent = truncateText(statement, 180);
         item.firstElementChild.appendChild(statementEl);
       }
-      if (j.profile?.linkURI || j.profile?.metadataURI) {
+      const externalUri = getJudgeExternalLink(j);
+      if (externalUri || j.profile?.metadataURI) {
         const actionsEl = document.createElement("div");
         actionsEl.className = "ji-actions";
 
@@ -4058,9 +4250,9 @@ async function loadJudges() {
         profileLink.textContent = "View profile";
         actionsEl.appendChild(profileLink);
 
-        if (j.profile?.linkURI) {
+        if (externalUri) {
           const externalLink = document.createElement("a");
-          externalLink.href = j.profile.linkURI;
+          externalLink.href = externalUri;
           externalLink.target = "_blank";
           externalLink.rel = "noopener";
           externalLink.textContent = "External link";
@@ -4102,10 +4294,10 @@ function buildJudgeSelect() {
     opt.value = entry.address;
     const j = entry.judge;
     const descriptor = formatJudgeDescriptor(j);
-    const label = j.profile?.displayName || short(j.address);
+    const label = getJudgeDisplayName(j) || short(j.address);
     opt.textContent = `${label} — ${descriptor}`;
     resolveEns(j.address).then(name => {
-      if (name && !j.profile?.displayName) opt.textContent = `${name} — ${descriptor}`;
+      if (name && !getJudgeDisplayName(j)) opt.textContent = `${name} — ${descriptor}`;
     });
     sel.appendChild(opt);
   }
@@ -4121,7 +4313,7 @@ function buildJudgeSelect() {
 let _loadingJudgeSelect = false;
 async function loadJudgeSelectOnCreate() {
   if (_loadingJudgeSelect) return;
-  if (judgesList.length === 0 && chain().contract) {
+  if (judgesList.length === 0 && (chain().contract || chain().officialDirectory)) {
     _loadingJudgeSelect = true;
     try {
       const readProvider = new ethers.JsonRpcProvider(chain().rpc);
@@ -4149,8 +4341,11 @@ function onJudgeSelectChange() {
     customField.classList.add("hidden");
     const j = judgesList.find(j => j.address.toLowerCase() === val.toLowerCase());
     if (j) {
-      const profileText = j.profile?.displayName ? `Profile: ${j.profile.displayName}. ` : "";
-      hintEl.textContent = `${profileText}${formatJudgeDescriptor(j)} · seen in ${j.bondCount} bond${j.bondCount !== 1 ? "s" : ""} on-chain.`;
+      const listingText = getJudgeDisplayName(j) && getJudgeDisplayName(j).toLowerCase() !== j.address.toLowerCase()
+        ? `Listed as ${getJudgeDisplayName(j)}. `
+        : "";
+      const officialText = j.official ? "Official Futarchy listing. " : "";
+      hintEl.textContent = `${listingText}${officialText}${formatJudgeDescriptor(j)} · seen in ${j.bondCount} bond${j.bondCount !== 1 ? "s" : ""} on-chain.`;
     }
   } else {
     customField.classList.add("hidden");
@@ -4222,6 +4417,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   }
   document.getElementById("footerChain").textContent = chain().name;
 
+  await loadOfficialDirectorySnapshot(activeChainId, { force: true });
   buildTokenSelect();
   document.getElementById("tokenSelect").value = chain().defaultToken.address;
   setMode('simple');
