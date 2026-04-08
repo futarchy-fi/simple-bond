@@ -70,8 +70,11 @@ contract SimpleBondV3 {
         uint256 lastChallengeTime; // timestamp of most recent challenge
     }
 
+    /// @notice Returns the next bond ID that will be assigned by `createBond`.
     uint256 public nextBondId;
+    /// @notice Returns the stored bond fields for a bond ID.
     mapping(uint256 => Bond) public bonds;
+    /// @notice Returns the stored challenge fields for a bond ID and challenge index.
     mapping(uint256 => Challenge[]) public challenges;
 
     // ─── Events ─────────────────────────────────────────────────────────
