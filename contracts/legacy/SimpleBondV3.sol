@@ -129,18 +129,18 @@ contract SimpleBondV3 {
 
     // ─── Bond Creation ──────────────────────────────────────────────────
 
-    /**
-     * @notice Create a bond asserting a claim. Caller deposits bondAmount.
-     * @param token            ERC-20 token to lock (sDAI recommended for yield)
-     * @param bondAmount       Amount the poster locks as collateral
-     * @param challengeAmount  Amount each challenger must deposit
-     * @param judgeFee         Max fee paid to judge per ruling (judge may waive)
-     * @param judge            Address authorized to rule on disputes
-     * @param deadline         Challenges accepted before this timestamp
-     * @param acceptanceDelay  Seconds after a challenge before judge can rule
-     * @param rulingBuffer     Seconds judge has to rule once window opens
-     * @param _metadata        Claim description / assertion text
-     */
+    /// @notice Create a bond asserting a claim and escrow the poster's collateral.
+    /// @dev The contract accepts arbitrary ERC-20 tokens, so callers must trust the selected token's transfer semantics.
+    /// @param token ERC-20 token to lock as collateral.
+    /// @param bondAmount Amount the poster locks.
+    /// @param challengeAmount Amount each challenger must escrow.
+    /// @param judgeFee Maximum fee the judge may charge per ruling.
+    /// @param judge Address authorized to rule on disputes.
+    /// @param deadline Latest timestamp when a challenge may be filed while the bond remains active.
+    /// @param acceptanceDelay Seconds after a challenge before the judge may rule.
+    /// @param rulingBuffer Seconds the judge has to rule once the ruling window opens.
+    /// @param _metadata Claim description or assertion text.
+    /// @return bondId Newly assigned bond identifier.
     function createBond(
         address token,
         uint256 bondAmount,
@@ -192,11 +192,10 @@ contract SimpleBondV3 {
 
     // ─── Challenge ──────────────────────────────────────────────────────
 
-    /**
-     * @notice Challenge a bond. Caller deposits challengeAmount.
-     * @param bondId   Bond to challenge
-     * @param _metadata Challenger's reasoning / evidence
-     */
+    /// @notice Challenge a bond and escrow the configured challenge amount.
+    /// @dev This queue is intentionally permissionless and uncapped, so spam resistance is purely economic.
+    /// @param bondId Bond to challenge.
+    /// @param _metadata Challenger reasoning or evidence.
     function challenge(uint256 bondId, string calldata _metadata) external {
         Bond storage b = bonds[bondId];
         require(b.poster != address(0), "Bond does not exist");
@@ -220,18 +219,10 @@ contract SimpleBondV3 {
 
     // ─── Poster Concession ──────────────────────────────────────────────
 
-    /**
-     * @notice Poster publicly concedes the claim is wrong.
-     *         All parties are refunded: poster gets bondAmount back,
-     *         all pending challengers get challengeAmount back.
-     *         Judge is not invoked and receives nothing.
-     *
-     *         Can only be called while challenges are pending and before
-     *         the judge has started ruling (no rulings yet).
-     *
-     * @param bondId    Bond to concede
-     * @param _metadata Poster's concession statement (e.g., "I was wrong because...")
-     */
+    /// @notice Concede the claim and refund the poster plus all pending challengers.
+    /// @dev This can only happen while at least one challenge is pending and before any ruling has started.
+    /// @param bondId Bond to concede.
+    /// @param _metadata Poster's concession statement.
     function concede(uint256 bondId, string calldata _metadata) external {
         Bond storage b = bonds[bondId];
         require(!b.settled, "Already settled");
@@ -256,15 +247,10 @@ contract SimpleBondV3 {
 
     // ─── Judge Rulings ──────────────────────────────────────────────────
 
-    /**
-     * @notice Judge rules in favor of the current challenger.
-     *         Challenger receives bondAmount + challengeAmount − feeCharged.
-     *         Judge receives feeCharged. All remaining challengers refunded.
-     *         Bond is settled.
-     *
-     * @param bondId     Bond to rule on
-     * @param feeCharged Amount judge charges (0 to judgeFee). Allows fee waiver.
-     */
+    /// @notice Rule in favor of the current challenger and settle the bond.
+    /// @dev Later pending challengers are refunded because this is a terminal challenger-win path.
+    /// @param bondId Bond to rule on.
+    /// @param feeCharged Amount charged to the pot for the judge, from `0` up to `judgeFee`.
     function ruleForChallenger(uint256 bondId, uint256 feeCharged) external {
         Bond storage b = bonds[bondId];
         require(!b.settled, "Already settled");
@@ -295,14 +281,10 @@ contract SimpleBondV3 {
         _refundRemaining(bondId, idx + 1);
     }
 
-    /**
-     * @notice Judge rules in favor of the poster on the current challenge.
-     *         Poster receives challengeAmount − feeCharged.
-     *         Judge receives feeCharged. Queue advances.
-     *
-     * @param bondId     Bond to rule on
-     * @param feeCharged Amount judge charges (0 to judgeFee). Allows fee waiver.
-     */
+    /// @notice Rule in favor of the poster on the current challenge and advance the queue.
+    /// @dev This path does not settle the whole bond unless the advanced queue later reaches a terminal path.
+    /// @param bondId Bond to rule on.
+    /// @param feeCharged Amount charged to the current challenge for the judge, from `0` up to `judgeFee`.
     function ruleForPoster(uint256 bondId, uint256 feeCharged) external {
         Bond storage b = bonds[bondId];
         require(!b.settled, "Already settled");
@@ -332,10 +314,9 @@ contract SimpleBondV3 {
 
     // ─── Poster Withdrawal ──────────────────────────────────────────────
 
-    /**
-     * @notice Poster withdraws their bond.
-     *         Allowed anytime there are no pending challenges (before or after deadline).
-     */
+    /// @notice Withdraw the poster's bond when there are no pending challenges.
+    /// @dev Bonds remain revocable until challenged, even if their challenge deadline has not yet passed.
+    /// @param bondId Bond to withdraw.
     function withdrawBond(uint256 bondId) external {
         Bond storage b = bonds[bondId];
         require(!b.settled, "Already settled");
@@ -351,11 +332,9 @@ contract SimpleBondV3 {
 
     // ─── Timeout ────────────────────────────────────────────────────────
 
-    /**
-     * @notice Anyone can call after the ruling deadline if the judge hasn't
-     *         finished ruling. Refunds poster's bond and all pending challengers.
-     *         Judge gets nothing (punished for inaction).
-     */
+    /// @notice Resolve an expired dispute by refunding the poster and all pending challengers.
+    /// @dev Anyone may call this after the ruling deadline passes with unresolved pending challenges.
+    /// @param bondId Bond whose unresolved challenge queue has timed out.
     function claimTimeout(uint256 bondId) external {
         Bond storage b = bonds[bondId];
         require(!b.settled, "Already settled");
@@ -378,10 +357,19 @@ contract SimpleBondV3 {
 
     // ─── Views ──────────────────────────────────────────────────────────
 
-    function getChallengeCount(uint256 bondId) external view returns (uint256) {
+    /// @notice Return the total number of challenges recorded for a bond.
+    /// @param bondId Bond to inspect.
+    /// @return count Total number of challenges filed against the bond.
+    function getChallengeCount(uint256 bondId) external view returns (uint256 count) {
         return challenges[bondId].length;
     }
 
+    /// @notice Return the stored data for a specific challenge on a bond.
+    /// @param bondId Bond to inspect.
+    /// @param index Challenge index to read.
+    /// @return challenger Challenger address.
+    /// @return status Recorded challenge status.
+    /// @return metadata Challenger-supplied metadata string.
     function getChallenge(uint256 bondId, uint256 index)
         external view returns (address challenger, uint8 status, string memory metadata)
     {
@@ -389,21 +377,21 @@ contract SimpleBondV3 {
         return (c.challenger, c.status, c.metadata);
     }
 
-    /**
-     * @notice Returns the earliest time the judge can start ruling.
-     *         max(deadline, lastChallengeTime + acceptanceDelay)
-     */
-    function rulingWindowStart(uint256 bondId) public view returns (uint256) {
+    /// @notice Return the earliest time the judge may begin ruling on a bond.
+    /// @dev This is `max(deadline, lastChallengeTime + acceptanceDelay)`.
+    /// @param bondId Bond to inspect.
+    /// @return windowStart Timestamp when the ruling window opens.
+    function rulingWindowStart(uint256 bondId) public view returns (uint256 windowStart) {
         Bond storage b = bonds[bondId];
         uint256 afterDeadline = b.deadline;
         uint256 afterAcceptance = b.lastChallengeTime + b.acceptanceDelay;
         return afterDeadline > afterAcceptance ? afterDeadline : afterAcceptance;
     }
 
-    /**
-     * @notice Returns the deadline by which the judge must finish ruling.
-     */
-    function rulingDeadline(uint256 bondId) public view returns (uint256) {
+    /// @notice Return the deadline by which the judge must finish ruling on a bond.
+    /// @param bondId Bond to inspect.
+    /// @return deadline Timestamp when the ruling window closes.
+    function rulingDeadline(uint256 bondId) public view returns (uint256 deadline) {
         return _rulingDeadline(bondId);
     }
 
