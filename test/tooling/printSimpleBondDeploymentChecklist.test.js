@@ -85,6 +85,33 @@ describe("printSimpleBondDeploymentChecklist", function () {
     ]);
   });
 
+  it("prints the Gnosis runtime-config checklist for OfficialBondDirectory deployments", function () {
+    const address = "0x0000000000000000000000000000000000000Ff1";
+    const lines = captureChecklist({
+      network: "gnosis",
+      contractName: "OfficialBondDirectory",
+      address,
+      txHash: "0xdirectory",
+      blockNumber: 5150,
+    });
+
+    expect(lines).to.deep.equal([
+      "",
+      "Post-deploy checklist:",
+      "  Contract: OfficialBondDirectory",
+      "  Network: gnosis",
+      `  Address: ${address}`,
+      "  Deploy tx hash: 0xdirectory",
+      "  Deploy block: 5150",
+      "  1. Verify on block explorer:",
+      `     npx hardhat verify --network gnosis ${address}`,
+      "  2. If this should be the live Gnosis official directory, update frontend/runtime-config.js:",
+      `     set window.SIMPLE_BOND_CONFIG.gnosisOfficialDirectory = "${address}"`,
+      "  3. If this deployment is canonical, update README.md's Addresses table.",
+      "  4. Record the deployed address, tx hash, and block number in your release notes or ops log.",
+    ]);
+  });
+
   it("prints the unsupported-network warning for Ethereum deployments", function () {
     const address = "0x000000000000000000000000000000000000dEaD";
     const lines = captureChecklist({

@@ -28,13 +28,17 @@ describe("SimpleBondV5 frontend surface", function () {
     expect(frontendSource).to.include("Select a judge contract...");
     expect(frontendSource).to.include("contract: window.SIMPLE_BOND_CONFIG?.gnosisBondContract || null");
     expect(frontendSource).to.include("judgeProfileRegistry: window.SIMPLE_BOND_CONFIG?.gnosisJudgeProfileRegistry || null");
+    expect(frontendSource).to.include("officialDirectory: window.SIMPLE_BOND_CONFIG?.gnosisOfficialDirectory || null");
     expect(frontendSource).to.include("function setProfile(address judge, string displayName, string statement, string linkURI, string metadataURI)");
+    expect(frontendSource).to.include("function judgeCount() view returns (uint256)");
+    expect(frontendSource).to.include("function tokenCount() view returns (uint256)");
     expect(frontendSource).to.include('const judgeProfileRouteId = getJudgeProfileRouteId()');
     expect(frontendSource).to.include('const judgeParam = params.get("judge")');
 
     expect(runtimeConfigSource).to.include('gnosisBondContract: "0x7dF485C013f8671B656d585f1d1411640B1D2776"');
     expect(runtimeConfigSource).to.include("gnosisDeployBlock: 45569363");
     expect(runtimeConfigSource).to.include('gnosisJudgeProfileRegistry: "0x5f2000E438533662A689311672a41aca3EDC88DD"');
+    expect(runtimeConfigSource).to.include("gnosisOfficialDirectory: null");
     expect(runtimeConfigSource).to.not.include("judgeApiBase");
   });
 });

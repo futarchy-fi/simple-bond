@@ -139,11 +139,13 @@ cp .env.example .env  # add PRIVATE_KEY and RPC_URL
 npx hardhat compile
 npx hardhat run scripts/deploy.js --network gnosis
 npx hardhat run scripts/deployJudgeProfileRegistry.js --network gnosis
+npx hardhat run scripts/deployOfficialBondDirectory.js --network gnosis
 ```
 
 `scripts/deploy.js` now deploys `SimpleBondV5`.
 `scripts/deployJudgeProfileRegistry.js` deploys the optional on-chain public judge profile registry.
-Both scripts print the post-deploy runtime-config checklist you need for the live site.
+`scripts/deployOfficialBondDirectory.js` deploys the optional Futarchy-controlled on-chain directory of official judges and supported tokens, with separate transferable `owner` and `admin` roles.
+All three scripts print the post-deploy runtime-config checklist you need for the live site.
 
 ## Frontend Runtime Config
 
@@ -157,6 +159,7 @@ window.SIMPLE_BOND_CONFIG = {
   gnosisBondContract: "0x7dF485C013f8671B656d585f1d1411640B1D2776",
   gnosisDeployBlock: 45569363,
   gnosisJudgeProfileRegistry: "0x5f2000E438533662A689311672a41aca3EDC88DD",
+  gnosisOfficialDirectory: null,
 };
 ```
 
@@ -169,6 +172,7 @@ window.SIMPLE_BOND_CONFIG = {
   gnosisBondContract: "0xYourSimpleBondV5Address",
   gnosisDeployBlock: 12345678,
   gnosisJudgeProfileRegistry: "0xYourJudgeProfileRegistryAddress",
+  gnosisOfficialDirectory: "0xYourOfficialBondDirectoryAddress",
 };
 ```
 

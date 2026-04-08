@@ -12,6 +12,7 @@ const EXPECTED_CONTRACTS = [
   "TestToken",
   "ManualJudge",
   "JudgeProfileRegistry",
+  "OfficialBondDirectory",
   "MockArbitrator",
 ];
 
