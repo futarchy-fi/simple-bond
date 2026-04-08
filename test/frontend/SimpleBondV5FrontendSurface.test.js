@@ -1,0 +1,35 @@
+const { expect } = require("chai");
+const { readFileSync } = require("fs");
+const { resolve } = require("path");
+
+const FRONTEND_PATH = resolve(__dirname, "..", "..", "frontend", "index.html");
+const RUNTIME_CONFIG_PATH = resolve(__dirname, "..", "..", "frontend", "runtime-config.js");
+
+describe("SimpleBondV5 frontend surface", function () {
+  const frontendSource = readFileSync(FRONTEND_PATH, "utf8");
+  const runtimeConfigSource = readFileSync(RUNTIME_CONFIG_PATH, "utf8");
+
+  it("uses the V5 refund batching surface instead of the old judge registry ABI", function () {
+    expect(frontendSource).to.include("function claimRefunds(uint256 bondId, uint256 maxCount)");
+    expect(frontendSource).to.include("function refundCursor(uint256 bondId) view returns (uint256)");
+    expect(frontendSource).to.include("function refundEnd(uint256 bondId) view returns (uint256)");
+
+    expect(frontendSource).to.not.include("function registerAsJudge()");
+    expect(frontendSource).to.not.include("function deregisterAsJudge()");
+    expect(frontendSource).to.not.include("function setJudgeFee(address token, uint256 minFee)");
+    expect(frontendSource).to.not.include("event JudgeRegistered(address indexed judge)");
+    expect(frontendSource).to.not.include("event JudgeFeeUpdated(address indexed judge, address indexed token, uint256 newMinFee)");
+  });
+
+  it("treats the app as Gnosis-only and runtime-configured for the V5 deployment", function () {
+    expect(frontendSource).to.include('<option value="100">Gnosis</option>');
+    expect(frontendSource).to.not.include('<option value="137">Polygon</option>');
+    expect(frontendSource).to.not.include('<option value="1">Ethereum</option>');
+    expect(frontendSource).to.include("Select a judge contract...");
+    expect(frontendSource).to.include("contract: window.SIMPLE_BOND_CONFIG?.gnosisBondContract || null");
+
+    expect(runtimeConfigSource).to.include("gnosisBondContract: null");
+    expect(runtimeConfigSource).to.include("gnosisDeployBlock: 0");
+    expect(runtimeConfigSource).to.not.include("judgeApiBase");
+  });
+});
