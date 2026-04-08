@@ -4,6 +4,7 @@
   "description": "Minimal on-chain bond contract",
   "main": "index.js",
   "scripts": {
+    "clean": "npx hardhat clean",
     "compile": "hardhat compile",
     "size": "hardhat size-contracts",
     "test": "hardhat test",
@@ -16,6 +17,9 @@
     "url": "git+https://github.com/futarchy-fi/simple-bond.git"
   },
   "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
   "dependencies": {
     "@aws-sdk/client-ses": "^3.1000.0",
     "better-sqlite3": "^11.10.0"
