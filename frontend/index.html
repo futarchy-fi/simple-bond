@@ -671,9 +671,6 @@
           <div id="judgeOnboardingAddressRow" class="judge-onboarding-address hidden">
             Your judge contract:
             <a id="judgeOnboardingAddress" class="judge-public-link" href="#"></a>
-            <div class="judge-inline-actions">
-              <button id="judgeOnboardingInlineEditBtn" class="secondary hidden" onclick="openOwnJudgeProfile()">Edit Profile</button>
-            </div>
           </div>
           <div class="form-group hidden" id="judgeExistingAddressRow" style="margin-top:12px;margin-bottom:0;">
             <label for="judgeExistingAddress">Import Custom Contract</label>
@@ -3879,9 +3876,8 @@ async function refreshJudgeOnboarding() {
     statusEl.textContent = primaryJudge.profile
       ? "You control this judge profile and can update it any time."
       : "You can publish a public profile so counterparties can review your judging policy.";
-    inlineEditBtn.classList.remove("hidden");
     editBtn.classList.remove("hidden");
-    editBtn.textContent = primaryJudge.profile ? "Edit Public Profile" : "Create Public Profile";
+    editBtn.textContent = primaryJudge.profile ? "Edit Profile" : "Create Profile";
     return;
   }
 
