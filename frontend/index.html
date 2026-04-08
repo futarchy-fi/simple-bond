@@ -562,7 +562,7 @@
         </div>
 
         <div class="form-group">
-          <label>Amount (USD)</label>
+          <label for="bondAmount">Amount (USD)</label>
           <input type="text" id="bondAmount" placeholder="100.00" oninput="onAmountChange()">
           <div id="tokenExplainer" class="hint"></div>
           <div id="tokenBalanceInfo" class="token-balance"></div>
@@ -570,12 +570,12 @@
         </div>
 
         <div class="form-group">
-          <label>What is this bond for?</label>
+          <label for="bondMetadata">What is this bond for?</label>
           <textarea id="bondMetadata" placeholder="e.g. &quot;All statistical claims in my March 2026 blog post are accurate and properly sourced.&quot;" rows="2"></textarea>
         </div>
 
         <div class="form-group">
-          <label>Judge</label>
+          <label for="judgeSelect">Judge</label>
           <select id="judgeSelect" onchange="onJudgeSelectChange()">
             <option value="">Select a judge contract...</option>
           </select>
@@ -587,7 +587,7 @@
         </div>
 
         <div class="form-group">
-          <label>Deadline</label>
+          <label for="deadline">Deadline</label>
           <div class="preset-row">
             <button type="button" class="preset" data-days="30" onclick="setDeadline(30)">1 month</button>
             <button type="button" class="preset" data-days="90" onclick="setDeadline(90)">3 months</button>
@@ -600,7 +600,7 @@
 
         <!-- Advanced fields -->
         <div class="form-group advanced-field" id="advTokenField">
-          <label>Currency</label>
+          <label for="tokenSelect">Currency</label>
           <div class="token-row">
             <select id="tokenSelect" onchange="onTokenChange()"></select>
             <button type="button" class="secondary add-token-btn" onclick="addCustomToken()">+ Add Custom</button>
@@ -608,13 +608,13 @@
         </div>
 
         <div class="form-group advanced-field" id="advChallengeField">
-          <label>Challenge Amount</label>
+          <label for="challengeAmount">Challenge Amount</label>
           <input type="text" id="challengeAmount" placeholder="50.0" oninput="this.dataset.userEdited='1'">
           <div class="hint">Amount each challenger must deposit. Default: 50% of bond.</div>
         </div>
 
         <div class="form-group advanced-field" id="advJudgeFeeField">
-          <label>Judge Fee</label>
+          <label for="judgeFee">Judge Fee</label>
           <input type="text" id="judgeFee" placeholder="10.0" oninput="this.dataset.userEdited='1'">
           <div class="hint">Fee the judge receives per ruling. Default: 5% of bond.</div>
         </div>
@@ -676,7 +676,7 @@
             </div>
           </div>
           <div class="form-group hidden" id="judgeExistingAddressRow" style="margin-top:12px;margin-bottom:0;">
-            <label>Import Custom Contract</label>
+            <label for="judgeExistingAddress">Import Custom Contract</label>
             <input type="text" id="judgeExistingAddress" placeholder="Paste an existing judge contract address">
             <div class="hint">Use this only if your judge already exists on-chain and you want to register it as your canonical judge.</div>
             <div class="judge-inline-actions">
@@ -703,31 +703,31 @@
           <h3 style="font-size:15px;margin-bottom:6px;">Public Judge Profile</h3>
           <div id="judgeProfileEditorHint" class="hint">Profiles live on-chain and are editable only by the judge contract or its declared profile controller.</div>
           <div id="judgeProfileControlledRow" class="hidden" style="margin-top:12px;">
-            <label style="display:block;margin-bottom:6px;font-size:12px;color:var(--muted);">Discovered judge contracts you control</label>
+            <label for="judgeProfileControlledSelect" style="display:block;margin-bottom:6px;font-size:12px;color:var(--muted);">Discovered judge contracts you control</label>
             <select id="judgeProfileControlledSelect" onchange="selectControlledJudgeProfileTarget()">
               <option value="">Choose a judge contract...</option>
             </select>
           </div>
           <div class="form-group" style="margin-top:12px;margin-bottom:8px;">
-            <label>Judge contract address</label>
+            <label for="judgeProfileTarget">Judge contract address</label>
             <input type="text" id="judgeProfileTarget" placeholder="0x..." oninput="onJudgeProfileTargetInput()">
             <div id="judgeProfileTargetHint" class="hint">Enter the judge contract address you control. The registry rejects EOAs.</div>
           </div>
           <div class="form-group" style="margin-bottom:8px;">
-            <label>Display name</label>
+            <label for="judgeProfileDisplayName">Display name</label>
             <input type="text" id="judgeProfileDisplayName" maxlength="120" placeholder="e.g. Alice Court">
           </div>
           <div class="form-group" style="margin-bottom:8px;">
-            <label>Judging statement</label>
+            <label for="judgeProfileStatement">Judging statement</label>
             <textarea id="judgeProfileStatement" maxlength="4000" placeholder="Explain how this judge evaluates disputes, what evidence matters, and any standards you apply." rows="4"></textarea>
           </div>
           <div class="form-group" style="margin-bottom:8px;">
-            <label>External link</label>
+            <label for="judgeProfileLink">External link</label>
             <input type="url" id="judgeProfileLink" maxlength="500" placeholder="https://your-site.example/judging-policy">
             <div class="hint">Optional: a blog post, policy page, Safe page, or public explanation.</div>
           </div>
           <div class="form-group" style="margin-bottom:8px;">
-            <label>Metadata URI</label>
+            <label for="judgeProfileMetadata">Metadata URI</label>
             <input type="text" id="judgeProfileMetadata" maxlength="1000" placeholder="ipfs://... or https://...">
             <div class="hint">Optional: machine-readable metadata for richer clients.</div>
           </div>
@@ -874,7 +874,7 @@
           </div>
           <div class="rr-note" id="rrNote"></div>
           <div class="form-group" style="margin-top:12px;">
-            <label>Your reasoning (stored on-chain)</label>
+            <label for="challengeMetadata">Your reasoning (stored on-chain)</label>
             <textarea id="challengeMetadata" placeholder="Explain why you think the poster is wrong..." rows="2"></textarea>
           </div>
           <div id="challengeStepper"></div>
@@ -2837,7 +2837,7 @@ async function loadBond() {
             const feeGroup = document.createElement("div");
             feeGroup.id = "bondFeeControls";
             feeGroup.className = "fee-waiver-group";
-            feeGroup.innerHTML = `<label>Judge fee to charge: </label><input type="text" id="feeChargedInput" value="${parseFloat(ethers.formatUnits(judgeFee, decimals)).toFixed(2)}" style="max-width:100px;display:inline-block;padding:6px 10px;font-size:13px;"> <span style="font-size:12px;color:var(--muted);">max: $${fmtJudgeFee} (enter 0 to waive)</span>`;
+            feeGroup.innerHTML = `<label for="feeChargedInput">Judge fee to charge: </label><input type="text" id="feeChargedInput" value="${parseFloat(ethers.formatUnits(judgeFee, decimals)).toFixed(2)}" style="max-width:100px;display:inline-block;padding:6px 10px;font-size:13px;"> <span style="font-size:12px;color:var(--muted);">max: $${fmtJudgeFee} (enter 0 to waive)</span>`;
             btnsDiv.parentNode.insertBefore(feeGroup, btnsDiv);
 
             const ruleForCBtn = document.createElement("button");
@@ -3572,19 +3572,17 @@ async function loadMyBonds() {
     }
 
     const challengerFilter = readContract.filters.Challenged(null, null, userAddr);
-    const discoveredJudges = await discoverJudges(readProvider);
-    const operatorJudgeAddrs = discoveredJudges
-      .filter((judge) => judge.operator?.toLowerCase() === userAddr.toLowerCase())
-      .map((judge) => judge.address);
+    const controlledJudges = await withTimeout(getControlledJudgeContracts(readProvider), 8000, []);
+    const operatorJudgeAddrs = controlledJudges.map((judge) => judge.address);
 
     const [posterLogs, judgeLogsByContract, challengerEvents] = await Promise.all([
-      queryDetailedBondCreatedLogs(readProvider, { poster: userAddr }).catch(() => []),
+      withTimeout(queryDetailedBondCreatedLogs(readProvider, { poster: userAddr }).catch(() => []), 12000, []),
       Promise.all(
         operatorJudgeAddrs.map((judgeAddr) =>
-          queryDetailedBondCreatedLogs(readProvider, { judge: judgeAddr }).catch(() => [])
+          withTimeout(queryDetailedBondCreatedLogs(readProvider, { judge: judgeAddr }).catch(() => []), 12000, [])
         )
       ),
-      readContract.queryFilter(challengerFilter, chain().deployBlock).catch(() => []),
+      withTimeout(readContract.queryFilter(challengerFilter, chain().deployBlock).catch(() => []), 12000, []),
     ]);
     const iface = readContract.interface;
 
@@ -3796,6 +3794,13 @@ function compareBondListPriority(a, b) {
     }
   }
   return b.lastActivity - a.lastActivity;
+}
+
+function withTimeout(promise, ms, fallbackValue) {
+  return Promise.race([
+    promise,
+    new Promise((resolve) => setTimeout(() => resolve(fallbackValue), ms)),
+  ]);
 }
 
 function setJudgeOnboardingAddress(address) {
