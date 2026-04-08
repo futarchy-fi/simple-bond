@@ -439,6 +439,27 @@
     flex-wrap: wrap;
     margin-top: 12px;
   }
+  .inline-info {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    margin-left: 6px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    color: var(--muted);
+    font-size: 11px;
+    cursor: help;
+    vertical-align: middle;
+  }
+  .judge-inline-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-top: 10px;
+  }
   .judge-public-link { color: var(--accent); text-decoration: none; word-break: break-all; }
   .judge-public-link:hover { text-decoration: underline; }
   .judge-profile-page { max-width: 760px; margin: 0 auto; }
@@ -643,14 +664,17 @@
       <h2>Judges</h2>
       <div id="judgeRegisterSection">
         <div class="judge-onboarding-card">
-          <h3>Become a Judge</h3>
+          <h3 id="judgeOnboardingTitle">Become a Judge</h3>
           <div id="judgeOnboardingHint" class="hint">Sign in to deploy your own judge contract, activate it, and publish a public profile.</div>
           <div id="judgeOnboardingStatus" class="judge-onboarding-status"></div>
           <div id="judgeOnboardingAddressRow" class="judge-onboarding-address hidden">
             Your judge contract:
             <a id="judgeOnboardingAddress" class="judge-public-link" href="#"></a>
+            <div class="judge-inline-actions">
+              <button id="judgeOnboardingInlineEditBtn" class="secondary hidden" onclick="openOwnJudgeProfile()">Edit Profile</button>
+            </div>
           </div>
-          <div class="form-group" style="margin-top:12px;margin-bottom:0;">
+          <div class="form-group" id="judgeExistingAddressRow" style="margin-top:12px;margin-bottom:0;">
             <label>I already have a judge contract</label>
             <input type="text" id="judgeExistingAddress" placeholder="Paste an existing judge contract address">
             <div class="hint">Use this if your judge already exists on-chain but was not created by this browser.</div>
@@ -664,8 +688,13 @@
             <button id="judgeOnboardingCopyBtn" class="secondary hidden" onclick="copyOwnJudgeAddress()">Copy Address</button>
           </div>
         </div>
-        <div id="judgeRegisterPrompt" class="connect-prompt">This list is discovered from the official directory and on-chain `BondCreated` activity on Gnosis.</div>
-        <div id="judgeRegisterNote" style="margin-top:8px;color:var(--muted);font-size:13px;">New judges you create here appear immediately for you, even before they have judged a bond. Public judge profiles are stored on-chain in a separate registry.</div>
+        <div id="judgeRegisterPrompt" class="connect-prompt">Judge contracts
+          <span
+            id="judgeDiscoveryInfo"
+            class="inline-info"
+            title="This list is discovered from the official directory and on-chain BondCreated activity on Gnosis. New judges you create here appear immediately for you, even before they have judged a bond. Public judge profiles are stored on-chain in a separate registry."
+          >i</span>
+        </div>
         <div id="judgeProfileEditor" class="hidden" style="margin-top:16px;padding:16px;background:var(--bg);border:1px solid var(--border);border-radius:10px;">
           <h3 style="font-size:15px;margin-bottom:6px;">Public Judge Profile</h3>
           <div id="judgeProfileEditorHint" class="hint">Profiles live on-chain and are editable only by the judge contract or its declared profile controller.</div>
@@ -2227,14 +2256,14 @@ async function ensureApproval(tokenAddr, amount, spender) {
   const token = new ethers.Contract(tokenAddr, ERC20_ABI, signer);
   const allowance = await token.allowance(userAddr, spender);
   if (allowance >= amount) return;
-  // Approve max so user doesn't need to re-approve for future txs
-  const tx = await token.approve(spender, ethers.MaxUint256);
+  const nextAllowance = amount;
+  const tx = await token.approve(spender, nextAllowance);
   const receipt = await waitForTx(tx);
   if (!receipt) throw new Error("Approval transaction failed — please try again");
   // Update cache
   const key = tokenAddr.toLowerCase();
   if (tokenCache[key]) {
-    tokenCache[key].allowance = ethers.MaxUint256;
+    tokenCache[key].allowance = nextAllowance;
   }
 }
 
@@ -3699,7 +3728,7 @@ async function getControlledJudgeContracts(readProvider = null) {
 }
 
 function setJudgeOnboardingBusy(isBusy) {
-  for (const id of ["judgeOnboardingUseExistingBtn", "judgeOnboardingDeployBtn", "judgeOnboardingActivateBtn", "judgeOnboardingEditBtn", "judgeOnboardingCopyBtn"]) {
+  for (const id of ["judgeOnboardingUseExistingBtn", "judgeOnboardingDeployBtn", "judgeOnboardingActivateBtn", "judgeOnboardingEditBtn", "judgeOnboardingInlineEditBtn", "judgeOnboardingCopyBtn"]) {
     const el = document.getElementById(id);
     if (el) el.disabled = isBusy;
   }
@@ -3712,28 +3741,40 @@ function setJudgeOnboardingAddress(address) {
     rowEl.classList.add("hidden");
     linkEl.href = "#";
     linkEl.textContent = "";
+    linkEl.onclick = null;
     return;
   }
 
   setJudgeLink(linkEl, address);
+  linkEl.title = "Click to edit profile";
+  linkEl.onclick = (event) => {
+    event.preventDefault();
+    openOwnJudgeProfile();
+  };
   rowEl.classList.remove("hidden");
 }
 
 async function refreshJudgeOnboarding() {
+  const titleEl = document.getElementById("judgeOnboardingTitle");
   const hintEl = document.getElementById("judgeOnboardingHint");
   const statusEl = document.getElementById("judgeOnboardingStatus");
+  const existingAddressRow = document.getElementById("judgeExistingAddressRow");
   const connectBtn = document.getElementById("judgeOnboardingConnectBtn");
   const useExistingBtn = document.getElementById("judgeOnboardingUseExistingBtn");
   const deployBtn = document.getElementById("judgeOnboardingDeployBtn");
   const activateBtn = document.getElementById("judgeOnboardingActivateBtn");
   const editBtn = document.getElementById("judgeOnboardingEditBtn");
+  const inlineEditBtn = document.getElementById("judgeOnboardingInlineEditBtn");
   const copyBtn = document.getElementById("judgeOnboardingCopyBtn");
 
+  titleEl.textContent = "Become a Judge";
   connectBtn.classList.toggle("hidden", !!userAddr);
   useExistingBtn.classList.toggle("hidden", !userAddr);
+  existingAddressRow.classList.toggle("hidden", !userAddr);
   deployBtn.classList.add("hidden");
   activateBtn.classList.add("hidden");
   editBtn.classList.add("hidden");
+  inlineEditBtn.classList.add("hidden");
   copyBtn.classList.add("hidden");
   setJudgeOnboardingAddress(null);
 
@@ -3753,13 +3794,22 @@ async function refreshJudgeOnboarding() {
     return;
   }
 
+  titleEl.textContent = "Your Judge";
+  existingAddressRow.classList.add("hidden");
+  useExistingBtn.classList.add("hidden");
+  deployBtn.classList.add("hidden");
+  primaryJudge.profile = await fetchJudgeProfileByAddress(primaryJudge.address, activeChainId, { force: true });
   setJudgeOnboardingAddress(primaryJudge.address);
   copyBtn.classList.remove("hidden");
 
   if (primaryJudge.active) {
     hintEl.textContent = "Your judge is active and ready to be selected in new bonds.";
-    statusEl.textContent = "Next step: publish a public profile so counterparties can review your judging policy.";
+    statusEl.textContent = primaryJudge.profile
+      ? "You control this judge profile and can update it any time."
+      : "You can publish a public profile so counterparties can review your judging policy.";
+    inlineEditBtn.classList.remove("hidden");
     editBtn.classList.remove("hidden");
+    editBtn.textContent = primaryJudge.profile ? "Edit Public Profile" : "Create Public Profile";
     return;
   }
 
