@@ -3,8 +3,8 @@ const { ethers } = require("hardhat");
 const { readFileSync } = require("fs");
 const { resolve } = require("path");
 
-const FRONTEND_PATH = resolve(__dirname, "..", "frontend", "index.html");
-const BACKEND_CONFIG_PATH = resolve(__dirname, "..", "backend", "config.mjs");
+const FRONTEND_PATH = resolve(__dirname, "..", "..", "frontend", "index.html");
+const BACKEND_CONFIG_PATH = resolve(__dirname, "..", "..", "backend", "config.mjs");
 
 const DETAILED_BOND_CREATED_SIGNATURE =
   "BondCreated(uint256,address,address,address,uint256,uint256,uint256,uint256,uint256,uint256,string)";

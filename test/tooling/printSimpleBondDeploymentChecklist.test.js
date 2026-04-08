@@ -3,10 +3,11 @@ const path = require("path");
 const { expect } = require("chai");
 const {
   printSimpleBondDeploymentChecklist,
-} = require("../scripts/printSimpleBondDeploymentChecklist");
+} = require("../../scripts/printSimpleBondDeploymentChecklist");
 
 const CLI_SCRIPT = path.join(
   __dirname,
+  "..",
   "..",
   "scripts",
   "printSimpleBondDeploymentChecklist.js"

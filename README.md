@@ -1,7 +1,29 @@
 ![Tests](https://img.shields.io/badge/tests-passing-green)
-# SimpleBond v4
+# SimpleBond
 
 A truth-machine bond contract. Make a claim, back it with money, and let the world challenge you. Designed by Robin Hanson, built by Futarchy.
+
+## Repository Status
+
+The repository now contains both legacy deployed lines and the current `V5` core audit target.
+
+- current core line: `contracts/core/SimpleBondV5.sol`
+- current minimal judge wrapper: `contracts/judges/ManualJudge.sol`
+- current `V5` audit docs: `AUDIT_SCOPE.md` and `SPEC.md`
+- legacy contract lines and the current Kleros adapter: `contracts/legacy/`
+
+## Repository Layout
+
+- `contracts/core/` - current core contracts
+- `contracts/judges/` - current judge implementations and wrappers
+- `contracts/interfaces/` - shared interfaces
+- `contracts/legacy/` - older contract generations and legacy adapters
+- `contracts/test/` - test-only Solidity contracts
+- `test/core/v5/` - active `V5` test suites
+- `test/helpers/v5/` - active `V5` test helpers
+- `test/legacy/` - legacy regression suites for older contract lines
+- `test/frontend/` - frontend/backend consumer and helper tests
+- `test/tooling/` - deploy and repository-tooling tests
 
 ## How It Works
 

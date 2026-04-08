@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import "./interfaces/IBondJudgeV5.sol";
+import "../interfaces/IBondJudgeV5.sol";
 
 interface IBondJudgeTarget {
     function ruleForPoster(uint256 bondId, uint256 feeCharged) external;

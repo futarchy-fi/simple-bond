@@ -2,7 +2,7 @@ const { expect } = require("chai");
 const {
   JUDGE_FEE,
   deploySimpleBondV5FuzzFixture,
-} = require("./helpers/simpleBondV5Fuzz");
+} = require("../../helpers/v5/simpleBondV5Fuzz");
 const {
   captureBondSnapshot,
   expectConcedeOutcome,
@@ -14,7 +14,7 @@ const {
   expectTimeoutOutcome,
   expectTokenConservation,
   expectWithdrawBondOutcome,
-} = require("./helpers/simpleBondV5Invariants");
+} = require("../../helpers/v5/simpleBondV5Invariants");
 
 function createPrng(seed) {
   let state = seed >>> 0;

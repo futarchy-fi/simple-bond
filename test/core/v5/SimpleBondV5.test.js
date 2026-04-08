@@ -9,7 +9,7 @@ const {
   ONE_DAY,
   RULING_BUFFER,
   deploySimpleBondV5FuzzFixture,
-} = require("./helpers/simpleBondV5Fuzz");
+} = require("../../helpers/v5/simpleBondV5Fuzz");
 
 describe("SimpleBondV5 fixture helper", function () {
   it("honors deadlineLeadTime overrides when deriving the default deadline", async function () {

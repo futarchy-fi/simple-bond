@@ -18,6 +18,12 @@ This document describes the intended behavior of the `SimpleBondV5` core system.
 - the judge must be a contract
 - the bond core no longer contains a global judge registry
 
+Current repository locations:
+
+- `contracts/core/SimpleBondV5.sol`
+- `contracts/judges/ManualJudge.sol`
+- `contracts/interfaces/IBondJudgeV5.sol`
+
 ## Roles
 
 - `poster`: creates the bond and locks `bondAmount`

@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-import "./interfaces/IBondJudgeV5.sol";
+import "../interfaces/IBondJudgeV5.sol";
 
 contract SimpleBondV5 {
     using SafeERC20 for IERC20;
