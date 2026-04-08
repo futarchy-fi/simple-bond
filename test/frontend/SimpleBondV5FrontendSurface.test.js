@@ -27,7 +27,7 @@ describe("SimpleBondV5 frontend surface", function () {
     expect(frontendSource).to.not.include('<option value="1">Ethereum</option>');
     expect(frontendSource).to.include("Select a judge contract...");
     expect(frontendSource).to.include("Become a Judge");
-    expect(frontendSource).to.include("Create My Judge");
+    expect(frontendSource).to.include("Import Custom Contract");
     expect(frontendSource).to.include("Use Existing Judge");
     expect(frontendSource).to.include("function acceptOperatorRole()");
     expect(frontendSource).to.include("function judgeOf(address operator) view returns (address)");
