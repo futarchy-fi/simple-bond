@@ -1,0 +1,18 @@
+[
+  {
+    "id": "add-simplebondv4-storage-layout-comments",
+    "title": "Add storage layout comments to SimpleBondV4",
+    "description": "Update contracts/SimpleBondV4.sol to document the current top-level storage anchors around nextBondId, bonds, challenges, judges, and judgeMinFees without changing names, types, ordering, or behavior.",
+    "dependsOn": [],
+    "level": "task"
+  },
+  {
+    "id": "verify-comment-only-simplebondv4-change",
+    "title": "Verify the change stays comment-only",
+    "description": "Review the resulting diff and, if toolchain dependencies are available, compile the contracts to confirm the storage-layout documentation introduces no logic, ABI, or storage-order changes.",
+    "dependsOn": [
+      "add-simplebondv4-storage-layout-comments"
+    ],
+    "level": "task"
+  }
+]

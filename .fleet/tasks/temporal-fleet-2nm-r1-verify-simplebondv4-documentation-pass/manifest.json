@@ -1,0 +1,18 @@
+{
+  "task_id": "temporal-fleet-2nm-r1-verify-simplebondv4-documentation-pass",
+  "harness_version": "v1",
+  "branch": "ff/Ttemporal-fleet-2nm-r1-verify-simplebondv4-documentation-pass",
+  "base_branch": "ff/Ttemporal-fleet-2nm",
+  "base_commit": "4c52507a211eeac624ad4953236e623d7e28183d",
+  "head_commit": "761a4d0f07a3af09baa609fc7cae3fe4498e9d8a",
+  "changed_files": [
+    ".fleet/tasks/temporal-fleet-2nm-r1-verify-simplebondv4-documentation-pass/analysis.md"
+  ],
+  "lines_added": 54,
+  "lines_removed": 0,
+  "commit_count": 1,
+  "start_ts": "2026-04-04T00:14:27.805Z",
+  "end_ts": "2026-04-04T00:17:52.204Z",
+  "provider": "codex",
+  "status": "completed"
+}

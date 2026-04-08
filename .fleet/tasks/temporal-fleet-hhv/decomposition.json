@@ -1,0 +1,37 @@
+[
+  {
+    "id": "analyze-contract-size-report-surface",
+    "title": "Inspect the Hardhat and npm integration points for contract size reporting",
+    "description": "Confirm where the report should live, which existing files expose developer commands, and which Solidity outputs under contracts/ should be included or excluded from the report.",
+    "dependsOn": [],
+    "level": "analysis"
+  },
+  {
+    "id": "add-hardhat-contract-size-task",
+    "title": "Add a Hardhat task that reports deployed contract sizes",
+    "description": "Register a size-contracts task in hardhat.config.js that compiles the project, reads artifact deployedBytecode, filters to concrete project contracts, computes EIP-170 usage, and prints a sorted report.",
+    "dependsOn": [
+      "analyze-contract-size-report-surface"
+    ],
+    "level": "task"
+  },
+  {
+    "id": "add-package-size-script",
+    "title": "Expose the contract size report through package.json",
+    "description": "Add an npm script such as `size` that invokes `hardhat size-contracts` so the report is reachable through the repository's standard script interface.",
+    "dependsOn": [
+      "add-hardhat-contract-size-task"
+    ],
+    "level": "task"
+  },
+  {
+    "id": "verify-contract-size-report-command",
+    "title": "Verify the contract size report output",
+    "description": "Run the size command after installing dependencies to confirm compilation succeeds, concrete contracts are listed, interface-only artifacts are skipped, and the reported metric uses deployed runtime bytecode.",
+    "dependsOn": [
+      "add-hardhat-contract-size-task",
+      "add-package-size-script"
+    ],
+    "level": "task"
+  }
+]

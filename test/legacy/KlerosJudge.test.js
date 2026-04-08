@@ -85,7 +85,68 @@ describe("KlerosJudge", function () {
   });
 
   // =====================================================================
-  // 1. DEPLOYMENT & REGISTRATION
+  // 0. PUBLIC ABI SURFACE
+  // =====================================================================
+  describe("Public ABI surface", function () {
+
+    it("keeps the expected public and external function signatures", async function () {
+      const signatures = klerosJudge.interface.fragments
+        .filter((fragment) => fragment.type === "function")
+        .map((fragment) => fragment.format("minimal"))
+        .sort();
+
+      expect(signatures).to.deep.equal([
+        "function RULING_CHALLENGER() view returns (uint256)",
+        "function RULING_CHOICES() view returns (uint256)",
+        "function RULING_POSTER() view returns (uint256)",
+        "function appeal(uint256,bytes) payable",
+        "function appealCost(uint256,bytes) view returns (uint256)",
+        "function appealPeriod(uint256) view returns (uint256,uint256)",
+        "function arbitrator() view returns (address)",
+        "function arbitratorExtraData() view returns (bytes)",
+        "function bondChallengeToDispute(uint256,uint256) view returns (uint256)",
+        "function disputes(uint256) view returns (uint256,uint256,address,uint8,uint256)",
+        "function executeRuling(uint256)",
+        "function getArbitrationCost() view returns (uint256)",
+        "function hasDispute(uint256,uint256) view returns (bool)",
+        "function owner() view returns (address)",
+        "function requestArbitration(uint256) payable returns (uint256)",
+        "function rule(uint256,uint256)",
+        "function simpleBond() view returns (address)",
+        "function submitEvidence(uint256,uint256,string)",
+        "function transferOwnership(address)",
+        "function updateArbitratorExtraData(bytes)",
+        "function withdrawFees(address,address,uint256)",
+      ]);
+    });
+  });
+
+  // =====================================================================
+  // 1. APPEAL STUBS
+  // =====================================================================
+  describe("Appeal stubs", function () {
+
+    it("appeal reverts with the explicit unsupported message", async function () {
+      await expect(
+        klerosJudge.connect(poster).appeal(0, "0x")
+      ).to.be.revertedWith("Appeals not yet supported");
+    });
+
+    it("appealCost reverts with the explicit unsupported message", async function () {
+      await expect(
+        klerosJudge.appealCost(0, "0x")
+      ).to.be.revertedWith("Appeals not yet supported");
+    });
+
+    it("appealPeriod reverts with the explicit unsupported message", async function () {
+      await expect(
+        klerosJudge.appealPeriod(0)
+      ).to.be.revertedWith("Appeals not yet supported");
+    });
+  });
+
+  // =====================================================================
+  // 2. DEPLOYMENT & REGISTRATION
   // =====================================================================
   describe("Deployment", function () {
 
@@ -120,19 +181,19 @@ describe("KlerosJudge", function () {
       const KlerosJudge = await ethers.getContractFactory("KlerosJudge");
       await expect(
         KlerosJudge.deploy(ethers.ZeroAddress, await bond.getAddress(), "0x", "")
-      ).to.be.revertedWith("Zero arbitrator");
+      ).to.be.revertedWithCustomError(klerosJudge, "ZeroArbitratorAddress");
     });
 
     it("reverts on zero simpleBond address", async function () {
       const KlerosJudge = await ethers.getContractFactory("KlerosJudge");
       await expect(
         KlerosJudge.deploy(await mockArbitrator.getAddress(), ethers.ZeroAddress, "0x", "")
-      ).to.be.revertedWith("Zero simpleBond");
+      ).to.be.revertedWithCustomError(klerosJudge, "ZeroSimpleBondAddress");
     });
   });
 
   // =====================================================================
-  // 2. BOND CREATION WITH KLEROS JUDGE
+  // 3. BOND CREATION WITH KLEROS JUDGE
   // =====================================================================
   describe("Bond creation with KlerosJudge", function () {
 
@@ -144,7 +205,7 @@ describe("KlerosJudge", function () {
   });
 
   // =====================================================================
-  // 3. REQUEST ARBITRATION
+  // 4. REQUEST ARBITRATION
   // =====================================================================
   describe("requestArbitration", function () {
 
@@ -188,7 +249,7 @@ describe("KlerosJudge", function () {
         klerosJudge.connect(outsider).requestArbitration(bondId, {
           value: ARBITRATION_COST,
         })
-      ).to.be.revertedWith("Only poster or challenger");
+      ).to.be.revertedWithCustomError(klerosJudge, "CallerNotPosterOrChallenger");
     });
 
     it("reverts if no pending challenge", async function () {
@@ -198,7 +259,7 @@ describe("KlerosJudge", function () {
         klerosJudge.connect(poster).requestArbitration(bondId, {
           value: ARBITRATION_COST,
         })
-      ).to.be.revertedWith("No pending challenge");
+      ).to.be.revertedWithCustomError(klerosJudge, "NoPendingChallenge");
     });
 
     it("reverts if dispute already exists for this challenge", async function () {
@@ -213,7 +274,19 @@ describe("KlerosJudge", function () {
         klerosJudge.connect(challenger1).requestArbitration(bondId, {
           value: ARBITRATION_COST,
         })
-      ).to.be.revertedWith("Dispute already exists");
+      ).to.be.revertedWithCustomError(klerosJudge, "DisputeAlreadyExists");
+    });
+
+    it("reverts if the bond is past ruling deadline", async function () {
+      const bondId = await createDefaultBond();
+      await challengeBond(bondId, challenger1);
+      await advancePastRulingDeadline(bondId);
+
+      await expect(
+        klerosJudge.connect(poster).requestArbitration(bondId, {
+          value: ARBITRATION_COST,
+        })
+      ).to.be.revertedWithCustomError(klerosJudge, "BondPastRulingDeadline");
     });
 
     it("reverts if insufficient arbitration fee", async function () {
@@ -224,7 +297,7 @@ describe("KlerosJudge", function () {
         klerosJudge.connect(poster).requestArbitration(bondId, {
           value: ARBITRATION_COST - 1n,
         })
-      ).to.be.revertedWith("Insufficient arbitration fee");
+      ).to.be.revertedWithCustomError(klerosJudge, "InsufficientArbitrationFee");
     });
 
     it("refunds excess ETH", async function () {
@@ -263,7 +336,7 @@ describe("KlerosJudge", function () {
         klerosJudge.connect(poster).requestArbitration(0, {
           value: ARBITRATION_COST,
         })
-      ).to.be.revertedWith("Not judge for this bond");
+      ).to.be.revertedWithCustomError(klerosJudge, "BondNotJudgedByAdapter");
     });
 
     it("sets hasDispute and bondChallengeToDispute correctly", async function () {
@@ -280,7 +353,7 @@ describe("KlerosJudge", function () {
   });
 
   // =====================================================================
-  // 4. RULING DELIVERY (rule)
+  // 5. RULING DELIVERY (rule)
   // =====================================================================
   describe("rule", function () {
 
@@ -293,7 +366,7 @@ describe("KlerosJudge", function () {
 
       await expect(
         klerosJudge.connect(outsider).rule(0, 1)
-      ).to.be.revertedWith("Only arbitrator");
+      ).to.be.revertedWithCustomError(klerosJudge, "CallerNotArbitrator");
     });
 
     it("arbitrator delivers ruling via MockArbitrator.giveRuling", async function () {
@@ -328,7 +401,7 @@ describe("KlerosJudge", function () {
   });
 
   // =====================================================================
-  // 5. EXECUTE RULING — CHALLENGER WINS
+  // 6. EXECUTE RULING — CHALLENGER WINS
   // =====================================================================
   describe("executeRuling — challenger wins", function () {
 
@@ -379,7 +452,7 @@ describe("KlerosJudge", function () {
   });
 
   // =====================================================================
-  // 6. EXECUTE RULING — POSTER WINS
+  // 7. EXECUTE RULING — POSTER WINS
   // =====================================================================
   describe("executeRuling — poster wins", function () {
 
@@ -409,7 +482,7 @@ describe("KlerosJudge", function () {
   });
 
   // =====================================================================
-  // 7. EXECUTE RULING — REFUSED (0)
+  // 8. EXECUTE RULING — REFUSED (0)
   // =====================================================================
   describe("executeRuling — refused to arbitrate", function () {
 
@@ -443,7 +516,7 @@ describe("KlerosJudge", function () {
   });
 
   // =====================================================================
-  // 8. EXECUTE RULING — TIMING CHECKS
+  // 9. EXECUTE RULING — TIMING CHECKS
   // =====================================================================
   describe("executeRuling — timing", function () {
 
@@ -458,7 +531,7 @@ describe("KlerosJudge", function () {
       // Don't advance time — still before ruling window
       await expect(
         klerosJudge.connect(outsider).executeRuling(0)
-      ).to.be.revertedWith("Before ruling window");
+      ).to.be.revertedWithCustomError(klerosJudge, "BeforeRulingWindow");
     });
 
     it("reverts after ruling deadline", async function () {
@@ -472,7 +545,7 @@ describe("KlerosJudge", function () {
 
       await expect(
         klerosJudge.connect(outsider).executeRuling(0)
-      ).to.be.revertedWith("Past ruling deadline");
+      ).to.be.revertedWithCustomError(klerosJudge, "BondPastRulingDeadline");
     });
 
     it("reverts if not yet ruled", async function () {
@@ -487,7 +560,7 @@ describe("KlerosJudge", function () {
 
       await expect(
         klerosJudge.connect(outsider).executeRuling(0)
-      ).to.be.revertedWith("Not yet ruled");
+      ).to.be.revertedWithCustomError(klerosJudge, "DisputeNotRuled");
     });
 
     it("reverts if already executed", async function () {
@@ -503,12 +576,12 @@ describe("KlerosJudge", function () {
 
       await expect(
         klerosJudge.connect(outsider).executeRuling(0)
-      ).to.be.revertedWith("Not yet ruled");
+      ).to.be.revertedWithCustomError(klerosJudge, "DisputeNotRuled");
     });
   });
 
   // =====================================================================
-  // 9. JUDGE FEE COLLECTION
+  // 10. JUDGE FEE COLLECTION
   // =====================================================================
   describe("Judge fee collection", function () {
 
@@ -547,12 +620,12 @@ describe("KlerosJudge", function () {
     it("non-owner cannot withdraw fees", async function () {
       await expect(
         klerosJudge.connect(outsider).withdrawFees(tokenAddr, outsider.address, 1)
-      ).to.be.revertedWith("Only owner");
+      ).to.be.revertedWithCustomError(klerosJudge, "CallerNotOwner");
     });
   });
 
   // =====================================================================
-  // 10. EVIDENCE
+  // 11. EVIDENCE
   // =====================================================================
   describe("submitEvidence", function () {
 
@@ -590,7 +663,7 @@ describe("KlerosJudge", function () {
 
       await expect(
         klerosJudge.connect(poster).submitEvidence(bondId, 0, "/ipfs/QmEvidence")
-      ).to.be.revertedWith("No dispute for this challenge");
+      ).to.be.revertedWithCustomError(klerosJudge, "NoDisputeForChallenge");
     });
 
     it("reverts if dispute already ruled", async function () {
@@ -603,7 +676,7 @@ describe("KlerosJudge", function () {
 
       await expect(
         klerosJudge.connect(poster).submitEvidence(bondId, 0, "/ipfs/QmLate")
-      ).to.be.revertedWith("Dispute not active");
+      ).to.be.revertedWithCustomError(klerosJudge, "DisputeNotActive");
     });
   });
 
@@ -625,7 +698,7 @@ describe("KlerosJudge", function () {
     it("non-owner cannot update extra data", async function () {
       await expect(
         klerosJudge.connect(outsider).updateArbitratorExtraData("0x")
-      ).to.be.revertedWith("Only owner");
+      ).to.be.revertedWithCustomError(klerosJudge, "CallerNotOwner");
     });
 
     it("owner can transfer ownership", async function () {
@@ -635,7 +708,7 @@ describe("KlerosJudge", function () {
       // Old owner can no longer call owner functions
       await expect(
         klerosJudge.connect(owner).updateArbitratorExtraData("0x")
-      ).to.be.revertedWith("Only owner");
+      ).to.be.revertedWithCustomError(klerosJudge, "CallerNotOwner");
     });
 
     it("transferOwnership emits event", async function () {
@@ -647,7 +720,13 @@ describe("KlerosJudge", function () {
     it("cannot transfer to zero address", async function () {
       await expect(
         klerosJudge.connect(owner).transferOwnership(ethers.ZeroAddress)
-      ).to.be.revertedWith("Zero address");
+      ).to.be.revertedWithCustomError(klerosJudge, "ZeroNewOwner");
+    });
+
+    it("reverts when withdrawing fees to the zero address", async function () {
+      await expect(
+        klerosJudge.connect(owner).withdrawFees(tokenAddr, ethers.ZeroAddress, 1)
+      ).to.be.revertedWithCustomError(klerosJudge, "ZeroWithdrawalRecipient");
     });
   });
 

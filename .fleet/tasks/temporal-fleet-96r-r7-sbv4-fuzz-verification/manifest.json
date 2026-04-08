@@ -1,0 +1,20 @@
+{
+  "task_id": "temporal-fleet-96r-r7-sbv4-fuzz-verification",
+  "harness_version": "v1",
+  "branch": "ff/Ttemporal-fleet-96r-r7-sbv4-fuzz-verification",
+  "base_branch": "ff/Ttemporal-fleet-96r",
+  "base_commit": "7608d0f2c1af22b9d0ed4571983972b1b19cdbf2",
+  "head_commit": "0c0544e9e89598ff6dbce3d8c0b7312adb68c5c6",
+  "changed_files": [
+    ".fleet/tasks/temporal-fleet-96r-r7-sbv4-fuzz-verification/analysis.md",
+    "test/SimpleBondV4.test.js",
+    "test/helpers/simpleBondV4Fuzz.js"
+  ],
+  "lines_added": 135,
+  "lines_removed": 2,
+  "commit_count": 2,
+  "start_ts": "2026-04-04T09:10:34.006Z",
+  "end_ts": "2026-04-04T09:16:03.999Z",
+  "provider": "codex",
+  "status": "completed"
+}

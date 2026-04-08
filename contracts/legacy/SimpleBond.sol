@@ -23,6 +23,8 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 contract SimpleBond {
     using SafeERC20 for IERC20;
 
+    error InsufficientChallengeAmount(uint256 challengeAmount, uint256 judgeFee);
+
     struct Challenge {
         address challenger;
         uint8 status; // 0=pending, 1=won, 2=lost, 3=refunded
@@ -92,7 +94,9 @@ contract SimpleBond {
         require(deadline > block.timestamp, "Deadline in past");
         require(rulingBuffer > 0, "Zero ruling buffer");
         require(judgeFee < bondAmount + challengeAmount, "Fee >= pot");
-        require(judgeFee <= challengeAmount, "Fee > challenge amount");
+        if (judgeFee > challengeAmount) {
+            revert InsufficientChallengeAmount(challengeAmount, judgeFee);
+        }
 
         bondId = nextBondId++;
         uint256 rulingDeadline = deadline + rulingBuffer;

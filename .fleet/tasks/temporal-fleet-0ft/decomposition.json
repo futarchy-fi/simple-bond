@@ -1,0 +1,45 @@
+[
+  {
+    "id": "analyze-simplebondv4-revert-surface",
+    "title": "Audit the current SimpleBondV4 revert surface",
+    "description": "Inventory every string-based require in contracts/SimpleBondV4.sol, identify shared helper checks, and map the current revert strings to the tests that assert them so message changes stay complete and behavior-preserving.",
+    "dependsOn": [],
+    "level": "analysis"
+  },
+  {
+    "id": "define-simplebondv4-message-catalog",
+    "title": "Define the replacement error-message catalog",
+    "description": "Choose the final comprehensive wording for each failure case, keeping repeated conditions consistent across inline checks and helper functions while preserving the current validation order and the existing InsufficientChallengeAmount custom error.",
+    "dependsOn": [
+      "analyze-simplebondv4-revert-surface"
+    ],
+    "level": "analysis"
+  },
+  {
+    "id": "update-simplebondv4-require-strings",
+    "title": "Rewrite SimpleBondV4 require messages",
+    "description": "Update the string arguments on all require statements in contracts/SimpleBondV4.sol, including registry, bond lifecycle, view, and internal helper paths, without changing any control flow, state transitions, or access rules.",
+    "dependsOn": [
+      "define-simplebondv4-message-catalog"
+    ],
+    "level": "task"
+  },
+  {
+    "id": "update-simplebondv4-revert-tests",
+    "title": "Align SimpleBondV4 tests with the new messages",
+    "description": "Revise the exact-string revert assertions in test/SimpleBondV4.test.js so they match the new comprehensive messages while preserving the same first-failing-condition expectations in overlapping invalid-state scenarios.",
+    "dependsOn": [
+      "update-simplebondv4-require-strings"
+    ],
+    "level": "task"
+  },
+  {
+    "id": "verify-simplebondv4-error-message-changes",
+    "title": "Verify compilation and targeted revert coverage",
+    "description": "Run the targeted SimpleBondV4 Hardhat tests after the contract and test updates to confirm the new require messages surface correctly and no behavior changed beyond revert text.",
+    "dependsOn": [
+      "update-simplebondv4-revert-tests"
+    ],
+    "level": "task"
+  }
+]
