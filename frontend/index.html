@@ -2536,13 +2536,29 @@ function showBrowseLoadingState() {
   if (listEl) listEl.innerHTML = "";
 }
 
-function switchTab(name) {
+function isValidTabName(name) {
+  return ["create", "browse", "judges", "my", "view"].includes(name);
+}
+
+function updateTabUrl(name) {
+  if (!isValidTabName(name)) return;
+  const url = new URL(window.location);
+  url.searchParams.set("tab", name);
+  if (name !== "view") {
+    url.searchParams.delete("bond");
+  }
+  history.replaceState(null, "", url);
+}
+
+function switchTab(name, { updateUrl = true } = {}) {
+  if (!isValidTabName(name)) return;
   setJudgeProfilePageVisible(false);
   document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.tab === name));
   ["create", "browse", "judges", "my", "view"].forEach(t => {
     const el = document.getElementById("tab-" + t);
     if (el) el.classList.toggle("hidden", t !== name);
   });
+  if (updateUrl) updateTabUrl(name);
   if (name === "my" && userAddr) {
     showMyBondsLoadingState();
     loadMyBonds();
@@ -4913,7 +4929,7 @@ function restoreForm() {
     }
     if (data._rulingBuffer) setRulingBuffer(data._rulingBuffer);
     if (data._acceptanceDelay) setAcceptanceDelay(data._acceptanceDelay);
-    if (data._tab) switchTab(data._tab);
+    if (data._tab) switchTab(data._tab, { updateUrl: false });
     onJudgeSelectChange();
   } catch (_) {}
 }
@@ -4930,6 +4946,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   // Parse chain from URL
   const params = new URLSearchParams(window.location.search);
   const chainParam = params.get("chain");
+  const tabParam = params.get("tab");
   const judgeProfileRouteId = getJudgeProfileRouteId();
   if (chainParam) {
     activeChainId = getChainIdFromParam(chainParam);
@@ -4952,9 +4969,11 @@ window.addEventListener("DOMContentLoaded", async () => {
     document.getElementById("connectScreen").classList.add("hidden");
     document.getElementById("mainApp").classList.remove("hidden");
     document.getElementById("connectBtn").classList.remove("hidden");
-    switchTab("view");
+    switchTab("view", { updateUrl: false });
     document.getElementById("bondIdInput").value = bondParam;
     setTimeout(() => loadBond(), 500);
+  } else if (isValidTabName(tabParam || "")) {
+    switchTab(tabParam, { updateUrl: false });
   }
 
   // Try auto-reconnect
