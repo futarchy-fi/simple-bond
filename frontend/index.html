@@ -3569,8 +3569,7 @@ async function showJudgeProfilePage(profileId) {
     currentJudgeProfileView = profile;
     const profileChain = CHAINS[profile.chainId];
     const addressEl = document.getElementById("judgeProfileAddress");
-    addressEl.href = profileChain ? `${profileChain.explorer}/address/${profile.address}` : "#";
-    addressEl.textContent = short(profile.address);
+    setJudgeLink(addressEl, profile.address, { profile, chainId: profile.chainId });
     addressEl.title = profile.address;
     resolveEns(profile.address).then(name => {
       if (
@@ -3579,7 +3578,6 @@ async function showJudgeProfilePage(profileId) {
         name
       ) {
         document.getElementById("judgeProfileTitle").textContent = name;
-        addressEl.textContent = `${name} (${short(profile.address)})`;
       }
     });
     document.getElementById("judgeProfileTitle").textContent = short(profile.address);
@@ -3624,6 +3622,15 @@ function getJudgeRegistryChainIds() {
 
 function formatJudgeChainList(chainIds) {
   return chainIds.map(chainId => CHAINS[chainId]?.name || `Chain ${chainId}`).join(", ");
+}
+
+function parseJudgeRegistration(value) {
+  if (typeof value === "boolean") return value;
+  if (value && typeof value === "object") {
+    if (typeof value.registered === "boolean") return value.registered;
+    if (typeof value[0] === "boolean") return value[0];
+  }
+  return false;
 }
 
 async function findRegisteredJudgeChains(address, { excludeChainId = null } = {}) {
