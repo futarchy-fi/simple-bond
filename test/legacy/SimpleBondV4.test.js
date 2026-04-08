@@ -37,7 +37,7 @@ describe("SimpleBondV4 fuzz fixture helper", function () {
 
     expect(await customFixture.bond.judges(customFixture.actors.judge.address)).to.equal(false);
     expect(await customFixture.read.getJudgeMinFee()).to.equal(0n);
-    await expect(customFixture.actions.createBond()).to.be.revertedWith("Judge not registered");
+    await expect(customFixture.actions.createBond()).to.be.revertedWith("Selected judge is not registered");
   });
 });
 
