@@ -2909,6 +2909,13 @@ async function loadBond() {
       }
     }
 
+    if (status === "Rejected by Judge") {
+      const rejectedNote = document.createElement("div");
+      rejectedNote.className = "msg msg-info";
+      rejectedNote.textContent = "Rejected bonds refund the poster automatically. No poster withdrawal action is required.";
+      btnsDiv.appendChild(rejectedNote);
+    }
+
     actionsDiv.classList.toggle("hidden", btnsDiv.children.length === 0);
     msg.innerHTML = "";
   } catch (err) {
