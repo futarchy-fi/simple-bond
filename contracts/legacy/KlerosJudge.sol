@@ -10,16 +10,63 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
  * @notice Minimal interface for the SimpleBondV4 functions KlerosJudge needs.
  */
 interface ISimpleBondV4 {
+    /**
+     * @notice Registers the caller as an available judge.
+     */
     function registerAsJudge() external;
+
+    /**
+     * @notice Records a ruling in favor of the current challenger.
+     * @param bondId The bond to rule on
+     * @param feeCharged The judge fee charged for the ruling
+     */
     function ruleForChallenger(uint256 bondId, uint256 feeCharged) external;
+
+    /**
+     * @notice Records a ruling in favor of the poster.
+     * @param bondId The bond to rule on
+     * @param feeCharged The judge fee charged for the ruling
+     */
     function ruleForPoster(uint256 bondId, uint256 feeCharged) external;
+
+    /**
+     * @notice Rejects a bond and unwinds it without a winner.
+     * @param bondId The bond to reject
+     */
     function rejectBond(uint256 bondId) external;
+
+    /**
+     * @notice Returns the earliest timestamp when ruling may begin.
+     * @param bondId The bond to inspect
+     * @return windowStart The timestamp when the ruling window opens
+     */
     function rulingWindowStart(uint256 bondId) external view returns (uint256);
+
+    /**
+     * @notice Returns the latest timestamp when ruling is still allowed.
+     * @param bondId The bond to inspect
+     * @return deadline The timestamp when the ruling window closes
+     */
     function rulingDeadline(uint256 bondId) external view returns (uint256);
+
+    /**
+     * @notice Returns data for a specific challenge on a bond.
+     * @param bondId The bond to inspect
+     * @param index The challenge index to read
+     * @return challenger The challenger address
+     * @return status The challenge status
+     * @return metadata The challenge metadata string
+     */
     function getChallenge(uint256 bondId, uint256 index)
         external
         view
         returns (address challenger, uint8 status, string memory metadata);
+
+    /**
+     * @notice Returns the total number of challenges filed against a bond.
+     * @param bondId The bond to inspect
+     * @return count The number of recorded challenges
+     */
     function getChallengeCount(uint256 bondId) external view returns (uint256);
 }
 
@@ -42,20 +89,49 @@ interface ISimpleBondV4 {
 contract KlerosJudge is IArbitrable, IEvidence {
     using SafeERC20 for IERC20;
 
+    error ZeroArbitratorAddress();
+    error ZeroSimpleBondAddress();
+    error CallerNotOwner();
+    error ZeroWithdrawalRecipient();
+    error ZeroNewOwner();
+    error DisputeAlreadyExists();
+    error BondPastRulingDeadline();
+    error InsufficientArbitrationFee();
+    error ArbitrationFeeRefundFailed();
+    error BondNotJudgedByAdapter();
+    error BondAlreadySettled();
+    error BondConceded();
+    error NoPendingChallenge();
+    error ChallengeNotPending();
+    error CallerNotPosterOrChallenger();
+    error CallerNotArbitrator();
+    error DisputeNotActive();
+    error InvalidRuling();
+    error NoDisputeForChallenge();
+    error DisputeNotRuled();
+    error BeforeRulingWindow();
+
     // --- Constants -----------------------------------------------------------
 
+    /// @notice Returns the number of non-zero ruling options Kleros may choose from.
     uint256 public constant RULING_CHOICES = 2;
+    /// @notice Returns the ERC-792 ruling value that resolves a dispute in favor of the poster.
     uint256 public constant RULING_POSTER = 1;
+    /// @notice Returns the ERC-792 ruling value that resolves a dispute in favor of the challenger.
     uint256 public constant RULING_CHALLENGER = 2;
 
     // --- Immutables ----------------------------------------------------------
 
+    /// @notice Returns the Kleros arbitrator contract used to create and receive disputes.
     IArbitrator public immutable arbitrator;
+    /// @notice Returns the SimpleBondV4 contract this adapter executes rulings against.
     ISimpleBondV4 public immutable simpleBond;
 
     // --- State ---------------------------------------------------------------
 
+    /// @notice Returns the arbitrator extra data used for future dispute creations.
     bytes public arbitratorExtraData;
+    /// @notice Returns the address allowed to administer this adapter.
     address public owner;
 
     enum DisputeStatus { None, Active, Ruled, Executed }
@@ -97,6 +173,8 @@ contract KlerosJudge is IArbitrable, IEvidence {
     // --- Constructor ---------------------------------------------------------
 
     /**
+     * @notice Initializes the adapter, registers it as a SimpleBondV4 judge,
+     *         and emits the ERC-1497 meta-evidence reference.
      * @param _arbitrator       Kleros arbitrator contract (e.g., KlerosLiquid)
      * @param _simpleBond       SimpleBondV4 contract
      * @param _arbitratorExtraData  Encodes subcourt ID + juror count
@@ -108,8 +186,8 @@ contract KlerosJudge is IArbitrable, IEvidence {
         bytes memory _arbitratorExtraData,
         string memory _metaEvidence
     ) {
-        require(_arbitrator != address(0), "Zero arbitrator");
-        require(_simpleBond != address(0), "Zero simpleBond");
+        if (_arbitrator == address(0)) revert ZeroArbitratorAddress();
+        if (_simpleBond == address(0)) revert ZeroSimpleBondAddress();
 
         arbitrator = IArbitrator(_arbitrator);
         simpleBond = ISimpleBondV4(_simpleBond);
@@ -126,7 +204,7 @@ contract KlerosJudge is IArbitrable, IEvidence {
     // --- Modifiers -----------------------------------------------------------
 
     modifier onlyOwner() {
-        require(msg.sender == owner, "Only owner");
+        if (msg.sender != owner) revert CallerNotOwner();
         _;
     }
 
@@ -143,11 +221,12 @@ contract KlerosJudge is IArbitrable, IEvidence {
         uint256 currentChallenge = _validateAndGetChallenge(bondId);
 
         // No duplicate dispute for this challenge
-        require(!hasDispute[bondId][currentChallenge], "Dispute already exists");
+        if (hasDispute[bondId][currentChallenge]) revert DisputeAlreadyExists();
+        if (block.timestamp > simpleBond.rulingDeadline(bondId)) revert BondPastRulingDeadline();
 
         // Create Kleros dispute
         uint256 cost = arbitrator.arbitrationCost(arbitratorExtraData);
-        require(msg.value >= cost, "Insufficient arbitration fee");
+        if (msg.value < cost) revert InsufficientArbitrationFee();
 
         disputeID = arbitrator.createDispute{value: cost}(
             RULING_CHOICES,
@@ -169,7 +248,7 @@ contract KlerosJudge is IArbitrable, IEvidence {
         // Refund excess ETH
         if (msg.value > cost) {
             (bool sent, ) = msg.sender.call{value: msg.value - cost}("");
-            require(sent, "Refund failed");
+            if (!sent) revert ArbitrationFeeRefundFailed();
         }
 
         // Emit ERC-1497 events
@@ -187,11 +266,11 @@ contract KlerosJudge is IArbitrable, IEvidence {
      * @param _ruling    0=refused, 1=poster, 2=challenger
      */
     function rule(uint256 _disputeID, uint256 _ruling) external override {
-        require(msg.sender == address(arbitrator), "Only arbitrator");
+        if (msg.sender != address(arbitrator)) revert CallerNotArbitrator();
 
         DisputeData storage d = disputes[_disputeID];
-        require(d.status == DisputeStatus.Active, "Dispute not active");
-        require(_ruling <= RULING_CHOICES, "Invalid ruling");
+        if (d.status != DisputeStatus.Active) revert DisputeNotActive();
+        if (_ruling > RULING_CHOICES) revert InvalidRuling();
 
         d.ruling = _ruling;
         d.status = DisputeStatus.Ruled;
@@ -204,15 +283,15 @@ contract KlerosJudge is IArbitrable, IEvidence {
      */
     function executeRuling(uint256 _disputeID) external {
         DisputeData storage d = disputes[_disputeID];
-        require(d.status == DisputeStatus.Ruled, "Not yet ruled");
+        if (d.status != DisputeStatus.Ruled) revert DisputeNotRuled();
 
         uint256 bondId = d.bondId;
 
         // Verify ruling window is open
         uint256 windowStart = simpleBond.rulingWindowStart(bondId);
-        require(block.timestamp >= windowStart, "Before ruling window");
+        if (block.timestamp < windowStart) revert BeforeRulingWindow();
         uint256 deadline = simpleBond.rulingDeadline(bondId);
-        require(block.timestamp <= deadline, "Past ruling deadline");
+        if (block.timestamp > deadline) revert BondPastRulingDeadline();
 
         d.status = DisputeStatus.Executed;
 
@@ -242,14 +321,67 @@ contract KlerosJudge is IArbitrable, IEvidence {
         uint256 challengeIndex,
         string calldata _evidence
     ) external {
-        require(hasDispute[bondId][challengeIndex], "No dispute for this challenge");
+        if (!hasDispute[bondId][challengeIndex]) revert NoDisputeForChallenge();
 
         uint256 dID = bondChallengeToDispute[bondId][challengeIndex];
         DisputeData storage d = disputes[dID];
-        require(d.status == DisputeStatus.Active, "Dispute not active");
+        if (d.status != DisputeStatus.Active) revert DisputeNotActive();
 
         uint256 evidenceGroupID = _evidenceGroupID(bondId, challengeIndex);
         emit Evidence(arbitrator, evidenceGroupID, msg.sender, _evidence);
+    }
+
+    // --- Appeal Stubs -------------------------------------------------------
+
+    /**
+     * @notice ERC-792 and Kleros define an appeal lifecycle for disputes.
+     *         This adapter does not yet support safely propagating appeals
+     *         through the current SimpleBondV4 timing model, so the appeal
+     *         entrypoint is exposed as an explicit stub for interface clarity
+     *         and as a future extension point.
+     * @param _disputeID The dispute to appeal
+     * @param _extraData Arbitrator-defined appeal metadata
+     */
+    function appeal(uint256 _disputeID, bytes calldata _extraData) external payable {
+        _disputeID;
+        _extraData;
+        revert("Appeals not yet supported");
+    }
+
+    /**
+     * @notice ERC-792 and Kleros define an appeal-cost query for disputes.
+     *         This adapter does not yet support safely propagating appeals
+     *         through the current SimpleBondV4 timing model, so the function
+     *         is exposed as an explicit stub for interface clarity and as a
+     *         future extension point.
+     * @param _disputeID The dispute to inspect
+     * @param _extraData Arbitrator-defined appeal metadata
+     * @return cost The appeal cost, once appeal support exists
+     */
+    function appealCost(
+        uint256 _disputeID,
+        bytes calldata _extraData
+    ) external view returns (uint256) {
+        _disputeID;
+        _extraData;
+        revert("Appeals not yet supported");
+    }
+
+    /**
+     * @notice ERC-792 and Kleros define an appeal period for disputes.
+     *         This adapter does not yet support safely propagating appeals
+     *         through the current SimpleBondV4 timing model, so the function
+     *         is exposed as an explicit stub for interface clarity and as a
+     *         future extension point.
+     * @param _disputeID The dispute to inspect
+     * @return start The appeal period start, once appeal support exists
+     * @return end The appeal period end, once appeal support exists
+     */
+    function appealPeriod(
+        uint256 _disputeID
+    ) external view returns (uint256, uint256) {
+        _disputeID;
+        revert("Appeals not yet supported");
     }
 
     // --- Owner Functions -----------------------------------------------------
@@ -261,7 +393,7 @@ contract KlerosJudge is IArbitrable, IEvidence {
      * @param amount Amount to withdraw
      */
     function withdrawFees(address token, address to, uint256 amount) external onlyOwner {
-        require(to != address(0), "Zero address");
+        if (to == address(0)) revert ZeroWithdrawalRecipient();
         IERC20(token).safeTransfer(to, amount);
     }
 
@@ -279,7 +411,7 @@ contract KlerosJudge is IArbitrable, IEvidence {
      * @param newOwner The new owner address
      */
     function transferOwnership(address newOwner) external onlyOwner {
-        require(newOwner != address(0), "Zero address");
+        if (newOwner == address(0)) revert ZeroNewOwner();
         emit OwnershipTransferred(owner, newOwner);
         owner = newOwner;
     }
@@ -332,21 +464,20 @@ contract KlerosJudge is IArbitrable, IEvidence {
         bool conceded  = _readBondWord(bondId, 11) != 0;
         uint256 currentChallenge = _readBondWord(bondId, 12);
 
-        require(judge == address(this), "Not judge for this bond");
-        require(!settled, "Bond already settled");
-        require(!conceded, "Bond conceded");
+        if (judge != address(this)) revert BondNotJudgedByAdapter();
+        if (settled) revert BondAlreadySettled();
+        if (conceded) revert BondConceded();
 
         uint256 challengeCount = simpleBond.getChallengeCount(bondId);
-        require(currentChallenge < challengeCount, "No pending challenge");
+        if (currentChallenge >= challengeCount) revert NoPendingChallenge();
 
         (address challenger, uint8 challengeStatus, ) =
             simpleBond.getChallenge(bondId, currentChallenge);
-        require(challengeStatus == 0, "Challenge not pending");
+        if (challengeStatus != 0) revert ChallengeNotPending();
 
-        require(
-            msg.sender == poster || msg.sender == challenger,
-            "Only poster or challenger"
-        );
+        if (msg.sender != poster && msg.sender != challenger) {
+            revert CallerNotPosterOrChallenger();
+        }
 
         return currentChallenge;
     }

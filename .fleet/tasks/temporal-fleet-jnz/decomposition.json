@@ -1,0 +1,35 @@
+[
+  {
+    "id": "scope-v4-invariant-ticket",
+    "title": "Scope the V4 invariant ticket",
+    "description": "Compare the existing V3 and V4 bond test suites to determine what 'invariant checks' means in this repository and whether the current branch already contains the expected coverage.",
+    "dependsOn": [],
+    "level": "analysis"
+  },
+  {
+    "id": "map-v4-accounting-invariants",
+    "title": "Map V4 accounting invariants to contract flows",
+    "description": "Trace createBond, challenge, ruleForPoster, ruleForChallenger, concede, withdrawBond, and claimTimeout in SimpleBondV4 so each invariant assertion is grounded in the contract's escrow and payout behavior.",
+    "dependsOn": [],
+    "level": "analysis"
+  },
+  {
+    "id": "ensure-v4-invariant-checks",
+    "title": "Ensure SimpleBondV4 invariant checks exist",
+    "description": "If coverage is missing, add example-based checks in test/SimpleBondV4.test.js for the fixed bond pool after poster wins, stable bond/challenge/judge-fee thresholds across queued challenges, and total-token conservation. If the checks are already present, treat this node as verification-only.",
+    "dependsOn": [
+      "scope-v4-invariant-ticket",
+      "map-v4-accounting-invariants"
+    ],
+    "level": "task"
+  },
+  {
+    "id": "verify-simplebondv4-suite",
+    "title": "Verify the SimpleBondV4 suite",
+    "description": "Run the targeted Hardhat suite for test/SimpleBondV4.test.js and confirm the invariant checks pass without regressing the surrounding challenge-flow coverage.",
+    "dependsOn": [
+      "ensure-v4-invariant-checks"
+    ],
+    "level": "task"
+  }
+]

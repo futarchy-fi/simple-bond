@@ -37,7 +37,7 @@ describe("SimpleBondV4 fuzz fixture helper", function () {
 
     expect(await customFixture.bond.judges(customFixture.actors.judge.address)).to.equal(false);
     expect(await customFixture.read.getJudgeMinFee()).to.equal(0n);
-    await expect(customFixture.actions.createBond()).to.be.revertedWith("Judge not registered");
+    await expect(customFixture.actions.createBond()).to.be.revertedWith("Selected judge is not registered");
   });
 });
 
@@ -64,6 +64,21 @@ describe("SimpleBondV4", function () {
 
   async function challengeBond(bondId, challenger, metadata = "I found errors") {
     await fixture.actions.challenge({ bondId, challenger, metadata });
+  }
+
+  async function setBondCurrentChallenge(bondId, currentChallenge) {
+    const bondBaseSlot = BigInt(
+      ethers.keccak256(
+        ethers.AbiCoder.defaultAbiCoder().encode(["uint256", "uint256"], [bondId, 1n])
+      )
+    );
+    const currentChallengeSlot = ethers.toBeHex(bondBaseSlot + 11n, 32);
+    await ethers.provider.send("hardhat_setStorageAt", [
+      await bond.getAddress(),
+      currentChallengeSlot,
+      ethers.toBeHex(currentChallenge, 32),
+    ]);
+    await ethers.provider.send("evm_mine", []);
   }
   beforeEach(async function () {
     fixture = await deploySimpleBondV4FuzzFixture();
@@ -140,13 +155,20 @@ describe("SimpleBondV4", function () {
     it("reverts deregister if not registered", async function () {
       await expect(
         bond.connect(outsider).deregisterAsJudge()
-      ).to.be.revertedWith("Not registered");
+      ).to.be.revertedWith("Caller is not a registered judge");
     });
 
     it("reverts setJudgeFee if not registered", async function () {
       await expect(
         bond.connect(outsider).setJudgeFee(tokenAddr, 100)
-      ).to.be.revertedWith("Not registered");
+      ).to.be.revertedWith("Caller is not a registered judge");
+    });
+
+    it("reverts setJudgeFee for zero token address", async function () {
+      await bond.connect(outsider).registerAsJudge();
+      await expect(
+        bond.connect(outsider).setJudgeFee(ethers.ZeroAddress, 100)
+      ).to.be.revertedWith("Token address cannot be zero");
     });
 
     it("re-registration preserves existing per-token fees", async function () {
@@ -192,13 +214,27 @@ describe("SimpleBondV4", function () {
       await bond.connect(outsider).registerAsJudge();
       await expect(
         bond.connect(outsider).setJudgeFees([tokenAddr], [100, 200])
-      ).to.be.revertedWith("Length mismatch");
+      ).to.be.revertedWith("Token and minimum fee array lengths must match");
+    });
+
+    it("batch setJudgeFees reverts on empty batch", async function () {
+      await bond.connect(outsider).registerAsJudge();
+      await expect(
+        bond.connect(outsider).setJudgeFees([], [])
+      ).to.be.revertedWith("At least one token fee entry is required");
     });
 
     it("batch setJudgeFees reverts if not registered", async function () {
       await expect(
         bond.connect(outsider).setJudgeFees([tokenAddr], [100])
-      ).to.be.revertedWith("Not registered");
+      ).to.be.revertedWith("Caller is not a registered judge");
+    });
+
+    it("batch setJudgeFees reverts for zero token address", async function () {
+      await bond.connect(outsider).registerAsJudge();
+      await expect(
+        bond.connect(outsider).setJudgeFees([tokenAddr, ethers.ZeroAddress], [100, 200])
+      ).to.be.revertedWith("Token address cannot be zero");
     });
   });
 
@@ -215,7 +251,7 @@ describe("SimpleBondV4", function () {
           outsider.address, // not registered
           deadline, ACCEPTANCE_DELAY, RULING_BUFFER, "Test"
         )
-      ).to.be.revertedWith("Judge not registered");
+      ).to.be.revertedWith("Selected judge is not registered");
     });
 
     it("reverts if fee below judge minimum for that token", async function () {
@@ -229,7 +265,7 @@ describe("SimpleBondV4", function () {
           outsider.address,
           deadline, ACCEPTANCE_DELAY, RULING_BUFFER, "Test"
         )
-      ).to.be.revertedWith("Fee below judge minimum");
+      ).to.be.revertedWith("Judge fee is below the selected judge's minimum for this token");
     });
 
     it("succeeds with registered judge and sufficient fee", async function () {
@@ -240,7 +276,7 @@ describe("SimpleBondV4", function () {
           judge.address, // registered with per-token minFee=500
           deadline, ACCEPTANCE_DELAY, RULING_BUFFER, "Valid bond"
         )
-      ).to.emit(bond, "BondCreated");
+      ).to.emit(bond, DETAILED_BOND_CREATED_EVENT);
     });
 
     it("succeeds when fee equals judge minimum exactly", async function () {
@@ -277,7 +313,7 @@ describe("SimpleBondV4", function () {
           judge.address,
           deadline, ACCEPTANCE_DELAY, RULING_BUFFER, "Test"
         )
-      ).to.be.revertedWith("Judge not registered");
+      ).to.be.revertedWith("Selected judge is not registered");
     });
 
     it("judge with no fee set for token allows zero-fee bonds", async function () {
@@ -315,7 +351,7 @@ describe("SimpleBondV4", function () {
           token2Addr, BOND_AMOUNT, CHALLENGE_AMOUNT, JUDGE_FEE,
           outsider.address, deadline, ACCEPTANCE_DELAY, RULING_BUFFER, "Token2 bond"
         )
-      ).to.be.revertedWith("Fee below judge minimum");
+      ).to.be.revertedWith("Judge fee is below the selected judge's minimum for this token");
     });
   });
 
@@ -363,17 +399,17 @@ describe("SimpleBondV4", function () {
     it("reverts if not the judge", async function () {
       await expect(
         bond.connect(poster).rejectBond(0)
-      ).to.be.revertedWith("Only judge");
+      ).to.be.revertedWith("Caller is not the judge for this bond");
       await expect(
         bond.connect(outsider).rejectBond(0)
-      ).to.be.revertedWith("Only judge");
+      ).to.be.revertedWith("Caller is not the judge for this bond");
     });
 
     it("reverts if already settled", async function () {
       await bond.connect(poster).withdrawBond(0);
       await expect(
         bond.connect(judge).rejectBond(0)
-      ).to.be.revertedWith("Already settled");
+      ).to.be.revertedWith("Bond is already settled");
     });
 
     it("reverts if already conceded", async function () {
@@ -381,7 +417,7 @@ describe("SimpleBondV4", function () {
       await bond.connect(poster).concede(0, "");
       await expect(
         bond.connect(judge).rejectBond(0)
-      ).to.be.revertedWith("Already settled");
+      ).to.be.revertedWith("Bond is already settled");
     });
 
     it("judge can reject after partial rulings", async function () {
@@ -414,6 +450,85 @@ describe("SimpleBondV4", function () {
       await expect(
         bond.connect(judge).rejectBond(999)
       ).to.be.revertedWith("Bond does not exist");
+    });
+  });
+
+  describe("Invalid Settlement Bond IDs", function () {
+    it("concede reverts for a nonexistent bond", async function () {
+      await expect(
+        bond.connect(poster).concede(0, "")
+      ).to.be.revertedWith("Bond does not exist");
+    });
+
+    it("ruleForPoster reverts for a nonexistent bond", async function () {
+      await expect(
+        bond.connect(judge).ruleForPoster(0, JUDGE_FEE)
+      ).to.be.revertedWith("Bond does not exist");
+    });
+
+    it("ruleForChallenger reverts for a nonexistent bond", async function () {
+      await expect(
+        bond.connect(judge).ruleForChallenger(0, JUDGE_FEE)
+      ).to.be.revertedWith("Bond does not exist");
+    });
+
+    it("withdrawBond reverts for a nonexistent bond", async function () {
+      await expect(
+        bond.connect(poster).withdrawBond(0)
+      ).to.be.revertedWith("Bond does not exist");
+    });
+
+    it("claimTimeout reverts for a nonexistent bond", async function () {
+      await expect(
+        bond.connect(outsider).claimTimeout(0)
+      ).to.be.revertedWith("Bond does not exist");
+    });
+  });
+
+  describe("View Helpers", function () {
+    it("getChallengeCount reverts for a nonexistent bond", async function () {
+      await expect(
+        bond.getChallengeCount(0)
+      ).to.be.revertedWith("Bond does not exist");
+    });
+
+    it("getChallenge reverts for a nonexistent bond", async function () {
+      await expect(
+        bond.getChallenge(0, 0)
+      ).to.be.revertedWith("Bond does not exist");
+    });
+
+    it("getChallenge reverts for an out-of-range challenge index", async function () {
+      await createDefaultBond();
+      await bond.connect(challenger1).challenge(0, "Only challenge");
+
+      await expect(
+        bond.getChallenge(0, 1)
+      ).to.be.revertedWith("Challenge does not exist");
+    });
+
+    it("rulingWindowStart reverts for a nonexistent bond", async function () {
+      await expect(
+        bond.rulingWindowStart(0)
+      ).to.be.revertedWith("Bond does not exist");
+    });
+
+    it("rulingDeadline reverts for a nonexistent bond", async function () {
+      await expect(
+        bond.rulingDeadline(0)
+      ).to.be.revertedWith("Bond does not exist");
+    });
+
+    it("getJudgeMinFee reverts for a zero judge address", async function () {
+      await expect(
+        bond.getJudgeMinFee(ethers.ZeroAddress, tokenAddr)
+      ).to.be.revertedWith("Judge address cannot be zero");
+    });
+
+    it("getJudgeMinFee reverts for a zero token address", async function () {
+      await expect(
+        bond.getJudgeMinFee(judge.address, ethers.ZeroAddress)
+      ).to.be.revertedWith("Token address cannot be zero");
     });
   });
 
@@ -464,20 +579,23 @@ describe("SimpleBondV4", function () {
   // 5. CREATION (existing V3 tests, adapted for V4)
   // =====================================================================
   describe("Bond Creation", function () {
-    it("creates a bond with correct parameters and emits BondCreated", async function () {
-      await expect(
-        bond.connect(poster).createBond(
-          tokenAddr,
-          BOND_AMOUNT, CHALLENGE_AMOUNT, JUDGE_FEE,
-          judge.address,
-          deadline, ACCEPTANCE_DELAY, RULING_BUFFER,
-          "Test claim"
-        )
-      ).to.emit(bond, "BondCreated").withArgs(
+    it("creates a bond with correct parameters and emits both BondCreated events", async function () {
+      const tx = bond.connect(poster).createBond(
+        tokenAddr,
+        BOND_AMOUNT, CHALLENGE_AMOUNT, JUDGE_FEE,
+        judge.address,
+        deadline, ACCEPTANCE_DELAY, RULING_BUFFER,
+        "Test claim"
+      );
+
+      await expect(tx).to.emit(bond, DETAILED_BOND_CREATED_EVENT).withArgs(
         0, poster.address, judge.address, tokenAddr,
         BOND_AMOUNT, CHALLENGE_AMOUNT, JUDGE_FEE,
         deadline, ACCEPTANCE_DELAY, RULING_BUFFER,
         "Test claim"
+      );
+      await expect(tx).to.emit(bond, LIGHTWEIGHT_BOND_CREATED_EVENT).withArgs(
+        0, poster.address, tokenAddr, BOND_AMOUNT
       );
 
       expect(await bond.nextBondId()).to.equal(1n);
@@ -491,13 +609,24 @@ describe("SimpleBondV4", function () {
       expect(await token.balanceOf(await bond.getAddress())).to.equal(BOND_AMOUNT);
     });
 
-    it("reverts on zero bond amount", async function () {
+    it("createBond reverts when bondAmount is 0", async function () {
       await expect(
         bond.connect(poster).createBond(
           tokenAddr, 0, CHALLENGE_AMOUNT, JUDGE_FEE,
           judge.address, deadline, ACCEPTANCE_DELAY, RULING_BUFFER, ""
         )
-      ).to.be.revertedWith("Zero bond amount");
+      ).to.be.revertedWith("Bond amount must be greater than zero");
+
+      expect(await bond.nextBondId()).to.equal(0n);
+    });
+
+    it("createBond reverts when challengeAmount is 0", async function () {
+      await expect(
+        bond.connect(poster).createBond(
+          tokenAddr, BOND_AMOUNT, 0, 0,
+          judge.address, deadline, ACCEPTANCE_DELAY, RULING_BUFFER, ""
+        )
+      ).to.be.revertedWith("Challenge amount must be greater than zero");
     });
 
     it("reverts if judgeFee > challengeAmount", async function () {
@@ -507,7 +636,9 @@ describe("SimpleBondV4", function () {
           CHALLENGE_AMOUNT + 1n,
           judge.address, deadline, ACCEPTANCE_DELAY, RULING_BUFFER, ""
         )
-      ).to.be.revertedWith("Fee > challenge amount");
+      )
+        .to.be.revertedWithCustomError(bond, "InsufficientChallengeAmount")
+        .withArgs(CHALLENGE_AMOUNT, CHALLENGE_AMOUNT + 1n);
     });
 
     it("allows zero judge fee (when judge has no per-token min fee)", async function () {
@@ -536,7 +667,16 @@ describe("SimpleBondV4", function () {
           tokenAddr, BOND_AMOUNT, CHALLENGE_AMOUNT, JUDGE_FEE,
           judge.address, 1, ACCEPTANCE_DELAY, RULING_BUFFER, ""
         )
-      ).to.be.revertedWith("Deadline in past");
+      ).to.be.revertedWith("Challenge deadline must be in the future");
+    });
+
+    it("reverts when rulingBuffer is 0", async function () {
+      await expect(
+        bond.connect(poster).createBond(
+          tokenAddr, BOND_AMOUNT, CHALLENGE_AMOUNT, JUDGE_FEE,
+          judge.address, deadline, ACCEPTANCE_DELAY, 0, ""
+        )
+      ).to.be.revertedWith("Ruling buffer must be greater than zero");
     });
 
     it("increments bondId for sequential creates", async function () {
@@ -557,11 +697,14 @@ describe("SimpleBondV4", function () {
       await createDefaultBond();
     });
 
-    it("accepts a challenge with metadata and emits Challenged", async function () {
-      await expect(
-        bond.connect(challenger1).challenge(0, "Section 3 contains factual errors")
-      ).to.emit(bond, "Challenged").withArgs(
+    it("accepts a challenge with metadata and emits both challenge events", async function () {
+      const tx = bond.connect(challenger1).challenge(0, "Section 3 contains factual errors");
+
+      await expect(tx).to.emit(bond, "Challenged").withArgs(
         0, 0, challenger1.address, "Section 3 contains factual errors"
+      );
+      await expect(tx).to.emit(bond, "BondChallenged").withArgs(
+        0, challenger1.address, CHALLENGE_AMOUNT
       );
     });
 
@@ -598,18 +741,21 @@ describe("SimpleBondV4", function () {
       expect(b2.lastChallengeTime).to.be.gt(t1);
     });
 
-    it("reverts challenge after deadline", async function () {
+    it("reverts challengeBond after the deadline has passed", async function () {
+      await time.setNextBlockTimestamp(deadline);
+      await challengeBond(0, challenger1, "Filed at the deadline");
+
       await time.increaseTo(deadline + 1);
       await expect(
-        bond.connect(challenger1).challenge(0, "Too late")
-      ).to.be.revertedWith("Past deadline");
+        challengeBond(0, challenger2, "Too late")
+      ).to.be.revertedWith("Challenge deadline has passed");
     });
 
     it("reverts challenge on settled bond", async function () {
       await bond.connect(poster).withdrawBond(0);
       await expect(
         bond.connect(challenger1).challenge(0, "")
-      ).to.be.revertedWith("Already settled");
+      ).to.be.revertedWith("Bond is already settled");
     });
 
     it("reverts challenge on conceded bond", async function () {
@@ -617,7 +763,7 @@ describe("SimpleBondV4", function () {
       await bond.connect(poster).concede(0, "You're right");
       await expect(
         bond.connect(challenger2).challenge(0, "")
-      ).to.be.revertedWith("Already settled");
+      ).to.be.revertedWith("Bond is already settled");
     });
   });
 
@@ -629,14 +775,15 @@ describe("SimpleBondV4", function () {
       await createDefaultBond();
     });
 
-    it("poster concedes, emits ClaimConceded with metadata", async function () {
+    it("poster concedes and emits both concession events", async function () {
       await bond.connect(challenger1).challenge(0, "You're wrong about X");
 
-      await expect(
-        bond.connect(poster).concede(0, "I was wrong because Y")
-      ).to.emit(bond, "ClaimConceded").withArgs(
+      const tx = bond.connect(poster).concede(0, "I was wrong because Y");
+
+      await expect(tx).to.emit(bond, "ClaimConceded").withArgs(
         0, poster.address, "I was wrong because Y"
       );
+      await expect(tx).to.emit(bond, "BondConceded").withArgs(0);
     });
 
     it("concession refunds poster's full bond", async function () {
@@ -689,13 +836,13 @@ describe("SimpleBondV4", function () {
       await bond.connect(challenger1).challenge(0, "");
       await expect(
         bond.connect(challenger1).concede(0, "")
-      ).to.be.revertedWith("Only poster");
+      ).to.be.revertedWith("Caller is not the poster for this bond");
     });
 
     it("reverts concession if no pending challenges", async function () {
       await expect(
         bond.connect(poster).concede(0, "")
-      ).to.be.revertedWith("No pending challenges");
+      ).to.be.revertedWith("Bond has no pending challenges");
     });
 
     it("reverts concession after judge has already ruled on first challenge", async function () {
@@ -707,7 +854,7 @@ describe("SimpleBondV4", function () {
 
       await expect(
         bond.connect(poster).concede(0, "Changed my mind")
-      ).to.be.revertedWith("Ruling already started");
+      ).to.be.revertedWith("Ruling has already started");
     });
 
     it("reverts double concession", async function () {
@@ -715,7 +862,7 @@ describe("SimpleBondV4", function () {
       await bond.connect(poster).concede(0, "");
       await expect(
         bond.connect(poster).concede(0, "")
-      ).to.be.revertedWith("Already settled");
+      ).to.be.revertedWith("Bond is already settled");
     });
 
     it("emits ChallengeRefunded for each queued challenger", async function () {
@@ -757,7 +904,7 @@ describe("SimpleBondV4", function () {
       await bond.connect(challenger1).challenge(0, "");
       await expect(
         bond.connect(judge).ruleForPoster(0, JUDGE_FEE)
-      ).to.be.revertedWith("Before ruling window");
+      ).to.be.revertedWith("Ruling window has not opened");
     });
 
     it("judge cannot rule after ruling deadline", async function () {
@@ -765,7 +912,22 @@ describe("SimpleBondV4", function () {
       await advancePastRulingDeadline();
       await expect(
         bond.connect(judge).ruleForPoster(0, JUDGE_FEE)
-      ).to.be.revertedWith("Past ruling deadline");
+      ).to.be.revertedWith("Ruling deadline has passed");
+    });
+
+    it("ruleForChallenger also reverts before the ruling window opens", async function () {
+      await bond.connect(challenger1).challenge(0, "");
+      await expect(
+        bond.connect(judge).ruleForChallenger(0, JUDGE_FEE)
+      ).to.be.revertedWith("Ruling window has not opened");
+    });
+
+    it("ruleForChallenger also reverts after the ruling deadline", async function () {
+      await bond.connect(challenger1).challenge(0, "");
+      await advancePastRulingDeadline();
+      await expect(
+        bond.connect(judge).ruleForChallenger(0, JUDGE_FEE)
+      ).to.be.revertedWith("Ruling deadline has passed");
     });
 
     it("judge can rule exactly at ruling window start", async function () {
@@ -782,7 +944,7 @@ describe("SimpleBondV4", function () {
 
       await expect(
         bond.connect(judge).ruleForPoster(0, JUDGE_FEE)
-      ).to.be.revertedWith("Before ruling window");
+      ).to.be.revertedWith("Ruling window has not opened");
 
       await bond.connect(poster).concede(0, "Conceding during acceptance delay");
       const b = await bond.bonds(0);
@@ -853,11 +1015,38 @@ describe("SimpleBondV4", function () {
       expect(status).to.equal(2n);
     });
 
-    it("emits RuledForPoster with feeCharged", async function () {
+    it("emits RuledForPoster and BondResolved for a poster win", async function () {
       await advanceToRulingWindow();
+      const tx = bond.connect(judge).ruleForPoster(0, JUDGE_FEE);
+
+      await expect(tx).to.emit(bond, "RuledForPoster").withArgs(
+        0, 0, challenger1.address, JUDGE_FEE
+      );
+      await expect(tx).to.emit(bond, "BondResolved").withArgs(
+        0, BOND_RESOLVED_FOR_POSTER
+      );
+    });
+
+    it("reverts if there is no pending challenge left to rule on", async function () {
+      await advanceToRulingWindow();
+      await bond.connect(judge).ruleForPoster(0, JUDGE_FEE);
+
       await expect(
         bond.connect(judge).ruleForPoster(0, JUDGE_FEE)
-      ).to.emit(bond, "RuledForPoster").withArgs(0, 0, challenger1.address, JUDGE_FEE);
+      ).to.be.revertedWith("No pending challenge to rule on");
+    });
+
+    it("reverts if the current challenge is no longer pending", async function () {
+      await advanceToRulingWindow();
+      await bond.connect(judge).ruleForPoster(0, JUDGE_FEE);
+
+      // Rewind the queue pointer to the already-lost challenge to exercise
+      // the defensive status check directly.
+      await setBondCurrentChallenge(0, 0);
+
+      await expect(
+        bond.connect(judge).ruleForPoster(0, JUDGE_FEE)
+      ).to.be.revertedWith("Current challenge is not pending");
     });
   });
 
@@ -911,6 +1100,44 @@ describe("SimpleBondV4", function () {
       expect(await token.balanceOf(challenger2.address) - before2).to.equal(CHALLENGE_AMOUNT);
       expect(await token.balanceOf(challenger3.address) - before3).to.equal(CHALLENGE_AMOUNT);
     });
+
+    it("emits RuledForChallenger and BondResolved for a challenger win", async function () {
+      await advanceToRulingWindow();
+      const tx = bond.connect(judge).ruleForChallenger(0, JUDGE_FEE);
+
+      await expect(tx).to.emit(bond, "RuledForChallenger").withArgs(
+        0, 0, challenger1.address, JUDGE_FEE
+      );
+      await expect(tx).to.emit(bond, "BondResolved").withArgs(
+        0, BOND_RESOLVED_FOR_CHALLENGER
+      );
+    });
+
+    it("reverts if feeCharged exceeds max judgeFee", async function () {
+      await advanceToRulingWindow();
+      await expect(
+        bond.connect(judge).ruleForChallenger(0, JUDGE_FEE + 1n)
+      ).to.be.revertedWith("Fee charged exceeds the bond's maximum judge fee");
+    });
+
+    it("reverts if there is no pending challenge left to rule on", async function () {
+      await advanceToRulingWindow();
+      await bond.connect(judge).ruleForPoster(0, JUDGE_FEE);
+
+      await expect(
+        bond.connect(judge).ruleForChallenger(0, JUDGE_FEE)
+      ).to.be.revertedWith("No pending challenge to rule on");
+    });
+
+    it("reverts if the current challenge is no longer pending", async function () {
+      await advanceToRulingWindow();
+      await bond.connect(judge).ruleForPoster(0, JUDGE_FEE);
+      await setBondCurrentChallenge(0, 0);
+
+      await expect(
+        bond.connect(judge).ruleForChallenger(0, JUDGE_FEE)
+      ).to.be.revertedWith("Current challenge is not pending");
+    });
   });
 
   // =====================================================================
@@ -948,7 +1175,7 @@ describe("SimpleBondV4", function () {
     it("reverts if feeCharged exceeds max judgeFee", async function () {
       await expect(
         bond.connect(judge).ruleForPoster(0, JUDGE_FEE + 1n)
-      ).to.be.revertedWith("Fee exceeds max");
+      ).to.be.revertedWith("Fee charged exceeds the bond's maximum judge fee");
     });
 
     it("full waiver on ruleForChallenger — challenger gets entire pot", async function () {
@@ -1041,7 +1268,8 @@ describe("SimpleBondV4", function () {
 
     it("poster withdraws with no challenges — before deadline", async function () {
       const before = await token.balanceOf(poster.address);
-      await bond.connect(poster).withdrawBond(0);
+      const tx = bond.connect(poster).withdrawBond(0);
+      await expect(tx).to.emit(bond, "BondWithdrawn").withArgs(0);
       expect(await token.balanceOf(poster.address) - before).to.equal(BOND_AMOUNT);
     });
 
@@ -1051,7 +1279,8 @@ describe("SimpleBondV4", function () {
       await bond.connect(judge).ruleForPoster(0, JUDGE_FEE);
 
       const before = await token.balanceOf(poster.address);
-      await bond.connect(poster).withdrawBond(0);
+      const tx = bond.connect(poster).withdrawBond(0);
+      await expect(tx).to.emit(bond, "BondWithdrawn").withArgs(0);
       expect(await token.balanceOf(poster.address) - before).to.equal(BOND_AMOUNT);
     });
 
@@ -1059,20 +1288,20 @@ describe("SimpleBondV4", function () {
       await bond.connect(challenger1).challenge(0, "");
       await expect(
         bond.connect(poster).withdrawBond(0)
-      ).to.be.revertedWith("Pending challenges");
+      ).to.be.revertedWith("Bond still has pending challenges");
     });
 
     it("reverts withdrawal by non-poster", async function () {
       await expect(
         bond.connect(outsider).withdrawBond(0)
-      ).to.be.revertedWith("Only poster");
+      ).to.be.revertedWith("Caller is not the poster for this bond");
     });
 
     it("reverts double withdrawal", async function () {
       await bond.connect(poster).withdrawBond(0);
       await expect(
         bond.connect(poster).withdrawBond(0)
-      ).to.be.revertedWith("Already settled");
+      ).to.be.revertedWith("Bond is already settled");
     });
   });
 
@@ -1126,7 +1355,7 @@ describe("SimpleBondV4", function () {
     it("reverts timeout before ruling deadline", async function () {
       await expect(
         bond.connect(outsider).claimTimeout(0)
-      ).to.be.revertedWith("Before ruling deadline");
+      ).to.be.revertedWith("Ruling deadline has not passed");
     });
 
     it("timeout after partial rulings — only refunds remaining challengers", async function () {
@@ -1298,20 +1527,20 @@ describe("SimpleBondV4", function () {
       await advanceToRulingWindow();
       await expect(
         bond.connect(poster).ruleForPoster(0, JUDGE_FEE)
-      ).to.be.revertedWith("Only judge");
+      ).to.be.revertedWith("Caller is not the judge for this bond");
       await expect(
         bond.connect(challenger1).ruleForPoster(0, JUDGE_FEE)
-      ).to.be.revertedWith("Only judge");
+      ).to.be.revertedWith("Caller is not the judge for this bond");
       await expect(
         bond.connect(outsider).ruleForPoster(0, JUDGE_FEE)
-      ).to.be.revertedWith("Only judge");
+      ).to.be.revertedWith("Caller is not the judge for this bond");
     });
 
     it("only judge can call ruleForChallenger", async function () {
       await advanceToRulingWindow();
       await expect(
         bond.connect(poster).ruleForChallenger(0, JUDGE_FEE)
-      ).to.be.revertedWith("Only judge");
+      ).to.be.revertedWith("Caller is not the judge for this bond");
     });
 
     it("only poster can withdraw", async function () {
@@ -1319,25 +1548,25 @@ describe("SimpleBondV4", function () {
       await bond.connect(judge).ruleForPoster(0, JUDGE_FEE);
       await expect(
         bond.connect(judge).withdrawBond(0)
-      ).to.be.revertedWith("Only poster");
+      ).to.be.revertedWith("Caller is not the poster for this bond");
     });
 
     it("only poster can concede", async function () {
       await expect(
         bond.connect(judge).concede(0, "")
-      ).to.be.revertedWith("Only poster");
+      ).to.be.revertedWith("Caller is not the poster for this bond");
       await expect(
         bond.connect(challenger1).concede(0, "")
-      ).to.be.revertedWith("Only poster");
+      ).to.be.revertedWith("Caller is not the poster for this bond");
     });
 
     it("only judge can reject bond", async function () {
       await expect(
         bond.connect(poster).rejectBond(0)
-      ).to.be.revertedWith("Only judge");
+      ).to.be.revertedWith("Caller is not the judge for this bond");
       await expect(
         bond.connect(outsider).rejectBond(0)
-      ).to.be.revertedWith("Only judge");
+      ).to.be.revertedWith("Caller is not the judge for this bond");
     });
   });
 });

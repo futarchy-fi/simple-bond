@@ -1,0 +1,37 @@
+[
+  {
+    "id": "sbv4-fuzz-fixture-actions-impl",
+    "title": "Implement the reusable SimpleBondV4 fuzz fixture and action driver",
+    "description": "Add `test/helpers/simpleBondV4Fuzz.js` in CommonJS, extract the deployment/setup logic from `test/SimpleBondV4.test.js`, provision a challenger pool with approvals, register a default judge fee, and expose deterministic wrappers plus raw read helpers for create/challenge/ruling/withdraw/timeout flows.",
+    "dependsOn": [],
+    "level": "task"
+  },
+  {
+    "id": "sbv4-fuzz-invariants",
+    "title": "Add reusable invariants on top of the fuzz fixture",
+    "description": "Implement assertion helpers for token conservation, queue monotonicity, `currentChallenge` bounds, poster-win locked-bond behavior, and terminal balance outcomes using the new fixture's read layer.",
+    "dependsOn": [
+      "sbv4-fuzz-fixture-actions-impl"
+    ],
+    "level": "task"
+  },
+  {
+    "id": "sbv4-fuzz-tests",
+    "title": "Add bounded seeded fuzz-style tests for SimpleBondV4 core flows",
+    "description": "Create a dedicated Hardhat test file that drives deterministic seeded action sequences through the fixture and invariants, covering sequential poster-win flows and terminal paths such as challenger win, concession, rejection, timeout, and withdrawal.",
+    "dependsOn": [
+      "sbv4-fuzz-fixture-actions-impl",
+      "sbv4-fuzz-invariants"
+    ],
+    "level": "task"
+  },
+  {
+    "id": "sbv4-fuzz-verification",
+    "title": "Verify helper integration, determinism, and runtime",
+    "description": "Run the new fuzz test file and the existing `test/SimpleBondV4.test.js` suite, confirm failures are seed-reproducible, and tune seed count or helper behavior so the added coverage is practical for normal local and CI execution.",
+    "dependsOn": [
+      "sbv4-fuzz-tests"
+    ],
+    "level": "task"
+  }
+]

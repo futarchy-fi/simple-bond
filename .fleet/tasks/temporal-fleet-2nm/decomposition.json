@@ -1,0 +1,37 @@
+[
+  {
+    "id": "audit-simplebondv4-interface-surface",
+    "title": "Audit the undocumented SimpleBondV4 ABI surface",
+    "description": "Identify every public or external function, generated getter, event, and custom error in contracts/SimpleBondV4.sol that is missing NatSpec entirely or is missing required @param/@return tags.",
+    "dependsOn": [],
+    "level": "analysis"
+  },
+  {
+    "id": "document-simplebondv4-functions-and-getters",
+    "title": "Add NatSpec to SimpleBondV4 functions and generated getters",
+    "description": "Document the public getter surface for nextBondId, bonds, challenges, judges, and judgeMinFees, and complete missing function NatSpec on createBond, withdrawBond, claimTimeout, getChallengeCount, getChallenge, getJudgeMinFee, rulingWindowStart, and rulingDeadline.",
+    "dependsOn": [
+      "audit-simplebondv4-interface-surface"
+    ],
+    "level": "task"
+  },
+  {
+    "id": "document-simplebondv4-events-and-errors",
+    "title": "Add NatSpec to SimpleBondV4 events and custom errors",
+    "description": "Document the InsufficientChallengeAmount error and the currently undocumented events, including both BondCreated overloads so generated interface docs distinguish the verbose and short-form emissions clearly.",
+    "dependsOn": [
+      "audit-simplebondv4-interface-surface"
+    ],
+    "level": "task"
+  },
+  {
+    "id": "verify-simplebondv4-documentation-pass",
+    "title": "Compile after the SimpleBondV4 documentation pass",
+    "description": "Run a compile pass after the NatSpec-only changes to confirm contracts/SimpleBondV4.sol still builds cleanly and that the documentation patch did not alter signatures or behavior.",
+    "dependsOn": [
+      "document-simplebondv4-functions-and-getters",
+      "document-simplebondv4-events-and-errors"
+    ],
+    "level": "task"
+  }
+]

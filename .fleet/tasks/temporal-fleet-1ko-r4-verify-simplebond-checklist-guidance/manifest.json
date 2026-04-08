@@ -1,0 +1,19 @@
+{
+  "task_id": "temporal-fleet-1ko-r4-verify-simplebond-checklist-guidance",
+  "harness_version": "v1",
+  "branch": "ff/Ttemporal-fleet-1ko-r4-verify-simplebond-checklist-guidance",
+  "base_branch": "ff/Ttemporal-fleet-1ko",
+  "base_commit": "77ec73317895801cf1b5ad01fbb2568313e9b652",
+  "head_commit": "224acafd7995c2b7ef04254a62a3a655479c0fab",
+  "changed_files": [
+    ".fleet/tasks/temporal-fleet-1ko-r4-verify-simplebond-checklist-guidance/analysis.md",
+    "test/printSimpleBondDeploymentChecklist.test.js"
+  ],
+  "lines_added": 211,
+  "lines_removed": 0,
+  "commit_count": 2,
+  "start_ts": "2026-04-04T15:27:26.289Z",
+  "end_ts": "2026-04-04T15:33:41.927Z",
+  "provider": "codex",
+  "status": "completed"
+}

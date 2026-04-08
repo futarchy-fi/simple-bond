@@ -1,0 +1,29 @@
+{
+  "taskId": "sb-011",
+  "latest": {
+    "verdict": "approve",
+    "reason": "Clean appeal stub implementation: ERC-792/Kleros-shaped signatures for future extensibility, all three revert with exact required string, NatSpec explains rationale, ABI surface test updated, dedicated revert tests pass.",
+    "risk": 1,
+    "design": 5,
+    "autonomy": 5,
+    "evidence": 5,
+    "confidence": 0.96,
+    "reviewRound": 1,
+    "maxReviewRounds": 3,
+    "receivedAt": "2026-04-03T12:54:33.762Z"
+  },
+  "history": [
+    {
+      "verdict": "approve",
+      "reason": "Clean appeal stub implementation: ERC-792/Kleros-shaped signatures for future extensibility, all three revert with exact required string, NatSpec explains rationale, ABI surface test updated, dedicated revert tests pass.",
+      "risk": 1,
+      "design": 5,
+      "autonomy": 5,
+      "evidence": 5,
+      "confidence": 0.96,
+      "reviewRound": 1,
+      "maxReviewRounds": 3,
+      "receivedAt": "2026-04-03T12:54:33.762Z"
+    }
+  ]
+}

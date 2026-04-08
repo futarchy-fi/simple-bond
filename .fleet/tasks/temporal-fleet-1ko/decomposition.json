@@ -1,0 +1,27 @@
+[
+  {
+    "id": "implement-simplebond-checklist-helper",
+    "title": "Add a SimpleBond deployment checklist helper",
+    "description": "Create a helper under scripts/ that accepts SimpleBondV4 deployment context such as network, contract name, address, transaction hash, and block number, then prints the concrete post-deploy follow-ups the repo needs.",
+    "dependsOn": [],
+    "level": "task"
+  },
+  {
+    "id": "wire-checklist-into-simplebond-deploy",
+    "title": "Print the checklist from the SimpleBond deploy flow",
+    "description": "Update scripts/deploy.js so a successful SimpleBondV4 deployment still logs the address, transaction hash, and mined block number, then invokes the checklist helper automatically.",
+    "dependsOn": [
+      "implement-simplebond-checklist-helper"
+    ],
+    "level": "task"
+  },
+  {
+    "id": "verify-simplebond-checklist-guidance",
+    "title": "Verify checklist output and repo-specific guidance",
+    "description": "Review or run the updated deployment path to confirm it prints the correct hardhat verify command and points operators to frontend/index.html, backend/config.mjs, and README.md without implying unsupported runtime networks are already wired through the product.",
+    "dependsOn": [
+      "wire-checklist-into-simplebond-deploy"
+    ],
+    "level": "task"
+  }
+]

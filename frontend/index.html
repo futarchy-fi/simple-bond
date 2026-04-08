@@ -3052,10 +3052,12 @@ async function resolveEns(addr) {
 let judgeEnsTimer = null;
 function resolveJudgeEns() {
   clearTimeout(judgeEnsTimer);
+  const input = document.getElementById("judgeAddr");
+  const val = input.value.trim();
+  delete input.dataset.resolvedAddr;
+  onJudgeSelectChange();
   judgeEnsTimer = setTimeout(async () => {
-    const input = document.getElementById("judgeAddr");
     const hint = document.getElementById("judgeEnsHint");
-    const val = input.value.trim();
     if (val.endsWith('.eth') || val.endsWith('.xyz') || val.endsWith('.id')) {
       hint.textContent = 'Resolving ENS name...';
       hint.style.color = 'var(--muted)';
@@ -3080,6 +3082,7 @@ function resolveJudgeEns() {
       hint.style.color = 'var(--muted)';
       delete input.dataset.resolvedAddr;
     }
+    onJudgeSelectChange();
   }, 500);
 }
 
@@ -4131,6 +4134,7 @@ async function loadJudgeSelectOnCreate() {
     _loadingJudgeSelect = false;
   }
   buildJudgeSelect();
+  onJudgeSelectChange();
 }
 
 function onJudgeSelectChange() {
@@ -4195,6 +4199,7 @@ function restoreForm() {
     if (data._rulingBuffer) setRulingBuffer(data._rulingBuffer);
     if (data._acceptanceDelay) setAcceptanceDelay(data._acceptanceDelay);
     if (data._tab) switchTab(data._tab);
+    onJudgeSelectChange();
   } catch (_) {}
 }
 

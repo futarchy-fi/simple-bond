@@ -1,0 +1,47 @@
+[
+  {
+    "id": "analyze-simplebondv4-event-surface",
+    "title": "Analyze the existing and target event surface for SimpleBondV4",
+    "description": "Inspect SimpleBondV4, its tests, and any hand-written ABI consumers to confirm which lifecycle transitions need lightweight event emissions and identify compatibility constraints around the overloaded BondCreated event.",
+    "dependsOn": [],
+    "level": "analysis"
+  },
+  {
+    "id": "update-simplebondv4-event-emissions",
+    "title": "Add or confirm lightweight lifecycle event emissions in SimpleBondV4",
+    "description": "In contracts/SimpleBondV4.sol, keep the existing detailed events and add or confirm additive lightweight events for bond creation, challenge, concession, and judge resolution, including explicit BondResolved verdict encoding.",
+    "dependsOn": [
+      "analyze-simplebondv4-event-surface"
+    ],
+    "level": "task"
+  },
+  {
+    "id": "extend-simplebondv4-event-tests",
+    "title": "Cover the new event emissions in the SimpleBondV4 test suite",
+    "description": "Update test/SimpleBondV4.test.js to assert both BondCreated signatures and the new BondChallenged, BondConceded, and BondResolved emissions for the relevant success paths.",
+    "dependsOn": [
+      "update-simplebondv4-event-emissions"
+    ],
+    "level": "task"
+  },
+  {
+    "id": "review-overloaded-bondcreated-consumers",
+    "title": "Review frontend and backend ABI consumers for BondCreated overload fallout",
+    "description": "Check whether frontend/index.html and backend/config.mjs need changes. If they must consume the lightweight BondCreated event too, switch any name-based BondCreated lookups to signature-specific resolution to avoid ambiguity.",
+    "dependsOn": [
+      "analyze-simplebondv4-event-surface",
+      "update-simplebondv4-event-emissions"
+    ],
+    "level": "analysis"
+  },
+  {
+    "id": "verify-simplebondv4-event-task",
+    "title": "Verify contract behavior and event compatibility",
+    "description": "Run the targeted SimpleBondV4 Hardhat tests and, if ABI consumer files changed, perform a smoke check that frontend and backend event parsing still resolve the intended BondCreated signature without ambiguity.",
+    "dependsOn": [
+      "extend-simplebondv4-event-tests",
+      "review-overloaded-bondcreated-consumers"
+    ],
+    "level": "task"
+  }
+]

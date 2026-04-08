@@ -1,0 +1,19 @@
+{
+  "task_id": "temporal-fleet-omz-r1-update-simplebondv4-event-emissions",
+  "harness_version": "v1",
+  "branch": "ff/Ttemporal-fleet-omz-r1-update-simplebondv4-event-emissions",
+  "base_branch": "ff/Ttemporal-fleet-omz",
+  "base_commit": "9f5e3770d160064457d5e573f2db1735a80d43fe",
+  "head_commit": "40fd7f7a6035f61e58e5ede7e42117de27f32413",
+  "changed_files": [
+    ".fleet/tasks/temporal-fleet-omz-r1-update-simplebondv4-event-emissions/analysis.md",
+    "frontend/index.html"
+  ],
+  "lines_added": 158,
+  "lines_removed": 17,
+  "commit_count": 2,
+  "start_ts": "2026-04-03T22:30:42.352Z",
+  "end_ts": "2026-04-03T22:36:36.155Z",
+  "provider": "codex",
+  "status": "completed"
+}
