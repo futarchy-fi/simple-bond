@@ -44,6 +44,14 @@ describe("SimpleBondV5 audit coverage", function () {
     await fixture.actions.advancePastRulingDeadline({ bondId: id });
   }
 
+  async function advancePastDeadline(id = 0) {
+    await fixture.actions.advancePastDeadline({ bondId: id });
+  }
+
+  async function claimAllRefunds(id = 0) {
+    await fixture.actions.claimAllRefunds({ bondId: id });
+  }
+
   beforeEach(async function () {
     fixture = await deploySimpleBondV5FuzzFixture();
     bond = fixture.bond;
@@ -77,6 +85,7 @@ describe("SimpleBondV5 audit coverage", function () {
       const challengerBefore = await token.balanceOf(challenger1.address);
 
       await fixture.actions.rejectBond();
+      await claimAllRefunds();
 
       expect(await token.balanceOf(poster.address) - posterBefore).to.equal(BOND_AMOUNT);
       expect(await token.balanceOf(challenger1.address) - challengerBefore).to.equal(CHALLENGE_AMOUNT);
@@ -96,6 +105,7 @@ describe("SimpleBondV5 audit coverage", function () {
       const challengerBefore = await token.balanceOf(challenger1.address);
 
       await fixture.actions.rejectBond();
+      await claimAllRefunds();
 
       expect(await token.balanceOf(poster.address) - posterBefore).to.equal(BOND_AMOUNT);
       expect(await token.balanceOf(challenger1.address) - challengerBefore).to.equal(CHALLENGE_AMOUNT);
@@ -127,11 +137,13 @@ describe("SimpleBondV5 audit coverage", function () {
 
       // Bond 0: resolved via rejectBond.
       await fixture.actions.rejectBond({ bondId: 0 });
+      await claimAllRefunds(0);
       const b0 = await bond.bonds(0);
       expect(b0.settled).to.be.true;
 
       // Bond 1: resolved via claimTimeout.
       await fixture.actions.claimTimeout({ bondId: 1 });
+      await claimAllRefunds(1);
       const b1 = await bond.bonds(1);
       expect(b1.settled).to.be.true;
     });
@@ -161,6 +173,7 @@ describe("SimpleBondV5 audit coverage", function () {
 
       // Judge rejects the rest.
       await fixture.actions.rejectBond();
+      await claimAllRefunds();
 
       // Poster gets bondAmount back from rejection.
       expect(await token.balanceOf(poster.address) - posterBefore).to.equal(BOND_AMOUNT);
@@ -187,6 +200,7 @@ describe("SimpleBondV5 audit coverage", function () {
       await advanceToRulingWindow();
       await fixture.actions.ruleForPoster({ feeCharged: 0n });
       await fixture.actions.rejectBond();
+      await claimAllRefunds();
 
       const [, status0] = await bond.getChallenge(0, 0);
       const [, status1] = await bond.getChallenge(0, 1);
@@ -267,6 +281,7 @@ describe("SimpleBondV5 audit coverage", function () {
 
       await advanceToRulingWindow();
       await fixture.actions.ruleForPoster({ feeCharged: 0n });
+      await advancePastDeadline();
       await bond.connect(poster).withdrawBond(0);
 
       expect(await totalHeld()).to.equal(before);
@@ -275,11 +290,11 @@ describe("SimpleBondV5 audit coverage", function () {
   });
 
   // -------------------------------------------------------------------------
-  // ManualJudge fee lockup (M-01)
+  // ManualJudge fee custody (M-01)
   // -------------------------------------------------------------------------
 
-  describe("ManualJudge fee lockup (M-01)", function () {
-    it("fees accumulate on ManualJudge with no withdrawal mechanism", async function () {
+  describe("ManualJudge fee custody (M-01)", function () {
+    it("fees accumulate on ManualJudge and the operator can withdraw them", async function () {
       await createDefaultBond();
       await bond.connect(challenger1).challenge(0, "C1");
       await bond.connect(challenger2).challenge(0, "C2");
@@ -294,16 +309,32 @@ describe("SimpleBondV5 audit coverage", function () {
       const judgeAfter = await token.balanceOf(judgeAddr);
       expect(judgeAfter - judgeBefore).to.equal(JUDGE_FEE * 2n);
 
-      // Demonstrate that ManualJudge has no way to move these tokens out.
-      // Enumerate all function fragments on ManualJudge — none accept a
-      // token-withdrawal signature.
-      const fnNames = [];
-      manualJudge.interface.forEachFunction((fn) => fnNames.push(fn.name));
+      const operatorBefore = await token.balanceOf(judgeOperator.address);
+      await expect(
+        manualJudge.connect(judgeOperator).withdrawFees(
+          await token.getAddress(),
+          judgeOperator.address,
+          JUDGE_FEE * 2n
+        )
+      ).to.emit(manualJudge, "FeesWithdrawn");
 
-      const hasWithdraw = fnNames.some(
-        (name) => name.startsWith("withdraw") || name.startsWith("sweep") || name.startsWith("rescue")
-      );
-      expect(hasWithdraw).to.equal(false);
+      expect(await token.balanceOf(judgeOperator.address) - operatorBefore).to.equal(JUDGE_FEE * 2n);
+      expect(await token.balanceOf(judgeAddr)).to.equal(0n);
+    });
+
+    it("non-operators cannot withdraw ManualJudge fees", async function () {
+      await createDefaultBond();
+      await bond.connect(challenger1).challenge(0, "C1");
+      await advanceToRulingWindow();
+      await fixture.actions.ruleForPoster({ feeCharged: JUDGE_FEE });
+
+      await expect(
+        manualJudge.connect(outsider).withdrawFees(
+          await token.getAddress(),
+          outsider.address,
+          JUDGE_FEE
+        )
+      ).to.be.revertedWith("Only operator");
     });
   });
 
@@ -345,6 +376,7 @@ describe("SimpleBondV5 audit coverage", function () {
       await expect(
         overflowFixture.actions.rejectBond()
       ).to.not.be.reverted;
+      await overflowFixture.actions.claimAllRefunds();
 
       expect(await overflowFixture.token.balanceOf(
         await overflowFixture.bond.getAddress()
@@ -377,14 +409,15 @@ describe("SimpleBondV5 audit coverage", function () {
       await expect(
         overflowFixture.actions.rejectBond()
       ).to.not.be.reverted;
+      await overflowFixture.actions.claimAllRefunds();
     });
   });
 
   // -------------------------------------------------------------------------
-  // M-02: High challenge count gas behavior
+  // M-02: High challenge count refund batching
   // -------------------------------------------------------------------------
 
-  describe("High challenge count refund loop (M-02)", function () {
+  describe("High challenge count refund batching (M-02)", function () {
     // These tests use a moderate count (50-100) to verify the loop works
     // without hitting CI timeouts. A real gas-limit test would need 800+
     // challenges but is too slow for automated test suites.
@@ -411,9 +444,16 @@ describe("SimpleBondV5 audit coverage", function () {
         });
       }
 
-      // Concede — triggers _refundRemaining for all challengers.
+      // Concede now only enables refund claims.
       await expect(
         manyFixture.actions.concede({ metadata: "Mass refund" })
+      ).to.not.be.reverted;
+
+      expect(await manyFixture.bond.refundCursor(0)).to.equal(0n);
+      expect(await manyFixture.bond.refundEnd(0)).to.equal(BigInt(challengerCount));
+
+      await expect(
+        manyFixture.actions.claimAllRefunds({ maxCountPerTx: 7 })
       ).to.not.be.reverted;
 
       const contractBalance = await manyFixture.token.balanceOf(
@@ -445,6 +485,10 @@ describe("SimpleBondV5 audit coverage", function () {
       await manyFixture.actions.advancePastRulingDeadline();
       await expect(
         manyFixture.actions.claimTimeout()
+      ).to.not.be.reverted;
+
+      await expect(
+        manyFixture.actions.claimAllRefunds({ maxCountPerTx: 9 })
       ).to.not.be.reverted;
 
       const contractBalance = await manyFixture.token.balanceOf(
@@ -483,6 +527,10 @@ describe("SimpleBondV5 audit coverage", function () {
       // Challenger wins #4 — triggers refund of the remaining queue.
       await expect(
         manyFixture.actions.ruleForChallenger({ feeCharged: JUDGE_FEE })
+      ).to.not.be.reverted;
+
+      await expect(
+        manyFixture.actions.claimAllRefunds({ maxCountPerTx: 4 })
       ).to.not.be.reverted;
 
       const contractBalance = await manyFixture.token.balanceOf(

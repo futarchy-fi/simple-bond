@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+
 import "../interfaces/IBondJudgeV5.sol";
 
 interface IBondJudgeTarget {
@@ -15,11 +18,14 @@ interface IBondJudgeTarget {
 /// contracts. It is not bound to a single SimpleBond instance so a later core
 /// version can reuse the same wrapper instead of forcing redeployment.
 contract ManualJudge is IBondJudgeV5 {
+    using SafeERC20 for IERC20;
+
     address public immutable proposedOperator;
     address public operator;
     bool public active;
 
     event OperatorAccepted(address indexed operator);
+    event FeesWithdrawn(address indexed token, address indexed to, uint256 amount);
 
     constructor(address _proposedOperator) {
         require(_proposedOperator != address(0), "Zero operator");
@@ -51,6 +57,17 @@ contract ManualJudge is IBondJudgeV5 {
         // ManualJudge does not inspect bond terms. Its only creation-time
         // policy is whether the proposed operator has accepted activation.
         require(active, "Judge inactive");
+    }
+
+    function withdrawFees(address token, address to, uint256 amount) external {
+        require(msg.sender == operator, "Only operator");
+        require(to != address(0), "Zero recipient");
+
+        // The bond core pays the wrapper contract directly, so the wrapper
+        // needs an explicit path to forward accrued fees onward.
+        IERC20(token).safeTransfer(to, amount);
+
+        emit FeesWithdrawn(token, to, amount);
     }
 
     function ruleForPoster(address bondContract, uint256 bondId, uint256 feeCharged) external {

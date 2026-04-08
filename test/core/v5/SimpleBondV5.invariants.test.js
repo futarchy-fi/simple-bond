@@ -115,6 +115,7 @@ describe("SimpleBondV5 invariant helpers", function () {
     await fixture.actions.ruleForPoster({ feeCharged: JUDGE_FEE });
 
     const beforeWithdraw = await snapshot();
+    await fixture.actions.advancePastDeadline();
     await fixture.actions.withdrawBond();
     const afterWithdraw = await snapshot();
 
@@ -129,6 +130,7 @@ describe("SimpleBondV5 invariant helpers", function () {
     const beforeConcede = await snapshot();
 
     await fixture.actions.concede();
+    await fixture.actions.claimAllRefunds();
     const afterConcede = await snapshot();
 
     expectConcedeOutcome(beforeConcede, afterConcede);
@@ -145,6 +147,7 @@ describe("SimpleBondV5 invariant helpers", function () {
 
     const beforeReject = await snapshot();
     await fixture.actions.rejectBond();
+    await fixture.actions.claimAllRefunds();
     const afterReject = await snapshot();
 
     expectRejectBondOutcome(beforeReject, afterReject);
@@ -162,6 +165,7 @@ describe("SimpleBondV5 invariant helpers", function () {
     const beforeTimeout = await snapshot();
     await fixture.actions.advancePastRulingDeadline();
     await fixture.actions.claimTimeout();
+    await fixture.actions.claimAllRefunds();
     const afterTimeout = await snapshot();
 
     expectTimeoutOutcome(beforeTimeout, afterTimeout);
@@ -178,6 +182,7 @@ describe("SimpleBondV5 invariant helpers", function () {
 
     const beforeChallengerWin = await snapshot();
     await fixture.actions.ruleForChallenger({ feeCharged: JUDGE_FEE });
+    await fixture.actions.claimAllRefunds();
     const afterChallengerWin = await snapshot();
 
     expectRuleForChallengerOutcome(beforeChallengerWin, afterChallengerWin, JUDGE_FEE);
@@ -212,6 +217,7 @@ describe("SimpleBondV5 invariant helpers", function () {
     expect(concessionDeadline).to.equal(await fixture.read.rulingWindowStart());
 
     await fixture.actions.concede({ metadata: "Timely concession" });
+    await fixture.actions.claimAllRefunds();
 
     fixture = await deploySimpleBondV5FuzzFixture({
       deadlineLeadTime: ONE_DAY,
