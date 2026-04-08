@@ -1495,7 +1495,9 @@ function updateCreateSummary() {
   if (!currencyEl || !challengeEl || !feeEl || !timingEl || !judgeEl || !hintEl) return;
 
   const tokenAddr = getSelectedToken();
-  const tokenInfo = tokenAddr ? getTokenInfo(tokenAddr) : null;
+  const tokenInfo = tokenAddr
+    ? getAllTokens().find((token) => token.address.toLowerCase() === tokenAddr.toLowerCase()) || null
+    : null;
   currencyEl.textContent = tokenInfo ? friendlyTokenName(tokenAddr, tokenInfo.symbol || "") : "sDAI";
 
   const bondVal = parseFloat(document.getElementById("bondAmount").value);
