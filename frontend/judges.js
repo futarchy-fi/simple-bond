@@ -24,6 +24,7 @@
         merged.set(key, {
           address: entry.address,
           bondCount: entry.bondCount || 0,
+          judgedCount: entry.judgedCount || 0,
           kind: entry.kind || "generic",
           operator: entry.operator || null,
           active: typeof entry.active === "boolean" ? entry.active : null,
@@ -39,6 +40,7 @@
 
       const current = merged.get(key);
       current.bondCount = Math.max(current.bondCount, entry.bondCount || 0);
+      current.judgedCount = Math.max(current.judgedCount, entry.judgedCount || 0);
       if (current.kind === "generic" && entry.kind) {
         current.kind = entry.kind;
       }
@@ -81,6 +83,9 @@
       const bOrder = b.officialSortOrder == null ? Number.MAX_SAFE_INTEGER : b.officialSortOrder;
       if (aOrder !== bOrder) return aOrder - bOrder;
     }
+
+    const judgedDelta = (b?.judgedCount || 0) - (a?.judgedCount || 0);
+    if (judgedDelta !== 0) return judgedDelta;
 
     const bondDelta = (b?.bondCount || 0) - (a?.bondCount || 0);
     if (bondDelta !== 0) return bondDelta;

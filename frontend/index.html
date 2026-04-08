@@ -3867,28 +3867,59 @@ async function getJudgeContractInfos(addresses, { force = false, readProvider = 
 }
 
 async function discoverJudges(readProvider) {
-  const [officialSnapshot, logs, canonicalJudges] = await Promise.all([
+  const readContract = chain().contract ? new ethers.Contract(chain().contract, BOND_ABI, readProvider) : null;
+  const [officialSnapshot, logs, canonicalJudges, ruledForPosterLogs, ruledForChallengerLogs] = await Promise.all([
     loadOfficialDirectorySnapshot(activeChainId, { readProvider }),
     chain().contract ? queryDetailedBondCreatedLogs(readProvider).catch(() => []) : Promise.resolve([]),
     discoverCanonicalJudges(activeChainId, { readProvider }),
+    readContract
+      ? withTimeout(readContract.queryFilter(readContract.filters.RuledForPoster(), chain().deployBlock).catch(() => []), 12000, [])
+      : Promise.resolve([]),
+    readContract
+      ? withTimeout(readContract.queryFilter(readContract.filters.RuledForChallenger(), chain().deployBlock).catch(() => []), 12000, [])
+      : Promise.resolve([]),
   ]);
   const iface = new ethers.Interface(BOND_ABI);
   const counts = new Map();
+  const bondJudgeById = new Map();
+  const judgedBondIdsByJudge = new Map();
 
   for (const log of logs) {
     const parsed = parseDetailedBondCreatedLog(iface, log);
     if (!parsed) continue;
     const judgeAddr = ethers.getAddress(parsed.args.judge);
+    const bondId = Number(parsed.args.bondId);
     const key = judgeAddr.toLowerCase();
-    const current = counts.get(key) || { address: judgeAddr, bondCount: 0 };
+    bondJudgeById.set(bondId, judgeAddr);
+    const current = counts.get(key) || { address: judgeAddr, bondCount: 0, judgedCount: 0 };
     current.bondCount += 1;
     counts.set(key, current);
+  }
+
+  for (const log of [...ruledForPosterLogs, ...ruledForChallengerLogs]) {
+    const bondId = Number(log?.args?.bondId ?? log?.args?.[0]);
+    if (!Number.isFinite(bondId)) continue;
+    const judgeAddr = bondJudgeById.get(bondId);
+    if (!judgeAddr) continue;
+    const key = judgeAddr.toLowerCase();
+    let judgedSet = judgedBondIdsByJudge.get(key);
+    if (!judgedSet) {
+      judgedSet = new Set();
+      judgedBondIdsByJudge.set(key, judgedSet);
+    }
+    judgedSet.add(bondId);
+  }
+
+  for (const [key, judgedSet] of judgedBondIdsByJudge.entries()) {
+    const current = counts.get(key);
+    if (current) current.judgedCount = judgedSet.size;
   }
 
   const discovered = [...counts.values()];
   const locallyTracked = getLocalJudgeAddresses(activeChainId).map((address) => ({
     address,
     bondCount: 0,
+    judgedCount: 0,
   }));
   const officialJudges = officialSnapshot?.judges || [];
   const allAddresses = [...new Set(
@@ -5198,7 +5229,7 @@ async function showJudgeProfilePage(profileRef) {
 
 // ─── Judge Discovery ──────────────────────────────────────────────────
 let judgesLoaded = false;
-let judgesList = []; // cached list of {address, bondCount, kind, operator, active}
+let judgesList = []; // cached list of {address, bondCount, judgedCount, kind, operator, active}
 let judgesLoadRequestId = 0;
 let judgeExistingAddressRowOpen = false;
 
@@ -5263,7 +5294,11 @@ async function loadJudges() {
         <div>
           <div class="ji-addr"></div>
           <div class="ji-fee">${formatJudgeDescriptor(j)}</div>
-          <div class="ji-bonds">${j.bondCount} bond${j.bondCount !== 1 ? 's' : ''} judged</div>
+          <div class="ji-bonds">${
+            j.judgedCount > 0
+              ? `${j.judgedCount} bond${j.judgedCount !== 1 ? 's' : ''} judged`
+              : `${j.bondCount} bond${j.bondCount !== 1 ? 's' : ''} using this judge`
+          }</div>
         </div>`;
       const addrEl = item.querySelector('.ji-addr');
       const addrLink = document.createElement("a");
