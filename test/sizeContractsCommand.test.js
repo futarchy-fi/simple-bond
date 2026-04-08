@@ -5,10 +5,12 @@ const hre = require("hardhat");
 
 const EXPECTED_CONTRACTS = [
   "SimpleBondV4",
+  "SimpleBondV5",
   "SimpleBondV3",
   "KlerosJudge",
   "SimpleBond",
   "TestToken",
+  "ManualJudge",
   "MockArbitrator",
 ];
 
@@ -16,7 +18,9 @@ const INTERFACE_ARTIFACTS = [
   "contracts/interfaces/IArbitrator.sol:IArbitrator",
   "contracts/interfaces/IArbitrator.sol:IArbitrable",
   "contracts/interfaces/IArbitrator.sol:IEvidence",
+  "contracts/interfaces/IBondJudgeV5.sol:IBondJudgeV5",
   "contracts/KlerosJudge.sol:ISimpleBondV4",
+  "contracts/ManualJudge.sol:IBondJudgeTarget",
 ];
 
 function parseReportRows(output) {
