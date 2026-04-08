@@ -3186,6 +3186,14 @@ async function loadBrowseBonds() {
           };
         })
         .filter(Boolean);
+      const dedupedBondRefs = new Map();
+      for (const ref of bondRefs) {
+        const existing = dedupedBondRefs.get(ref.bondId);
+        if (!existing || ref.lastActivity > existing.lastActivity) {
+          dedupedBondRefs.set(ref.bondId, ref);
+        }
+      }
+      bondRefs = [...dedupedBondRefs.values()];
     } else {
       const nextBondId = await withTimeout(readContract.nextBondId().catch(() => 0n), 5000, 0n);
       bondRefs = Array.from({ length: Number(nextBondId) }, (_, bondId) => ({
