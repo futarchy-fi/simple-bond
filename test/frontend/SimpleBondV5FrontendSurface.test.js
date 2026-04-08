@@ -27,9 +27,14 @@ describe("SimpleBondV5 frontend surface", function () {
     expect(frontendSource).to.not.include('<option value="1">Ethereum</option>');
     expect(frontendSource).to.include("Select a judge contract...");
     expect(frontendSource).to.include("contract: window.SIMPLE_BOND_CONFIG?.gnosisBondContract || null");
+    expect(frontendSource).to.include("judgeProfileRegistry: window.SIMPLE_BOND_CONFIG?.gnosisJudgeProfileRegistry || null");
+    expect(frontendSource).to.include("function setProfile(address judge, string displayName, string statement, string linkURI, string metadataURI)");
+    expect(frontendSource).to.include('const judgeProfileRouteId = getJudgeProfileRouteId()');
+    expect(frontendSource).to.include('const judgeParam = params.get("judge")');
 
     expect(runtimeConfigSource).to.include("gnosisBondContract: null");
     expect(runtimeConfigSource).to.include("gnosisDeployBlock: 0");
+    expect(runtimeConfigSource).to.include("gnosisJudgeProfileRegistry: null");
     expect(runtimeConfigSource).to.not.include("judgeApiBase");
   });
 });

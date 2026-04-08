@@ -12,6 +12,7 @@
           kind: entry.kind || "generic",
           operator: entry.operator || null,
           active: typeof entry.active === "boolean" ? entry.active : null,
+          profile: entry.profile || null,
         });
         continue;
       }
@@ -26,6 +27,9 @@
       }
       if (current.active == null && typeof entry.active === "boolean") {
         current.active = entry.active;
+      }
+      if (!current.profile && entry.profile) {
+        current.profile = entry.profile;
       }
     }
 

@@ -12,6 +12,9 @@ describe("judge dropdown helpers", function () {
         address: "0x1111111111111111111111111111111111111111",
         bondCount: 1,
         kind: "generic",
+        profile: {
+          displayName: "First pass",
+        },
       },
       {
         address: "0x1111111111111111111111111111111111111111",
@@ -19,6 +22,9 @@ describe("judge dropdown helpers", function () {
         kind: "manual",
         operator: "0x2222222222222222222222222222222222222222",
         active: true,
+        profile: {
+          displayName: "Alice Court",
+        },
       },
     ];
 
@@ -31,6 +37,9 @@ describe("judge dropdown helpers", function () {
         kind: "manual",
         operator: "0x2222222222222222222222222222222222222222",
         active: true,
+        profile: {
+          displayName: "First pass",
+        },
       },
     ]);
   });
@@ -43,6 +52,9 @@ describe("judge dropdown helpers", function () {
         kind: "manual",
         operator: "0x4444444444444444444444444444444444444444",
         active: true,
+        profile: {
+          displayName: "Alice Court",
+        },
       },
       {
         address: "0x3333333333333333333333333333333333333333",
@@ -67,6 +79,9 @@ describe("judge dropdown helpers", function () {
           kind: "manual",
           operator: "0x4444444444444444444444444444444444444444",
           active: true,
+          profile: {
+            displayName: "Alice Court",
+          },
         },
       },
       {
@@ -77,6 +92,7 @@ describe("judge dropdown helpers", function () {
           kind: "generic",
           operator: null,
           active: null,
+          profile: null,
         },
       },
     ]);

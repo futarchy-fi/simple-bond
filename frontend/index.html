@@ -617,7 +617,49 @@
       <h2>Judge Contracts</h2>
       <div id="judgeRegisterSection">
         <div id="judgeRegisterPrompt" class="connect-prompt">This list is discovered on-chain from `BondCreated` events on Gnosis. `V5` has no global judge registry.</div>
-        <div id="judgeRegisterNote" style="margin-top:8px;color:var(--muted);font-size:13px;">Use “Custom address...” in the create form to use a new judge contract before it appears here.</div>
+        <div id="judgeRegisterNote" style="margin-top:8px;color:var(--muted);font-size:13px;">Use “Custom address...” in the create form to use a new judge contract before it appears here. Public judge profiles are stored on-chain in a separate registry.</div>
+        <div id="judgeProfileEditor" class="hidden" style="margin-top:16px;padding:16px;background:var(--bg);border:1px solid var(--border);border-radius:10px;">
+          <h3 style="font-size:15px;margin-bottom:6px;">Edit Public Judge Profile</h3>
+          <div id="judgeProfileEditorHint" class="hint">Profiles live on-chain and are editable only by the judge contract or its declared profile controller.</div>
+          <div id="judgeProfileControlledRow" class="hidden" style="margin-top:12px;">
+            <label style="display:block;margin-bottom:6px;font-size:12px;color:var(--muted);">Discovered judge contracts you control</label>
+            <select id="judgeProfileControlledSelect" onchange="selectControlledJudgeProfileTarget()">
+              <option value="">Choose a judge contract...</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin-top:12px;margin-bottom:8px;">
+            <label>Judge contract address</label>
+            <input type="text" id="judgeProfileTarget" placeholder="0x..." oninput="onJudgeProfileTargetInput()">
+            <div id="judgeProfileTargetHint" class="hint">Enter the judge contract address you control. The registry rejects EOAs.</div>
+          </div>
+          <div class="form-group" style="margin-bottom:8px;">
+            <label>Display name</label>
+            <input type="text" id="judgeProfileDisplayName" maxlength="120" placeholder="e.g. Alice Court">
+          </div>
+          <div class="form-group" style="margin-bottom:8px;">
+            <label>Judging statement</label>
+            <textarea id="judgeProfileStatement" maxlength="4000" placeholder="Explain how this judge evaluates disputes, what evidence matters, and any standards you apply." rows="4"></textarea>
+          </div>
+          <div class="form-group" style="margin-bottom:8px;">
+            <label>External link</label>
+            <input type="url" id="judgeProfileLink" maxlength="500" placeholder="https://your-site.example/judging-policy">
+            <div class="hint">Optional: a blog post, policy page, Safe page, or public explanation.</div>
+          </div>
+          <div class="form-group" style="margin-bottom:8px;">
+            <label>Metadata URI</label>
+            <input type="text" id="judgeProfileMetadata" maxlength="1000" placeholder="ipfs://... or https://...">
+            <div class="hint">Optional: machine-readable metadata for richer clients.</div>
+          </div>
+          <div id="judgeOwnProfileLinkRow" class="hidden" style="margin-top:8px;">
+            Public judge page:
+            <a id="judgeOwnProfileLink" class="judge-public-link" href="#"></a>
+          </div>
+          <div class="btn-row" style="margin-top:10px;">
+            <button class="secondary" id="saveJudgeProfileBtn" onclick="saveJudgeProfile()">Save Profile</button>
+            <button class="secondary" id="clearJudgeProfileBtn" onclick="clearJudgeProfile()">Clear Profile</button>
+            <button class="secondary" id="copyJudgeProfileUrlBtn" onclick="copyOwnJudgeProfileUrl()">Copy Public URL</button>
+          </div>
+        </div>
       </div>
       <div id="judgesLoading" style="color:var(--muted);text-align:center;padding:20px;">
         <span class="spinner"></span> Loading judges...
@@ -733,7 +775,7 @@
         <div id="concessionCard" class="concession-card hidden">
           <h3>Poster Conceded</h3>
           <div class="concession-text" id="concessionText"></div>
-          <div class="concession-refund" style="margin-top:8px;font-size:13px;color:var(--green);">All funds have been returned — the poster's bond was refunded and all challengers' deposits were automatically sent back.</div>
+          <div class="concession-refund" style="margin-top:8px;font-size:13px;color:var(--green);">The poster's bond is refunded immediately. Any remaining challenger refunds can then be processed in bounded batches.</div>
         </div>
 
         <!-- Risk/Reward Card (for challengers) -->
@@ -772,6 +814,59 @@
       </div>
     </div>
 
+    <div id="judgeProfilePage" class="card hidden judge-profile-page">
+      <div class="jp-header">
+        <div>
+          <h2 class="jp-title" id="judgeProfileTitle">Judge Profile</h2>
+          <div class="jp-subtitle" id="judgeProfileSubtitle"></div>
+        </div>
+        <button class="secondary" onclick="closeJudgeProfilePage()">Back to App</button>
+      </div>
+      <div id="judgeProfileLoading" style="color:var(--muted);text-align:center;padding:20px;">
+        <span class="spinner"></span> Loading judge profile...
+      </div>
+      <div id="judgeProfileError" class="hidden"></div>
+      <div id="judgeProfileContent" class="hidden">
+        <div class="bond-detail">
+          <div class="bond-field full">
+            <div class="label">Judge Address</div>
+            <div class="value"><a id="judgeProfileAddress" target="_blank" rel="noopener"></a></div>
+          </div>
+          <div class="bond-field">
+            <div class="label">Chain</div>
+            <div class="value" id="judgeProfileChain"></div>
+          </div>
+          <div class="bond-field">
+            <div class="label">Judge Type</div>
+            <div class="value" id="judgeProfileKind"></div>
+          </div>
+          <div class="bond-field full">
+            <div class="label">Profile Controller</div>
+            <div class="value"><a id="judgeProfileController" target="_blank" rel="noopener"></a></div>
+          </div>
+          <div class="bond-field">
+            <div class="label">Last Updated</div>
+            <div class="value" id="judgeProfileUpdatedAt"></div>
+          </div>
+          <div class="bond-field full">
+            <div class="label">Judging Statement</div>
+            <div class="value jp-statement" id="judgeProfileStatementView"></div>
+          </div>
+          <div class="bond-field full hidden" id="judgeProfileExternalRow">
+            <div class="label">External Link</div>
+            <div class="value"><a id="judgeProfileExternalLink" class="jp-link" target="_blank" rel="noopener"></a></div>
+          </div>
+          <div class="bond-field full hidden" id="judgeProfileMetadataRow">
+            <div class="label">Metadata URI</div>
+            <div class="value"><a id="judgeProfileMetadataLink" class="jp-link" target="_blank" rel="noopener"></a></div>
+          </div>
+        </div>
+        <div class="jp-actions">
+          <button class="secondary hidden" id="judgeProfileEditBtn" onclick="openJudgeProfileEditor()">Edit My Profile</button>
+        </div>
+      </div>
+    </div>
+
   </div>
 
   <!-- Funding Guide Overlay -->
@@ -807,6 +902,7 @@ const CHAINS = {
     explorer: "https://gnosisscan.io",
     contract: window.SIMPLE_BOND_CONFIG?.gnosisBondContract || null,
     deployBlock: Number(window.SIMPLE_BOND_CONFIG?.gnosisDeployBlock || 0),
+    judgeProfileRegistry: window.SIMPLE_BOND_CONFIG?.gnosisJudgeProfileRegistry || null,
     nativeCurrency: { name: "xDAI", symbol: "xDAI", decimals: 18 },
     defaultToken: { address: "0xaf204776c7245bF4147c2612BF6e5972Ee483701", symbol: "sDAI", decimals: 18, displayName: "USD Savings (earns ~8% APY)" },
     wrappedNative: { address: "0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d", symbol: "WXDAI", decimals: 18 },
@@ -883,6 +979,7 @@ const BOND_ABI = [
 const MANUAL_JUDGE_ABI = [
   "function active() view returns (bool)",
   "function operator() view returns (address)",
+  "function profileController() view returns (address)",
   "function ruleForPoster(address bondContract, uint256 bondId, uint256 feeCharged)",
   "function ruleForChallenger(address bondContract, uint256 bondId, uint256 feeCharged)",
   "function rejectBond(address bondContract, uint256 bondId)",
@@ -890,6 +987,15 @@ const MANUAL_JUDGE_ABI = [
 
 const BOND_JUDGE_ABI = [
   "function validateBond(address token, uint256 bondAmount, uint256 challengeAmount, uint256 judgeFee, uint256 deadline, uint256 acceptanceDelay, uint256 rulingBuffer) view",
+];
+
+const JUDGE_PROFILE_REGISTRY_ABI = [
+  "function getProfile(address judge) view returns (string displayName, string statement, string linkURI, string metadataURI, uint64 updatedAt)",
+  "function hasProfile(address judge) view returns (bool)",
+  "function profileControllerOf(address judge) view returns (address)",
+  "function canEditProfile(address judge, address editor) view returns (bool)",
+  "function setProfile(address judge, string displayName, string statement, string linkURI, string metadataURI)",
+  "function clearProfile(address judge)",
 ];
 
 const DETAILED_BOND_CREATED_SIGNATURE =
@@ -1514,6 +1620,7 @@ async function switchChain(chainIdStr) {
   onTokenChange();
   updateTokenExplainer();
   loadJudgeSelectOnCreate();
+  refreshJudgeProfileEditor();
 
   // Update URL
   const url = new URL(window.location);
@@ -1552,6 +1659,7 @@ function onWalletConnected() {
   judgesLoaded = false;
   refreshAllBalances();
   loadJudgeSelectOnCreate();
+  refreshJudgeProfileEditor();
   checkNotifyStatus();
 
   // Set up injected wallet event listeners
@@ -1587,11 +1695,13 @@ async function disconnectWallet() {
   connectionType = null;
   tokenCache = {};
   myBondsLoaded = false;
+  currentJudgeProfileView = null;
 
   document.getElementById("walletInfo").classList.add("hidden");
   document.getElementById("connectBtn").classList.remove("hidden");
   document.getElementById("connectScreen").classList.remove("hidden");
   document.getElementById("mainApp").classList.add("hidden");
+  resetJudgeProfileEditorUi();
 }
 
 function browseWithoutWallet() {
@@ -2212,11 +2322,12 @@ async function loadBond() {
     const now = BigInt(Math.floor(Date.now() / 1000));
     const challengeCount = Number(await readContract.getChallengeCount(bondId));
     const currentIdx = Number(currentChallenge);
-    const [concedeUntil, refundCursorRaw, refundEndRaw, judgeInfo] = await Promise.all([
+    const [concedeUntil, refundCursorRaw, refundEndRaw, judgeInfo, judgeProfile] = await Promise.all([
       readContract.concessionDeadline(bondId).catch(() => 0n),
       readContract.refundCursor(bondId).catch(() => 0n),
       readContract.refundEnd(bondId).catch(() => 0n),
       getJudgeContractInfo(judge, { readProvider }),
+      fetchJudgeProfileByAddress(judge, activeChainId, { readProvider }),
     ]);
     const refundCursor = Number(refundCursorRaw);
     const refundEnd = Number(refundEndRaw);
@@ -2270,7 +2381,7 @@ async function loadBond() {
     currentViewBondData = {
       poster, judge, token, bondAmount, challengeAmount, judgeFee, deadline, acceptanceDelay, rulingBuffer,
       metadata, settled, conceded, currentChallenge, lastChallengeTime, decimals, symbol, challengeCount,
-      currentIdx, status, rwStart, rwEnd, concedeUntil, refundCursor, refundEnd, judgeInfo,
+      currentIdx, status, rwStart, rwEnd, concedeUntil, refundCursor, refundEnd, judgeInfo, judgeProfile,
     };
 
     document.getElementById("bondDisplay").classList.remove("hidden");
@@ -2279,8 +2390,23 @@ async function loadBond() {
     setAddrLink("bPoster", poster);
     const judgeProfileHintEl = document.getElementById("bJudgeProfileHint");
     judgeProfileHintEl.classList.add("hidden");
-    judgeProfileHintEl.textContent = "";
-    setJudgeLink("bJudge", judge);
+    judgeProfileHintEl.innerHTML = "";
+    setJudgeLink("bJudge", judge, { profile: judgeProfile });
+    if (judgeProfile) {
+      judgeProfileHintEl.classList.remove("hidden");
+      if (judgeProfile.statement) {
+        const statementEl = document.createElement("div");
+        statementEl.textContent = truncateText(judgeProfile.statement, 180);
+        judgeProfileHintEl.appendChild(statementEl);
+      }
+      const linkRow = document.createElement("div");
+      const profileLink = document.createElement("a");
+      profileLink.href = buildJudgeProfilePath(judgeProfile);
+      profileLink.className = "judge-public-link";
+      profileLink.textContent = "View public judge profile";
+      linkRow.appendChild(profileLink);
+      judgeProfileHintEl.appendChild(linkRow);
+    }
     const tokenDisplayName = friendlyTokenName(token, symbol);
     setAddrLink("bToken", token, tokenDisplayName);
 
@@ -2991,11 +3117,14 @@ async function getJudgeContractInfo(address, { force = false, readProvider = nul
   try {
     const providerToUse = readProvider || new ethers.JsonRpcProvider(chain().rpc);
     const judgeContract = new ethers.Contract(address, MANUAL_JUDGE_ABI, providerToUse);
-    const [operator, active] = await Promise.all([judgeContract.operator(), judgeContract.active()]);
+    const [active, profileController] = await Promise.all([
+      judgeContract.active(),
+      judgeContract.profileController(),
+    ]);
 
-    if (operator && operator !== ethers.ZeroAddress) {
+    if (profileController && profileController !== ethers.ZeroAddress) {
       info.kind = "manual";
-      info.operator = ethers.getAddress(operator);
+      info.operator = ethers.getAddress(profileController);
       info.active = !!active;
     }
   } catch (_) {}
@@ -3044,14 +3173,15 @@ async function discoverJudges(readProvider) {
 function setJudgeLink(elOrId, addr, { label = null, profile = null, chainId = activeChainId } = {}) {
   const el = typeof elOrId === "string" ? document.getElementById(elOrId) : elOrId;
   if (!el || !addr) return;
-  const href = `${CHAINS[chainId]?.explorer || chain().explorer}/address/${addr}`;
-  el.href = href;
-  el.target = "_blank";
-  el.rel = "noopener";
-  el.textContent = label ? `${label} (${short(addr)})` : short(addr);
-  if (!label) {
+  const cachedProfile = profile || judgeProfileCacheByAddress.get(getJudgeProfileCacheKey(addr, chainId)) || null;
+  el.href = buildJudgeProfilePath(cachedProfile || addr, chainId);
+  el.removeAttribute("target");
+  el.removeAttribute("rel");
+  const displayLabel = label || cachedProfile?.displayName || null;
+  el.textContent = displayLabel ? `${displayLabel} (${short(addr)})` : short(addr);
+  if (!displayLabel) {
     resolveEns(addr).then(name => {
-      if (name && el.href.endsWith(href)) {
+      if (name && el.href.endsWith(buildJudgeProfilePath(addr, chainId))) {
         el.textContent = `${name} (${short(addr)})`;
       }
     });
@@ -3253,7 +3383,585 @@ async function loadMyBonds() {
   }
 }
 
-function setJudgeProfilePageVisible() {}
+const judgeProfileCacheByAddress = new Map();
+let currentJudgeProfileView = null;
+let currentJudgeProfileDraftTarget = null;
+
+function getChainParamById(chainId) {
+  return chainId === 100 ? "gnosis" : null;
+}
+
+function getJudgeProfileCacheKey(address, chainId = activeChainId) {
+  return `${Number(chainId)}:${String(address || "").toLowerCase()}`;
+}
+
+function getJudgeProfileRegistryAddress(chainId = activeChainId) {
+  return CHAINS[chainId]?.judgeProfileRegistry || null;
+}
+
+function getJudgeProfileRegistry(chainId = activeChainId, signerOrProvider = null) {
+  const registryAddress = getJudgeProfileRegistryAddress(chainId);
+  if (!registryAddress) return null;
+  const connection = signerOrProvider || new ethers.JsonRpcProvider(CHAINS[chainId].rpc);
+  return new ethers.Contract(registryAddress, JUDGE_PROFILE_REGISTRY_ABI, connection);
+}
+
+function normalizeJudgeProfile(address, chainId, rawProfile) {
+  if (!rawProfile) return null;
+
+  const updatedAt = BigInt(rawProfile.updatedAt ?? rawProfile[4] ?? 0);
+  if (updatedAt === 0n) return null;
+
+  return {
+    address: ethers.getAddress(address),
+    chainId,
+    displayName: rawProfile.displayName ?? rawProfile[0] ?? "",
+    statement: rawProfile.statement ?? rawProfile[1] ?? "",
+    linkURI: rawProfile.linkURI ?? rawProfile[2] ?? "",
+    metadataURI: rawProfile.metadataURI ?? rawProfile[3] ?? "",
+    updatedAt,
+    url: buildJudgeProfilePath(address, chainId),
+  };
+}
+
+function cacheJudgeProfile(profile) {
+  if (!profile) return null;
+  judgeProfileCacheByAddress.set(getJudgeProfileCacheKey(profile.address, profile.chainId), profile);
+  return profile;
+}
+
+function clearJudgeProfileCache(address, chainId = activeChainId) {
+  if (!address) return;
+  judgeProfileCacheByAddress.delete(getJudgeProfileCacheKey(address, chainId));
+}
+
+function buildJudgeProfilePath(profileRef, chainId = activeChainId) {
+  const address = typeof profileRef === "object" ? profileRef?.address : profileRef;
+  const params = new URLSearchParams();
+  const chainParam = getChainParamById(chainId);
+  if (chainParam) params.set("chain", chainParam);
+  else if (chainId != null) params.set("chainId", String(chainId));
+  if (address) params.set("judge", String(address));
+  return `/?${params.toString()}`;
+}
+
+async function fetchJudgeProfileByAddress(address, chainId = activeChainId, { force = false, readProvider = null } = {}) {
+  if (!ethers.isAddress(address)) return null;
+
+  const checksum = ethers.getAddress(address);
+  const key = getJudgeProfileCacheKey(checksum, chainId);
+  if (!force && judgeProfileCacheByAddress.has(key)) {
+    return judgeProfileCacheByAddress.get(key);
+  }
+
+  const registry = getJudgeProfileRegistry(chainId, readProvider);
+  if (!registry) return null;
+
+  try {
+    const rawProfile = await registry.getProfile(checksum);
+    const profile = normalizeJudgeProfile(checksum, chainId, rawProfile);
+    if (!profile) {
+      clearJudgeProfileCache(checksum, chainId);
+      return null;
+    }
+    return cacheJudgeProfile(profile);
+  } catch (err) {
+    console.warn("Judge profile lookup failed:", err);
+    return null;
+  }
+}
+
+async function fetchJudgeProfilesByAddresses(chainId, addresses, { readProvider = null } = {}) {
+  const uniqueAddresses = [...new Set((addresses || []).filter(Boolean).map((address) => address.toLowerCase()))];
+  if (uniqueAddresses.length === 0) return new Map();
+
+  const registry = getJudgeProfileRegistry(chainId, readProvider);
+  if (!registry) return new Map();
+
+  const map = new Map();
+  await Promise.all(uniqueAddresses.map(async (address) => {
+    try {
+      const checksum = ethers.getAddress(address);
+      const rawProfile = await registry.getProfile(checksum);
+      const profile = normalizeJudgeProfile(checksum, chainId, rawProfile);
+      if (profile) {
+        map.set(checksum.toLowerCase(), cacheJudgeProfile(profile));
+      } else {
+        clearJudgeProfileCache(checksum, chainId);
+      }
+    } catch (err) {
+      console.warn("Judge profile bulk lookup failed:", err);
+    }
+  }));
+
+  return map;
+}
+
+async function canEditJudgeProfile(judgeAddress, editorAddress, { readProvider = null } = {}) {
+  if (!ethers.isAddress(judgeAddress) || !ethers.isAddress(editorAddress)) return false;
+  const registry = getJudgeProfileRegistry(activeChainId, readProvider);
+  if (!registry) return false;
+
+  try {
+    return await registry.canEditProfile(judgeAddress, editorAddress);
+  } catch (_) {
+    return false;
+  }
+}
+
+async function getJudgeProfileController(judgeAddress, { readProvider = null } = {}) {
+  if (!ethers.isAddress(judgeAddress)) return null;
+  const registry = getJudgeProfileRegistry(activeChainId, readProvider);
+  if (!registry) return null;
+
+  try {
+    const controller = await registry.profileControllerOf(judgeAddress);
+    return controller && controller !== ethers.ZeroAddress ? ethers.getAddress(controller) : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function truncateText(value, maxLength = 220) {
+  const text = String(value || "").trim();
+  if (text.length <= maxLength) return text;
+  return text.slice(0, Math.max(0, maxLength - 3)).trimEnd() + "...";
+}
+
+function setJudgeProfilePageVisible(visible) {
+  document.querySelector(".tabs").classList.toggle("hidden", visible);
+  if (visible) {
+    ["create", "browse", "judges", "my", "view"].forEach((tabName) => {
+      document.getElementById("tab-" + tabName)?.classList.add("hidden");
+    });
+  }
+  document.getElementById("judgeProfilePage").classList.toggle("hidden", !visible);
+}
+
+function getJudgeProfileRouteId() {
+  const params = new URLSearchParams(window.location.search);
+  const judgeParam = params.get("judge");
+  if (!judgeParam) return null;
+  return judgeParam.trim();
+}
+
+function getJudgeProfileRouteChainId() {
+  const params = new URLSearchParams(window.location.search);
+  const chainParam = params.get("chain");
+  if (chainParam) return getChainIdFromParam(chainParam);
+  const chainIdParam = params.get("chainId");
+  if (chainIdParam && /^\d+$/.test(chainIdParam)) return Number(chainIdParam);
+  return activeChainId;
+}
+
+function updateJudgeProfileEditorLink(target) {
+  const rowEl = document.getElementById("judgeOwnProfileLinkRow");
+  const linkEl = document.getElementById("judgeOwnProfileLink");
+  if (!target || !ethers.isAddress(target)) {
+    rowEl.classList.add("hidden");
+    linkEl.href = "#";
+    linkEl.textContent = "";
+    return;
+  }
+
+  const checksum = ethers.getAddress(target);
+  linkEl.href = buildJudgeProfilePath(checksum);
+  linkEl.textContent = `${window.location.origin}${buildJudgeProfilePath(checksum)}`;
+  rowEl.classList.remove("hidden");
+}
+
+function resetJudgeProfileEditorUi({ preserveTarget = false } = {}) {
+  if (!preserveTarget) {
+    document.getElementById("judgeProfileTarget").value = "";
+  }
+  document.getElementById("judgeProfileDisplayName").value = "";
+  document.getElementById("judgeProfileStatement").value = "";
+  document.getElementById("judgeProfileLink").value = "";
+  document.getElementById("judgeProfileMetadata").value = "";
+  document.getElementById("judgeProfileTargetHint").textContent = "Enter the judge contract address you control. The registry rejects EOAs.";
+  currentJudgeProfileDraftTarget = null;
+  updateJudgeProfileEditorLink(null);
+  setJudgeProfileEditorEnabled(false);
+}
+
+function setJudgeProfileEditorEnabled(enabled) {
+  for (const id of [
+    "judgeProfileDisplayName",
+    "judgeProfileStatement",
+    "judgeProfileLink",
+    "judgeProfileMetadata",
+    "saveJudgeProfileBtn",
+    "clearJudgeProfileBtn",
+  ]) {
+    const el = document.getElementById(id);
+    if (el) el.disabled = !enabled;
+  }
+}
+
+function populateJudgeProfileEditor(profile) {
+  document.getElementById("judgeProfileDisplayName").value = profile?.displayName || "";
+  document.getElementById("judgeProfileStatement").value = profile?.statement || "";
+  document.getElementById("judgeProfileLink").value = profile?.linkURI || "";
+  document.getElementById("judgeProfileMetadata").value = profile?.metadataURI || "";
+}
+
+function populateControlledJudgeSelect(controlledJudges) {
+  const rowEl = document.getElementById("judgeProfileControlledRow");
+  const selectEl = document.getElementById("judgeProfileControlledSelect");
+  selectEl.innerHTML = '<option value="">Choose a judge contract...</option>';
+
+  if (!userAddr || !controlledJudges || controlledJudges.length === 0) {
+    rowEl.classList.add("hidden");
+    return;
+  }
+
+  for (const judge of controlledJudges) {
+    const opt = document.createElement("option");
+    opt.value = judge.address;
+    opt.textContent = judge.profile?.displayName
+      ? `${judge.profile.displayName} (${short(judge.address)})`
+      : `${short(judge.address)} — ${formatJudgeDescriptor(judge)}`;
+    selectEl.appendChild(opt);
+  }
+
+  rowEl.classList.remove("hidden");
+}
+
+async function loadJudgeProfileEditorTarget(target, { force = false } = {}) {
+  const hintEl = document.getElementById("judgeProfileTargetHint");
+
+  if (!target || !ethers.isAddress(target)) {
+    currentJudgeProfileDraftTarget = null;
+    populateJudgeProfileEditor(null);
+    updateJudgeProfileEditorLink(null);
+    hintEl.textContent = "Enter the judge contract address you control. The registry rejects EOAs.";
+    setJudgeProfileEditorEnabled(false);
+    return;
+  }
+
+  const checksum = ethers.getAddress(target);
+  const readProvider = new ethers.JsonRpcProvider(chain().rpc);
+  const [profile, canEdit, controller, judgeInfo] = await Promise.all([
+    fetchJudgeProfileByAddress(checksum, activeChainId, { force, readProvider }),
+    canEditJudgeProfile(checksum, userAddr, { readProvider }),
+    getJudgeProfileController(checksum, { readProvider }),
+    getJudgeContractInfo(checksum, { force, readProvider }),
+  ]);
+
+  currentJudgeProfileDraftTarget = checksum;
+  document.getElementById("judgeProfileTarget").value = checksum;
+  populateJudgeProfileEditor(profile);
+  updateJudgeProfileEditorLink(checksum);
+  setJudgeProfileEditorEnabled(canEdit);
+
+  const controllerText = controller ? `Profile controller: ${short(controller)}.` : "No profile controller detected.";
+  const profileText = profile ? " Existing on-chain profile loaded." : " No existing on-chain profile yet.";
+  if (canEdit) {
+    hintEl.textContent = `${formatJudgeDescriptor(judgeInfo)} You can edit this on-chain profile.${controllerText}${profileText}`;
+  } else {
+    hintEl.textContent = `${formatJudgeDescriptor(judgeInfo)} Connected wallet cannot edit this profile.${controllerText}${profileText}`;
+  }
+}
+
+async function refreshJudgeProfileEditor() {
+  const editorEl = document.getElementById("judgeProfileEditor");
+  if (!editorEl) return;
+
+  if (!userAddr || !chain().judgeProfileRegistry) {
+    editorEl.classList.add("hidden");
+    resetJudgeProfileEditorUi();
+    return;
+  }
+
+  editorEl.classList.remove("hidden");
+  const controlledJudges = judgesList.filter((judge) => judge.operator?.toLowerCase() === userAddr.toLowerCase());
+  populateControlledJudgeSelect(controlledJudges);
+
+  const currentTarget = document.getElementById("judgeProfileTarget").value.trim();
+  if (currentTarget && ethers.isAddress(currentTarget)) {
+    await loadJudgeProfileEditorTarget(currentTarget, { force: true });
+    return;
+  }
+
+  if (controlledJudges.length === 1) {
+    await loadJudgeProfileEditorTarget(controlledJudges[0].address, { force: true });
+    document.getElementById("judgeProfileControlledSelect").value = controlledJudges[0].address;
+    return;
+  }
+
+  resetJudgeProfileEditorUi({ preserveTarget: true });
+}
+
+function selectControlledJudgeProfileTarget() {
+  const value = document.getElementById("judgeProfileControlledSelect").value;
+  document.getElementById("judgeProfileTarget").value = value;
+  loadJudgeProfileEditorTarget(value, { force: true });
+}
+
+function onJudgeProfileTargetInput() {
+  const value = document.getElementById("judgeProfileTarget").value.trim();
+  if (!value) {
+    resetJudgeProfileEditorUi({ preserveTarget: true });
+    return;
+  }
+
+  if (!ethers.isAddress(value)) {
+    currentJudgeProfileDraftTarget = null;
+    updateJudgeProfileEditorLink(null);
+    setJudgeProfileEditorEnabled(false);
+    document.getElementById("judgeProfileTargetHint").textContent = "Enter a valid judge contract address. ENS names are not supported here yet.";
+    return;
+  }
+
+  loadJudgeProfileEditorTarget(value, { force: true });
+}
+
+async function saveJudgeProfile() {
+  if (!signer || !userAddr) return;
+
+  const judgeAddress = currentJudgeProfileDraftTarget || document.getElementById("judgeProfileTarget").value.trim();
+  const msg = document.getElementById("judgesMsg");
+  if (!ethers.isAddress(judgeAddress)) {
+    showMsg(msg, "Enter a valid judge contract address first.", "error");
+    return;
+  }
+
+  const displayName = document.getElementById("judgeProfileDisplayName").value.trim();
+  const statement = document.getElementById("judgeProfileStatement").value.trim();
+  const linkURI = document.getElementById("judgeProfileLink").value.trim();
+  const metadataURI = document.getElementById("judgeProfileMetadata").value.trim();
+
+  if (!displayName && !statement && !linkURI && !metadataURI) {
+    await clearJudgeProfile();
+    return;
+  }
+
+  try {
+    const registry = getJudgeProfileRegistry(activeChainId, signer);
+    if (!registry) throw new Error("Judge profile registry is not configured on this chain.");
+
+    showMsg(msg, "Saving on-chain judge profile...", "info");
+    const tx = await registry.setProfile(judgeAddress, displayName, statement, linkURI, metadataURI);
+    await waitForTx(tx);
+
+    clearJudgeProfileCache(judgeAddress, activeChainId);
+    await loadJudgeProfileEditorTarget(judgeAddress, { force: true });
+    for (const judge of judgesList) {
+      if (judge.address.toLowerCase() === judgeAddress.toLowerCase()) {
+        judge.profile = judgeProfileCacheByAddress.get(getJudgeProfileCacheKey(judgeAddress, activeChainId)) || null;
+      }
+    }
+    judgesLoaded = false;
+    buildJudgeSelect();
+    if (document.querySelector(".tab.active")?.dataset.tab === "judges") {
+      await loadJudges();
+    }
+    if (currentJudgeProfileView?.address?.toLowerCase() === judgeAddress.toLowerCase()) {
+      await showJudgeProfilePage(judgeAddress);
+    }
+    showMsg(msg, "Public judge profile saved on-chain.", "success");
+  } catch (err) {
+    showMsg(msg, err.reason || err.message, "error");
+  }
+}
+
+async function clearJudgeProfile() {
+  if (!signer || !userAddr) return;
+
+  const judgeAddress = currentJudgeProfileDraftTarget || document.getElementById("judgeProfileTarget").value.trim();
+  const msg = document.getElementById("judgesMsg");
+  if (!ethers.isAddress(judgeAddress)) {
+    showMsg(msg, "Enter a valid judge contract address first.", "error");
+    return;
+  }
+
+  if (!confirm("Clear this on-chain public judge profile?")) return;
+
+  try {
+    const registry = getJudgeProfileRegistry(activeChainId, signer);
+    if (!registry) throw new Error("Judge profile registry is not configured on this chain.");
+
+    showMsg(msg, "Clearing on-chain judge profile...", "info");
+    const tx = await registry.clearProfile(judgeAddress);
+    await waitForTx(tx);
+
+    clearJudgeProfileCache(judgeAddress, activeChainId);
+    await loadJudgeProfileEditorTarget(judgeAddress, { force: true });
+    for (const judge of judgesList) {
+      if (judge.address.toLowerCase() === judgeAddress.toLowerCase()) {
+        judge.profile = null;
+      }
+    }
+    judgesLoaded = false;
+    buildJudgeSelect();
+    if (document.querySelector(".tab.active")?.dataset.tab === "judges") {
+      await loadJudges();
+    }
+    if (currentJudgeProfileView?.address?.toLowerCase() === judgeAddress.toLowerCase()) {
+      await showJudgeProfilePage(judgeAddress);
+    }
+    showMsg(msg, "Public judge profile cleared.", "success");
+  } catch (err) {
+    showMsg(msg, err.reason || err.message, "error");
+  }
+}
+
+async function copyOwnJudgeProfileUrl() {
+  const target = currentJudgeProfileDraftTarget || document.getElementById("judgeProfileTarget").value.trim();
+  if (!target || !ethers.isAddress(target)) {
+    alert("Enter a valid judge contract address first.");
+    return;
+  }
+
+  const url = `${window.location.origin}${buildJudgeProfilePath(target)}`;
+  try {
+    await navigator.clipboard.writeText(url);
+    showNotifyToast("Judge profile URL copied.", "success");
+  } catch (_) {
+    prompt("Copy this judge profile URL:", url);
+  }
+}
+
+function closeJudgeProfilePage() {
+  const url = new URL(window.location.origin + "/");
+  const chainParam = getChainParamById(currentJudgeProfileView?.chainId || activeChainId);
+  if (chainParam) url.searchParams.set("chain", chainParam);
+  history.replaceState(null, "", url);
+  currentJudgeProfileView = null;
+  setJudgeProfilePageVisible(false);
+  switchTab("judges");
+}
+
+function openJudgeProfileEditor(address = currentJudgeProfileView?.address || null) {
+  closeJudgeProfilePage();
+  switchTab("judges");
+  if (address) {
+    document.getElementById("judgeProfileTarget").value = address;
+    loadJudgeProfileEditorTarget(address, { force: true });
+  }
+}
+
+async function showJudgeProfilePage(profileRef) {
+  document.getElementById("connectScreen").classList.add("hidden");
+  document.getElementById("mainApp").classList.remove("hidden");
+  if (!userAddr) {
+    document.getElementById("connectBtn").classList.remove("hidden");
+  }
+  setJudgeProfilePageVisible(true);
+
+  const loadingEl = document.getElementById("judgeProfileLoading");
+  const errorEl = document.getElementById("judgeProfileError");
+  const contentEl = document.getElementById("judgeProfileContent");
+  const editBtn = document.getElementById("judgeProfileEditBtn");
+  loadingEl.classList.remove("hidden");
+  errorEl.classList.add("hidden");
+  errorEl.textContent = "";
+  contentEl.classList.add("hidden");
+  editBtn.classList.add("hidden");
+
+  try {
+    if (!ethers.isAddress(profileRef)) {
+      throw new Error("Judge page requires a contract address.");
+    }
+
+    const routeChainId = getJudgeProfileRouteChainId();
+    const judgeAddress = ethers.getAddress(profileRef);
+    const readProvider = new ethers.JsonRpcProvider(CHAINS[routeChainId].rpc);
+    const [profile, judgeInfo, controller, canEdit] = await Promise.all([
+      fetchJudgeProfileByAddress(judgeAddress, routeChainId, { force: true, readProvider }),
+      getJudgeContractInfo(judgeAddress, { force: true, readProvider }),
+      getJudgeProfileController(judgeAddress, { readProvider }),
+      userAddr ? canEditJudgeProfile(judgeAddress, userAddr, { readProvider }) : Promise.resolve(false),
+    ]);
+
+    currentJudgeProfileView = profile || {
+      address: judgeAddress,
+      chainId: routeChainId,
+      displayName: "",
+      statement: "",
+      linkURI: "",
+      metadataURI: "",
+      updatedAt: 0n,
+      url: buildJudgeProfilePath(judgeAddress, routeChainId),
+    };
+
+    const profileChain = CHAINS[routeChainId];
+    const addressEl = document.getElementById("judgeProfileAddress");
+    addressEl.href = `${profileChain.explorer}/address/${judgeAddress}`;
+    addressEl.textContent = short(judgeAddress);
+    addressEl.title = judgeAddress;
+
+    const controllerEl = document.getElementById("judgeProfileController");
+    if (controller) {
+      controllerEl.href = `${profileChain.explorer}/address/${controller}`;
+      controllerEl.textContent = short(controller);
+      controllerEl.title = controller;
+    } else if (judgeInfo.operator) {
+      controllerEl.href = `${profileChain.explorer}/address/${judgeInfo.operator}`;
+      controllerEl.textContent = short(judgeInfo.operator);
+      controllerEl.title = judgeInfo.operator;
+    } else {
+      controllerEl.href = "#";
+      controllerEl.textContent = "Unknown";
+      controllerEl.removeAttribute("title");
+    }
+
+    resolveEns(judgeAddress).then((name) => {
+      if (!name) return;
+      if (currentJudgeProfileView?.address?.toLowerCase() !== judgeAddress.toLowerCase()) return;
+      if (!currentJudgeProfileView.displayName) {
+        document.getElementById("judgeProfileTitle").textContent = name;
+      }
+      addressEl.textContent = `${name} (${short(judgeAddress)})`;
+    });
+
+    document.getElementById("judgeProfileTitle").textContent = currentJudgeProfileView.displayName || short(judgeAddress);
+    document.getElementById("judgeProfileSubtitle").textContent = `${formatJudgeDescriptor({ ...judgeInfo, profile: currentJudgeProfileView })} on ${profileChain.name}`;
+    document.getElementById("judgeProfileChain").textContent = profileChain.name;
+    document.getElementById("judgeProfileKind").textContent = judgeInfo.kind === "manual" ? "ManualJudge-compatible contract" : "Custom judge contract";
+    document.getElementById("judgeProfileUpdatedAt").textContent = currentJudgeProfileView.updatedAt
+      ? new Date(Number(currentJudgeProfileView.updatedAt) * 1000).toLocaleString()
+      : "Not published";
+    document.getElementById("judgeProfileStatementView").textContent = currentJudgeProfileView.statement || "This judge has not published a public statement yet.";
+
+    const externalRow = document.getElementById("judgeProfileExternalRow");
+    const externalLink = document.getElementById("judgeProfileExternalLink");
+    if (currentJudgeProfileView.linkURI) {
+      externalLink.href = currentJudgeProfileView.linkURI;
+      externalLink.textContent = currentJudgeProfileView.linkURI;
+      externalRow.classList.remove("hidden");
+    } else {
+      externalLink.href = "#";
+      externalLink.textContent = "";
+      externalRow.classList.add("hidden");
+    }
+
+    const metadataRow = document.getElementById("judgeProfileMetadataRow");
+    const metadataLink = document.getElementById("judgeProfileMetadataLink");
+    if (currentJudgeProfileView.metadataURI) {
+      metadataLink.href = currentJudgeProfileView.metadataURI;
+      metadataLink.textContent = currentJudgeProfileView.metadataURI;
+      metadataRow.classList.remove("hidden");
+    } else {
+      metadataLink.href = "#";
+      metadataLink.textContent = "";
+      metadataRow.classList.add("hidden");
+    }
+
+    if (canEdit && activeChainId === routeChainId) {
+      editBtn.classList.remove("hidden");
+      editBtn.onclick = () => openJudgeProfileEditor(judgeAddress);
+    }
+
+    loadingEl.classList.add("hidden");
+    contentEl.classList.remove("hidden");
+  } catch (err) {
+    loadingEl.classList.add("hidden");
+    errorEl.className = "msg msg-error";
+    errorEl.textContent = err.message || "Unable to load this judge profile.";
+    errorEl.classList.remove("hidden");
+  }
+}
 
 // ─── Judge Discovery ──────────────────────────────────────────────────
 let judgesLoaded = false;
@@ -3298,6 +4006,10 @@ async function loadJudges() {
     if (requestId !== judgesLoadRequestId) return;
 
     judgesList = normalizeJudges(nextJudges);
+    const profileMap = await fetchJudgeProfilesByAddresses(activeChainId, judgesList.map((judge) => judge.address), { readProvider });
+    for (const judge of judgesList) {
+      judge.profile = profileMap.get(judge.address.toLowerCase()) || null;
+    }
     loadingEl.classList.add("hidden");
     listEl.innerHTML = "";
 
@@ -3320,7 +4032,7 @@ async function loadJudges() {
       const addrEl = item.querySelector('.ji-addr');
       const addrLink = document.createElement("a");
       addrLink.className = "judge-public-link";
-      setJudgeLink(addrLink, j.address);
+      setJudgeLink(addrLink, j.address, { profile: j.profile });
       addrEl.appendChild(addrLink);
       if (isMe) {
         const youEl = document.createElement("span");
@@ -3328,10 +4040,46 @@ async function loadJudges() {
         youEl.textContent = " (you)";
         addrEl.appendChild(youEl);
       }
+      if (j.profile?.statement) {
+        const statementEl = document.createElement("div");
+        statementEl.className = "ji-statement";
+        statementEl.textContent = truncateText(j.profile.statement, 180);
+        item.firstElementChild.appendChild(statementEl);
+      }
+      if (j.profile?.linkURI || j.profile?.metadataURI) {
+        const actionsEl = document.createElement("div");
+        actionsEl.className = "ji-actions";
+
+        const profileLink = document.createElement("a");
+        profileLink.href = buildJudgeProfilePath(j.profile || j.address);
+        profileLink.textContent = "View profile";
+        actionsEl.appendChild(profileLink);
+
+        if (j.profile?.linkURI) {
+          const externalLink = document.createElement("a");
+          externalLink.href = j.profile.linkURI;
+          externalLink.target = "_blank";
+          externalLink.rel = "noopener";
+          externalLink.textContent = "External link";
+          actionsEl.appendChild(externalLink);
+        }
+
+        if (j.profile?.metadataURI) {
+          const metadataLink = document.createElement("a");
+          metadataLink.href = j.profile.metadataURI;
+          metadataLink.target = "_blank";
+          metadataLink.rel = "noopener";
+          metadataLink.textContent = "Metadata";
+          actionsEl.appendChild(metadataLink);
+        }
+
+        item.firstElementChild.appendChild(actionsEl);
+      }
       listEl.appendChild(item);
     }
 
     judgesLoaded = true;
+    await refreshJudgeProfileEditor();
     buildJudgeSelect();
   } catch (err) {
     if (requestId !== judgesLoadRequestId) return;
@@ -3351,9 +4099,10 @@ function buildJudgeSelect() {
     opt.value = entry.address;
     const j = entry.judge;
     const descriptor = formatJudgeDescriptor(j);
-    opt.textContent = `${short(j.address)} — ${j.bondCount} bond${j.bondCount !== 1 ? "s" : ""}`;
+    const label = j.profile?.displayName || short(j.address);
+    opt.textContent = `${label} — ${descriptor}`;
     resolveEns(j.address).then(name => {
-      if (name) opt.textContent = `${name} — ${descriptor}`;
+      if (name && !j.profile?.displayName) opt.textContent = `${name} — ${descriptor}`;
     });
     sel.appendChild(opt);
   }
@@ -3374,6 +4123,10 @@ async function loadJudgeSelectOnCreate() {
     try {
       const readProvider = new ethers.JsonRpcProvider(chain().rpc);
       judgesList = normalizeJudges(await discoverJudges(readProvider));
+      const profileMap = await fetchJudgeProfilesByAddresses(activeChainId, judgesList.map((judge) => judge.address), { readProvider });
+      for (const judge of judgesList) {
+        judge.profile = profileMap.get(judge.address.toLowerCase()) || null;
+      }
     } catch (_) {}
     _loadingJudgeSelect = false;
   }
@@ -3392,7 +4145,8 @@ function onJudgeSelectChange() {
     customField.classList.add("hidden");
     const j = judgesList.find(j => j.address.toLowerCase() === val.toLowerCase());
     if (j) {
-      hintEl.textContent = `${formatJudgeDescriptor(j)} · seen in ${j.bondCount} bond${j.bondCount !== 1 ? "s" : ""} on-chain.`;
+      const profileText = j.profile?.displayName ? `Profile: ${j.profile.displayName}. ` : "";
+      hintEl.textContent = `${profileText}${formatJudgeDescriptor(j)} · seen in ${j.bondCount} bond${j.bondCount !== 1 ? "s" : ""} on-chain.`;
     }
   } else {
     customField.classList.add("hidden");
@@ -3456,7 +4210,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   // Parse chain from URL
   const params = new URLSearchParams(window.location.search);
   const chainParam = params.get("chain");
-  const judgeProfileRouteId = null;
+  const judgeProfileRouteId = getJudgeProfileRouteId();
   if (chainParam) {
     activeChainId = getChainIdFromParam(chainParam);
     document.getElementById("chainSelect").value = String(activeChainId);
@@ -3470,7 +4224,9 @@ window.addEventListener("DOMContentLoaded", async () => {
   restoreForm();
 
   const bondParam = params.get("bond");
-  if (!judgeProfileRouteId && bondParam !== null) {
+  if (judgeProfileRouteId) {
+    await showJudgeProfilePage(judgeProfileRouteId);
+  } else if (bondParam !== null) {
     // Deep link: show main app and go to view tab
     document.getElementById("connectScreen").classList.add("hidden");
     document.getElementById("mainApp").classList.remove("hidden");
@@ -3508,7 +4264,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   }
 
   // If no auto-connect and no deep link, show connect screen
-  if (!autoConnected && bondParam === null) {
+  if (!autoConnected && bondParam === null && !judgeProfileRouteId) {
     showConnectScreen();
   }
 
