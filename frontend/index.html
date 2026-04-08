@@ -395,6 +395,64 @@
   .mode-btn.active { background: var(--accent); color: #fff; }
   .advanced-field { display: none; }
   .advanced-field.show { display: block; }
+  .create-lead {
+    margin-bottom: 16px;
+    color: var(--muted);
+    font-size: 13px;
+  }
+  .create-summary-card {
+    margin: 18px 0 14px;
+    padding: 16px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: linear-gradient(180deg, rgba(19,19,26,0.95), rgba(10,10,15,0.9));
+  }
+  .create-summary-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+  .create-summary-title {
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--muted);
+  }
+  .create-summary-toggle {
+    padding: 7px 12px;
+    font-size: 12px;
+  }
+  .create-summary-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px 14px;
+  }
+  .create-summary-item {
+    min-width: 0;
+  }
+  .create-summary-item.full {
+    grid-column: 1 / -1;
+  }
+  .create-summary-label {
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 2px;
+  }
+  .create-summary-value {
+    font-size: 14px;
+    color: var(--text);
+    word-break: break-word;
+  }
+  .create-advanced-panel {
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+  }
 
   /* --- Judge Registry --- */
   .judge-item {
@@ -554,12 +612,7 @@
       <div id="createForm" class="hidden">
         <!-- Funding Banner -->
         <div id="fundingBanner" class="funding-banner hidden"></div>
-
-        <!-- Simple / Advanced Toggle -->
-        <div class="mode-toggle">
-          <button class="mode-btn active" data-mode="simple" onclick="setMode('simple')">Simple</button>
-          <button class="mode-btn" data-mode="advanced" onclick="setMode('advanced')">Advanced</button>
-        </div>
+        <div class="create-lead">Start with the claim, amount, judge, and deadline. The app fills in the standard economics by default, and you can override them only if you need to.</div>
 
         <div class="form-group">
           <label for="bondAmount">Amount (USD)</label>
@@ -598,46 +651,77 @@
           <div class="hint">Last date someone can challenge this bond.</div>
         </div>
 
-        <!-- Advanced fields -->
-        <div class="form-group advanced-field" id="advTokenField">
-          <label for="tokenSelect">Currency</label>
-          <div class="token-row">
-            <select id="tokenSelect" onchange="onTokenChange()"></select>
-            <button type="button" class="secondary add-token-btn" onclick="addCustomToken()">+ Add Custom</button>
+        <div class="create-summary-card">
+          <div class="create-summary-header">
+            <div class="create-summary-title">Recommended Setup</div>
+            <button type="button" id="createAdvancedToggleBtn" class="secondary create-summary-toggle" onclick="toggleCreateAdvanced()">Customize</button>
           </div>
-        </div>
-
-        <div class="form-group advanced-field" id="advChallengeField">
-          <label for="challengeAmount">Challenge Amount</label>
-          <input type="text" id="challengeAmount" placeholder="50.0" oninput="this.dataset.userEdited='1'">
-          <div class="hint">Amount each challenger must deposit. Default: 50% of bond.</div>
-        </div>
-
-        <div class="form-group advanced-field" id="advJudgeFeeField">
-          <label for="judgeFee">Judge Fee</label>
-          <input type="text" id="judgeFee" placeholder="10.0" oninput="this.dataset.userEdited='1'">
-          <div class="hint">Fee the judge receives per ruling. Default: 5% of bond.</div>
-        </div>
-
-        <div class="form-group advanced-field" id="advAcceptanceDelayField">
-          <label>Acceptance Delay</label>
-          <div class="preset-row">
-            <button type="button" class="preset acceptance-preset" data-adelay="1" onclick="setAcceptanceDelay(1)">1 day</button>
-            <button type="button" class="preset acceptance-preset active" data-adelay="3" onclick="setAcceptanceDelay(3)">3 days</button>
-            <button type="button" class="preset acceptance-preset" data-adelay="7" onclick="setAcceptanceDelay(7)">7 days</button>
-            <button type="button" class="preset acceptance-preset" data-adelay="14" onclick="setAcceptanceDelay(14)">14 days</button>
+          <div class="create-summary-grid">
+            <div class="create-summary-item">
+              <div class="create-summary-label">Currency</div>
+              <div class="create-summary-value" id="createSummaryCurrency">sDAI</div>
+            </div>
+            <div class="create-summary-item">
+              <div class="create-summary-label">Challenge Amount</div>
+              <div class="create-summary-value" id="createSummaryChallenge">$0.00</div>
+            </div>
+            <div class="create-summary-item">
+              <div class="create-summary-label">Judge Fee</div>
+              <div class="create-summary-value" id="createSummaryFee">$0.00</div>
+            </div>
+            <div class="create-summary-item">
+              <div class="create-summary-label">Timing</div>
+              <div class="create-summary-value" id="createSummaryTiming">3d acceptance, 30d ruling</div>
+            </div>
+            <div class="create-summary-item full">
+              <div class="create-summary-label">Judge</div>
+              <div class="create-summary-value" id="createSummaryJudge">Select a judge contract</div>
+            </div>
           </div>
-          <div class="hint">Grace period to concede before the judge can rule. Default: 3 days.</div>
-        </div>
+          <div id="createSummaryHint" class="hint">Defaults use the standard bond settings: 50% challenge amount, 5% judge fee, 3-day acceptance delay, and 30-day ruling window.</div>
 
-        <div class="form-group advanced-field" id="advRulingBufferField">
-          <label>Ruling Window</label>
-          <div class="preset-row">
-            <button type="button" class="preset ruling-preset" data-buffer="7" onclick="setRulingBuffer(7)">7 days</button>
-            <button type="button" class="preset ruling-preset" data-buffer="14" onclick="setRulingBuffer(14)">14 days</button>
-            <button type="button" class="preset ruling-preset active" data-buffer="30" onclick="setRulingBuffer(30)">30 days</button>
+          <div id="createAdvancedPanel" class="create-advanced-panel hidden">
+            <div class="form-group advanced-field" id="advTokenField">
+              <label for="tokenSelect">Currency</label>
+              <div class="token-row">
+                <select id="tokenSelect" onchange="onTokenChange()"></select>
+                <button type="button" class="secondary add-token-btn" onclick="addCustomToken()">+ Add Custom</button>
+              </div>
+            </div>
+
+            <div class="form-group advanced-field" id="advChallengeField">
+              <label for="challengeAmount">Challenge Amount</label>
+              <input type="text" id="challengeAmount" placeholder="50.0" oninput="this.dataset.userEdited='1'; updateCreateSummary();">
+              <div class="hint">Amount each challenger must deposit. Default: 50% of bond.</div>
+            </div>
+
+            <div class="form-group advanced-field" id="advJudgeFeeField">
+              <label for="judgeFee">Judge Fee</label>
+              <input type="text" id="judgeFee" placeholder="10.0" oninput="this.dataset.userEdited='1'; updateCreateSummary();">
+              <div class="hint">Fee the judge receives per ruling. Default: 5% of bond.</div>
+            </div>
+
+            <div class="form-group advanced-field" id="advAcceptanceDelayField">
+              <label>Acceptance Delay</label>
+              <div class="preset-row">
+                <button type="button" class="preset acceptance-preset" data-adelay="1" onclick="setAcceptanceDelay(1)">1 day</button>
+                <button type="button" class="preset acceptance-preset active" data-adelay="3" onclick="setAcceptanceDelay(3)">3 days</button>
+                <button type="button" class="preset acceptance-preset" data-adelay="7" onclick="setAcceptanceDelay(7)">7 days</button>
+                <button type="button" class="preset acceptance-preset" data-adelay="14" onclick="setAcceptanceDelay(14)">14 days</button>
+              </div>
+              <div class="hint">Grace period to concede before the judge can rule. Default: 3 days.</div>
+            </div>
+
+            <div class="form-group advanced-field" id="advRulingBufferField">
+              <label>Ruling Window</label>
+              <div class="preset-row">
+                <button type="button" class="preset ruling-preset" data-buffer="7" onclick="setRulingBuffer(7)">7 days</button>
+                <button type="button" class="preset ruling-preset" data-buffer="14" onclick="setRulingBuffer(14)">14 days</button>
+                <button type="button" class="preset ruling-preset active" data-buffer="30" onclick="setRulingBuffer(30)">30 days</button>
+              </div>
+              <div class="hint">Time for the judge to rule. If missed, everyone is refunded. Default: 30 days.</div>
+            </div>
           </div>
-          <div class="hint">Time for the judge to rule. If missed, everyone is refunded. Default: 30 days.</div>
         </div>
 
         <div id="createStepper"></div>
@@ -1356,6 +1440,7 @@ async function onTokenChange() {
   // Refresh judge dropdown to show fees for the new token
   buildJudgeSelect();
   onJudgeSelectChange();
+  updateCreateSummary();
 }
 
 function onAmountChange() {
@@ -1366,18 +1451,25 @@ function onAmountChange() {
     if (!challengeEl.dataset.userEdited) challengeEl.value = (val * 0.5).toFixed(2);
     if (!feeEl.dataset.userEdited) feeEl.value = (val * 0.05).toFixed(2);
   }
+  updateCreateSummary();
   checkApproval();
 }
 
 // ─── Simple / Advanced toggle ─────────────────────────────────────────
+function toggleCreateAdvanced() {
+  setMode(currentMode === "advanced" ? "simple" : "advanced");
+}
+
 function setMode(mode) {
   currentMode = mode;
-  document.querySelectorAll('.mode-btn').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.mode === mode);
-  });
+  const advancedOpen = mode === "advanced";
+  const advancedPanel = document.getElementById("createAdvancedPanel");
+  const toggleBtn = document.getElementById("createAdvancedToggleBtn");
+  if (advancedPanel) advancedPanel.classList.toggle("hidden", !advancedOpen);
   document.querySelectorAll('.advanced-field').forEach(el => {
-    el.classList.toggle('show', mode === 'advanced');
+    el.classList.toggle('show', advancedOpen);
   });
+  if (toggleBtn) toggleBtn.textContent = advancedOpen ? "Use Defaults" : "Customize";
   updateTokenExplainer();
   // In simple mode, reset user overrides and re-apply defaults
   if (mode === 'simple') {
@@ -1385,6 +1477,50 @@ function setMode(mode) {
     delete document.getElementById("judgeFee").dataset.userEdited;
     onAmountChange();
   }
+  updateCreateSummary();
+}
+
+function formatUsdPreview(value) {
+  if (!Number.isFinite(value) || value <= 0) return "$0.00";
+  return `$${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+}
+
+function updateCreateSummary() {
+  const currencyEl = document.getElementById("createSummaryCurrency");
+  const challengeEl = document.getElementById("createSummaryChallenge");
+  const feeEl = document.getElementById("createSummaryFee");
+  const timingEl = document.getElementById("createSummaryTiming");
+  const judgeEl = document.getElementById("createSummaryJudge");
+  const hintEl = document.getElementById("createSummaryHint");
+  if (!currencyEl || !challengeEl || !feeEl || !timingEl || !judgeEl || !hintEl) return;
+
+  const tokenAddr = getSelectedToken();
+  const tokenInfo = tokenAddr ? getTokenInfo(tokenAddr) : null;
+  currencyEl.textContent = tokenInfo ? friendlyTokenName(tokenAddr, tokenInfo.symbol || "") : "sDAI";
+
+  const bondVal = parseFloat(document.getElementById("bondAmount").value);
+  const challengeRaw = document.getElementById("challengeAmount").value.trim();
+  const feeRaw = document.getElementById("judgeFee").value.trim();
+  const challengeVal = challengeRaw && !isNaN(challengeRaw) ? parseFloat(challengeRaw) : (Number.isFinite(bondVal) && bondVal > 0 ? bondVal * 0.5 : 0);
+  const feeVal = feeRaw && !isNaN(feeRaw) ? parseFloat(feeRaw) : (Number.isFinite(bondVal) && bondVal > 0 ? bondVal * 0.05 : 0);
+  challengeEl.textContent = formatUsdPreview(challengeVal);
+  feeEl.textContent = formatUsdPreview(feeVal);
+  timingEl.textContent = `${acceptanceDelayDays}d acceptance, ${rulingBufferDays}d ruling`;
+
+  const judgeSelectVal = document.getElementById("judgeSelect").value;
+  if (judgeSelectVal === "__custom__") {
+    const customJudge = document.getElementById("judgeAddr").value.trim();
+    judgeEl.textContent = customJudge || "Custom judge address";
+  } else if (judgeSelectVal) {
+    const judge = judgesList.find((entry) => entry.address.toLowerCase() === judgeSelectVal.toLowerCase());
+    judgeEl.textContent = judge ? `${getJudgeDisplayName(judge) || short(judge.address)} (${formatJudgeDescriptor(judge)})` : short(judgeSelectVal);
+  } else {
+    judgeEl.textContent = "Select a judge contract";
+  }
+
+  hintEl.textContent = currentMode === "advanced"
+    ? "You are overriding the standard bond economics below."
+    : "Defaults use the standard bond settings: 50% challenge amount, 5% judge fee, 3-day acceptance delay, and 30-day ruling window.";
 }
 
 async function updateTokenExplainer() {
@@ -2480,7 +2616,7 @@ async function smartCreateBond() {
         updateStepStatus(stepperEl, stepIdx, 'done');
 
         // Show success prominently — hide form fields, show success card in msg
-        document.querySelectorAll('#createForm .form-group, #createForm .mode-toggle, #createBtn, #createStepper').forEach(el => el.style.display = 'none');
+        document.querySelectorAll('#createForm .form-group, #createForm .create-lead, #createForm .create-summary-card, #createBtn, #createStepper').forEach(el => el.style.display = 'none');
         if (bondId !== null) {
           msg.innerHTML = `<div class="success-card">
             <div class="sc-label">Bond created!</div>
@@ -3323,16 +3459,19 @@ function setDeadline(days) {
   const d = new Date(Date.now() + days * 86400000);
   document.getElementById("deadline").value = d.toISOString().slice(0, 10);
   document.querySelectorAll(".preset:not(.ruling-preset)").forEach(b => b.classList.toggle("active", b.dataset.days == days));
+  updateCreateSummary();
 }
 
 function setRulingBuffer(days) {
   rulingBufferDays = days;
   document.querySelectorAll(".ruling-preset").forEach(b => b.classList.toggle("active", b.dataset.buffer == days));
+  updateCreateSummary();
 }
 
 function setAcceptanceDelay(days) {
   acceptanceDelayDays = days;
   document.querySelectorAll(".acceptance-preset").forEach(b => b.classList.toggle("active", b.dataset.adelay == days));
+  updateCreateSummary();
 }
 
 function short(addr) { return addr.slice(0, 6) + "..." + addr.slice(-4); }
@@ -3394,6 +3533,7 @@ function resolveJudgeEns() {
   const val = input.value.trim();
   delete input.dataset.resolvedAddr;
   onJudgeSelectChange();
+  updateCreateSummary();
   judgeEnsTimer = setTimeout(async () => {
     const hint = document.getElementById("judgeEnsHint");
     if (val.endsWith('.eth') || val.endsWith('.xyz') || val.endsWith('.id')) {
@@ -3421,6 +3561,7 @@ function resolveJudgeEns() {
       delete input.dataset.resolvedAddr;
     }
     onJudgeSelectChange();
+    updateCreateSummary();
   }, 500);
 }
 
@@ -4934,6 +5075,7 @@ function buildJudgeSelect() {
   sel.appendChild(customOpt);
 
   if (prev && [...sel.options].some(o => o.value === prev)) sel.value = prev;
+  updateCreateSummary();
 }
 
 let _loadingJudgeSelect = false;
@@ -4977,6 +5119,7 @@ function onJudgeSelectChange() {
     customField.classList.add("hidden");
     hintEl.textContent = "Pick a judge contract both parties trust. The contract may still reject the proposed terms at bond creation.";
   }
+  updateCreateSummary();
 }
 
 async function doRejectBond(bondId, judgeAddr) {
@@ -5021,6 +5164,8 @@ function restoreForm() {
     if (data._acceptanceDelay) setAcceptanceDelay(data._acceptanceDelay);
     if (data._tab) switchTab(data._tab, { updateUrl: false });
     onJudgeSelectChange();
+    onAmountChange();
+    updateCreateSummary();
   } catch (_) {}
 }
 
