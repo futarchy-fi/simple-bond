@@ -4310,6 +4310,8 @@ async function refreshJudgeOnboarding() {
   if (!userAddr) {
     hintEl.textContent = "Sign in to deploy your own judge contract, activate it, and publish a public profile.";
     statusEl.textContent = "Judging uses an on-chain contract. The app can create one for your connected wallet in one flow.";
+    deployBtn.classList.remove("hidden");
+    deployBtn.textContent = "Sign In";
     return;
   }
 
@@ -4349,6 +4351,8 @@ async function refreshJudgeOnboarding() {
 
 async function deployOwnJudge() {
   if (!signer || !userAddr) {
+    const msg = document.getElementById("judgesMsg");
+    showMsg(msg, "Sign in first to create a judge.", "info");
     showConnectScreen();
     return;
   }
@@ -4895,7 +4899,12 @@ function onJudgeProfileTargetInput() {
 }
 
 async function saveJudgeProfile() {
-  if (!signer || !userAddr) return;
+  if (!signer || !userAddr) {
+    const msg = document.getElementById("judgesMsg");
+    showMsg(msg, "Sign in first to publish or edit your public judge profile.", "info");
+    showConnectScreen();
+    return;
+  }
 
   const judgeAddress = currentJudgeProfileDraftTarget || document.getElementById("judgeProfileTarget").value.trim();
   const msg = document.getElementById("judgesMsg");
@@ -4944,7 +4953,12 @@ async function saveJudgeProfile() {
 }
 
 async function clearJudgeProfile() {
-  if (!signer || !userAddr) return;
+  if (!signer || !userAddr) {
+    const msg = document.getElementById("judgesMsg");
+    showMsg(msg, "Sign in first to edit your public judge profile.", "info");
+    showConnectScreen();
+    return;
+  }
 
   const judgeAddress = currentJudgeProfileDraftTarget || document.getElementById("judgeProfileTarget").value.trim();
   const msg = document.getElementById("judgesMsg");
@@ -5011,6 +5025,10 @@ function closeJudgeProfilePage() {
 }
 
 function openJudgeProfileEditor(address = currentJudgeProfileView?.address || null) {
+  if (!userAddr) {
+    showConnectScreen();
+    return;
+  }
   closeJudgeProfilePage();
   switchTab("judges");
   if (address) {
