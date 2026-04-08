@@ -2517,6 +2517,24 @@ async function smartCreateBond() {
 }
 
 // ─── Tabs ─────────────────────────────────────────────────────────────
+function showMyBondsLoadingState() {
+  const loadingEl = document.getElementById("myBondsLoading");
+  const emptyEl = document.getElementById("myBondsEmpty");
+  const listEl = document.getElementById("myBondsList");
+  if (loadingEl) loadingEl.classList.remove("hidden");
+  if (emptyEl) emptyEl.classList.add("hidden");
+  if (listEl) listEl.innerHTML = "";
+}
+
+function showBrowseLoadingState() {
+  const loadingEl = document.getElementById("browseLoading");
+  const emptyEl = document.getElementById("browseEmpty");
+  const listEl = document.getElementById("browseBondsList");
+  if (loadingEl) loadingEl.classList.remove("hidden");
+  if (emptyEl) emptyEl.classList.add("hidden");
+  if (listEl) listEl.innerHTML = "";
+}
+
 function switchTab(name) {
   setJudgeProfilePageVisible(false);
   document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.tab === name));
@@ -2524,8 +2542,14 @@ function switchTab(name) {
     const el = document.getElementById("tab-" + t);
     if (el) el.classList.toggle("hidden", t !== name);
   });
-  if (name === "my" && userAddr) loadMyBonds();
-  if (name === "browse") loadBrowseBonds();
+  if (name === "my" && userAddr) {
+    showMyBondsLoadingState();
+    loadMyBonds();
+  }
+  if (name === "browse") {
+    showBrowseLoadingState();
+    loadBrowseBonds();
+  }
   if (name === "judges") loadJudges();
 }
 
@@ -3137,7 +3161,7 @@ async function loadBrowseBonds() {
       const bondId = Number(ev.args.bondId);
       try {
         const b = await readContract.bonds(bondId);
-        const [, , token, bondAmount, challengeAmount, , deadline, , , metadata, settled, conceded, , lastChallengeTime] = b;
+        const [, judge, token, bondAmount, challengeAmount, , deadline, , , metadata, settled, conceded, , lastChallengeTime] = b;
 
         let symbol = "???", decimals = 18;
         try {
