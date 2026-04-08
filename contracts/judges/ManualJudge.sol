@@ -5,6 +5,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 import "../interfaces/IBondJudgeV5.sol";
+import "../interfaces/IJudgeProfileControlled.sol";
 
 interface IBondJudgeTarget {
     function ruleForPoster(uint256 bondId, uint256 feeCharged) external;
@@ -17,7 +18,7 @@ interface IBondJudgeTarget {
 /// @dev This contract is intentionally portable across compatible bond
 /// contracts. It is not bound to a single SimpleBond instance so a later core
 /// version can reuse the same wrapper instead of forcing redeployment.
-contract ManualJudge is IBondJudgeV5 {
+contract ManualJudge is IBondJudgeV5, IJudgeProfileControlled {
     using SafeERC20 for IERC20;
 
     address public immutable proposedOperator;
@@ -57,6 +58,14 @@ contract ManualJudge is IBondJudgeV5 {
         // ManualJudge does not inspect bond terms. Its only creation-time
         // policy is whether the proposed operator has accepted activation.
         require(active, "Judge inactive");
+    }
+
+    function profileController() external view override returns (address) {
+        if (operator != address(0)) {
+            return operator;
+        }
+
+        return proposedOperator;
     }
 
     function withdrawFees(address token, address to, uint256 amount) external {
