@@ -6,6 +6,12 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 import "../interfaces/IBondJudgeV5.sol";
 
+/// @title SimpleBondV5
+/// @notice Minimal V5 bond core with FIFO challenges and contract-based judges.
+/// @dev V5 intentionally stays close to V4, but removes the global judge
+/// registry from the core and requires the configured judge to be a contract.
+/// Policy about whether to accept a bond and how to handle disputes now lives
+/// with the judge implementation rather than the bond core.
 contract SimpleBondV5 {
     using SafeERC20 for IERC20;
 
@@ -17,6 +23,8 @@ contract SimpleBondV5 {
 
     struct Bond {
         address poster;
+        // Judges are contracts in V5 so the core can stay generic while judge-
+        // specific policy lives in adapter/wrapper contracts.
         address judge;
         address token;
         uint256 bondAmount;
@@ -32,6 +40,8 @@ contract SimpleBondV5 {
         uint256 lastChallengeTime;
     }
 
+    // Typed core snapshot for judge adapters and off-chain consumers. This
+    // avoids brittle raw storage decoding in external integrations.
     struct BondCoreView {
         address poster;
         address judge;
@@ -122,6 +132,9 @@ contract SimpleBondV5 {
         require(rulingBuffer > 0, "Zero ruling buffer");
         require(judgeFee <= challengeAmount, "Fee > challenge amount");
 
+        // Creation-time interface/policy probe. This is not a promise that the
+        // judge will later rule on the merits; it only means the judge accepts
+        // these static terms at bond creation.
         IBondJudgeV5(judge).validateBond(
             token,
             bondAmount,
@@ -195,6 +208,8 @@ contract SimpleBondV5 {
         require(!b.conceded, "Already conceded");
         require(msg.sender == b.poster, "Only poster");
         require(!_noPendingChallenges(bondId), "No pending challenges");
+        // This is the main V5 semantics fix relative to V4: concession closes
+        // on a real timestamp, not on implicit queue-state changes.
         require(block.timestamp < concessionDeadline(bondId), "Concession window closed");
 
         b.conceded = true;
@@ -240,6 +255,8 @@ contract SimpleBondV5 {
         uint256 pot = b.bondAmount + b.challengeAmount;
         IERC20(b.token).safeTransfer(c.challenger, pot - feeCharged);
         if (feeCharged > 0) {
+            // Fees accrue to the judge contract, not an operator EOA. This
+            // keeps downstream accounting or refunds inside the judge adapter.
             IERC20(b.token).safeTransfer(b.judge, feeCharged);
         }
 
@@ -265,6 +282,7 @@ contract SimpleBondV5 {
 
         IERC20(b.token).safeTransfer(b.poster, b.challengeAmount - feeCharged);
         if (feeCharged > 0) {
+            // See ruleForChallenger: the core pays the judge contract directly.
             IERC20(b.token).safeTransfer(b.judge, feeCharged);
         }
 
@@ -333,11 +351,14 @@ contract SimpleBondV5 {
     }
 
     function concessionDeadline(uint256 bondId) public view returns (uint256) {
+        // Concession stays open exactly until the judge's ruling window opens.
         return rulingWindowStart(bondId);
     }
 
     function rulingWindowStart(uint256 bondId) public view returns (uint256) {
         Bond storage b = bonds[bondId];
+        // The judge must wait until both the public challenge deadline and the
+        // post-challenge acceptance delay have elapsed.
         uint256 afterDeadline = b.deadline;
         uint256 afterAcceptance = b.lastChallengeTime + b.acceptanceDelay;
         return afterDeadline > afterAcceptance ? afterDeadline : afterAcceptance;
@@ -367,6 +388,8 @@ contract SimpleBondV5 {
     function _refundRemaining(uint256 bondId, uint256 startIdx) internal {
         Bond storage b = bonds[bondId];
         uint256 len = challenges[bondId].length;
+        // Refund the unresolved suffix of the FIFO queue. Earlier challenges
+        // should already have been consumed by rulings before this helper runs.
         for (uint256 i = startIdx; i < len; i++) {
             Challenge storage c = challenges[bondId][i];
             if (c.status == 0) {

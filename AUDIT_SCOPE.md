@@ -57,7 +57,15 @@ These files may remain in the repository for regression and development reasons,
 
 Please audit against the exact git commit selected at engagement kickoff, not a floating branch name.
 
-At the time of writing, the intended `V5` core audit target is the `main` line at an exact agreed commit hash.
+The intended named snapshot for this engagement is the annotated tag `audit-v5-core`.
+
+At kickoff:
+
+- resolve `audit-v5-core` to its full commit hash
+- record that resolved hash in the engagement materials
+- do not rely on a floating branch name after kickoff
+
+If the team intentionally moves or recreates the tag before audit kickoff, the newly resolved commit hash should become the agreed audit target.
 
 ## Test Commands
 
@@ -80,6 +88,22 @@ npm test
 - `ManualJudge` is intentionally minimal and does not attempt to constrain operator judgment.
 - `SimpleBondV5` assumes the configured judge contract may rule, reject, or do nothing until timeout.
 - `SimpleBondV5` does not model external arbitration flows, appeals, or evidence systems.
+
+## Token Assumptions
+
+- `SimpleBondV5` is intended for standard ERC-20 tokens whose transfers move the requested nominal amount.
+- fee-on-transfer, rebasing, callback-bearing, or otherwise non-standard tokens are out of scope for this audit unless explicitly noted otherwise at engagement kickoff.
+- the core does not attempt to normalize or compensate for token-specific transfer side effects.
+
+## Intentional Diffs From V4
+
+The audit should treat the following as intentional `V5` design changes, not accidental divergences:
+
+- the bond core no longer contains an on-chain judge registry
+- the configured `judge` must be a contract, not an EOA
+- judge term acceptance is checked at bond creation through `validateBond(...)`
+- `validateBond(...)` is only a creation-time compatibility and term-acceptance check; it does not obligate the judge to later rule
+- concession now closes on a real time-based cutoff via `concessionDeadline(bondId)`, fixing the unintended `V4` behavior that depended on queue state rather than time
 
 ## Explicitly Deferred Work
 
