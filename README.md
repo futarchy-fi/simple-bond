@@ -139,13 +139,15 @@ cp .env.example .env  # add PRIVATE_KEY and RPC_URL
 npx hardhat compile
 npx hardhat run scripts/deploy.js --network gnosis
 npx hardhat run scripts/deployJudgeProfileRegistry.js --network gnosis
+npx hardhat run scripts/deployJudgeRegistry.js --network gnosis
 npx hardhat run scripts/deployOfficialBondDirectory.js --network gnosis
 ```
 
 `scripts/deploy.js` now deploys `SimpleBondV5`.
 `scripts/deployJudgeProfileRegistry.js` deploys the optional on-chain public judge profile registry.
+`scripts/deployJudgeRegistry.js` deploys the canonical on-chain mapping from operator wallet to judge contract.
 `scripts/deployOfficialBondDirectory.js` deploys the optional Futarchy-controlled on-chain directory of official judges and supported tokens, with separate transferable `owner` and `admin` roles.
-All three scripts print the post-deploy runtime-config checklist you need for the live site.
+All four scripts print the post-deploy runtime-config checklist you need for the live site.
 
 ## Frontend Runtime Config
 
@@ -159,6 +161,7 @@ window.SIMPLE_BOND_CONFIG = {
   gnosisBondContract: "0x7dF485C013f8671B656d585f1d1411640B1D2776",
   gnosisDeployBlock: 45569363,
   gnosisJudgeProfileRegistry: "0x5f2000E438533662A689311672a41aca3EDC88DD",
+  gnosisJudgeRegistry: "0xf2F50455D3E1956EF4DF8BBA9a93CeDaF4aE9A3D",
   gnosisOfficialDirectory: "0xb32263E363f668f97137D53baF69CF7Fb388c343",
 };
 ```
@@ -172,6 +175,7 @@ window.SIMPLE_BOND_CONFIG = {
   gnosisBondContract: "0xYourSimpleBondV5Address",
   gnosisDeployBlock: 12345678,
   gnosisJudgeProfileRegistry: "0xYourJudgeProfileRegistryAddress",
+  gnosisJudgeRegistry: "0xYourJudgeRegistryAddress",
   gnosisOfficialDirectory: "0xYourOfficialBondDirectoryAddress",
 };
 ```
@@ -211,6 +215,7 @@ Current canonical Gnosis deployment:
 |-------|-------|---------|
 | SimpleBondV5 | Gnosis | `0x7dF485C013f8671B656d585f1d1411640B1D2776` |
 | JudgeProfileRegistry | Gnosis | `0x5f2000E438533662A689311672a41aca3EDC88DD` |
+| JudgeRegistry | Gnosis | `0xf2F50455D3E1956EF4DF8BBA9a93CeDaF4aE9A3D` |
 | OfficialBondDirectory | Gnosis | `0xb32263E363f668f97137D53baF69CF7Fb388c343` |
 | SimpleBondV4 | Gnosis | `0xCe8799303AeaEC861142470d754F74E09EfD1C45` |
 | SimpleBondV4 | Polygon | `0x6B24380B1980db3e2DfDd2b62f5ed3E7E88DFA43` |
@@ -219,6 +224,11 @@ Current canonical Gnosis deployment:
 | WXDAI | Gnosis | `0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d` |
 
 Judge profile registry control:
+
+- owner: `0x645A3D9208523bbFEE980f7269ac72C61Dd3b552`
+- admin: `0x693E3FB46Bb36eE43C702FE94f9463df0691b43d`
+
+Judge registry control:
 
 - owner: `0x645A3D9208523bbFEE980f7269ac72C61Dd3b552`
 - admin: `0x693E3FB46Bb36eE43C702FE94f9463df0691b43d`

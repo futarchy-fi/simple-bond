@@ -5,6 +5,7 @@ const RUNTIME_CONFIG_TARGETS = {
         bondContractKey: "gnosisBondContract",
         deployBlockKey: "gnosisDeployBlock",
         judgeProfileRegistryKey: "gnosisJudgeProfileRegistry",
+        judgeRegistryKey: "gnosisJudgeRegistry",
         officialDirectoryKey: "gnosisOfficialDirectory",
     },
 };
@@ -31,6 +32,13 @@ function printV5FrontendConfigChecklist(runtimeConfig, address, blockNumber, log
 function printJudgeProfileRegistryChecklist(runtimeConfig, address, log) {
     log(`  2. If this should be the live ${runtimeConfig.name} judge profile registry, update frontend/runtime-config.js:`);
     log(`     set window.SIMPLE_BOND_CONFIG.${runtimeConfig.judgeProfileRegistryKey} = "${address}"`);
+    log("  3. If this deployment is canonical, update README.md's Addresses table.");
+    log("  4. Record the deployed address, tx hash, and block number in your release notes or ops log.");
+}
+
+function printJudgeRegistryChecklist(runtimeConfig, address, log) {
+    log(`  2. If this should be the live ${runtimeConfig.name} judge registry, update frontend/runtime-config.js:`);
+    log(`     set window.SIMPLE_BOND_CONFIG.${runtimeConfig.judgeRegistryKey} = "${address}"`);
     log("  3. If this deployment is canonical, update README.md's Addresses table.");
     log("  4. Record the deployed address, tx hash, and block number in your release notes or ops log.");
 }
@@ -80,6 +88,11 @@ function printSimpleBondDeploymentChecklist({
 
     if (runtimeConfig && contractName === "JudgeProfileRegistry") {
         printJudgeProfileRegistryChecklist(runtimeConfig, address, log);
+        return;
+    }
+
+    if (runtimeConfig && contractName === "JudgeRegistry") {
+        printJudgeRegistryChecklist(runtimeConfig, address, log);
         return;
     }
 

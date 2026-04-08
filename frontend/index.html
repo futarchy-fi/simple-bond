@@ -650,8 +650,14 @@
             Your judge contract:
             <a id="judgeOnboardingAddress" class="judge-public-link" href="#"></a>
           </div>
+          <div class="form-group" style="margin-top:12px;margin-bottom:0;">
+            <label>I already have a judge contract</label>
+            <input type="text" id="judgeExistingAddress" placeholder="Paste an existing judge contract address">
+            <div class="hint">Use this if your judge already exists on-chain but was not created by this browser.</div>
+          </div>
           <div class="judge-onboarding-actions">
             <button id="judgeOnboardingConnectBtn" class="secondary" onclick="showConnectScreen()">Sign In</button>
+            <button id="judgeOnboardingUseExistingBtn" class="secondary" onclick="useExistingJudgeAddress()">Use Existing Judge</button>
             <button id="judgeOnboardingDeployBtn" class="hidden" onclick="deployOwnJudge()">Create My Judge</button>
             <button id="judgeOnboardingActivateBtn" class="secondary hidden" onclick="acceptOwnJudgeRole()">Activate Judge</button>
             <button id="judgeOnboardingEditBtn" class="secondary hidden" onclick="openOwnJudgeProfile()">Edit Public Profile</button>
@@ -945,6 +951,7 @@ const CHAINS = {
     contract: window.SIMPLE_BOND_CONFIG?.gnosisBondContract || null,
     deployBlock: Number(window.SIMPLE_BOND_CONFIG?.gnosisDeployBlock || 0),
     judgeProfileRegistry: window.SIMPLE_BOND_CONFIG?.gnosisJudgeProfileRegistry || null,
+    judgeRegistry: window.SIMPLE_BOND_CONFIG?.gnosisJudgeRegistry || null,
     officialDirectory: window.SIMPLE_BOND_CONFIG?.gnosisOfficialDirectory || null,
     nativeCurrency: { name: "xDAI", symbol: "xDAI", decimals: 18 },
     fallbackDefaultToken: { address: "0xaf204776c7245bF4147c2612BF6e5972Ee483701", symbol: "sDAI", decimals: 18, displayName: "USD Savings (earns ~8% APY)" },
@@ -1043,12 +1050,23 @@ const BOND_JUDGE_ABI = [
 ];
 
 const JUDGE_PROFILE_REGISTRY_ABI = [
+  "event JudgeProfileUpdated(address indexed judge, address indexed editor)",
+  "event JudgeProfileCleared(address indexed judge, address indexed editor)",
   "function getProfile(address judge) view returns (string displayName, string statement, string linkURI, string metadataURI, uint64 updatedAt)",
   "function hasProfile(address judge) view returns (bool)",
   "function profileControllerOf(address judge) view returns (address)",
   "function canEditProfile(address judge, address editor) view returns (bool)",
   "function setProfile(address judge, string displayName, string statement, string linkURI, string metadataURI)",
   "function clearProfile(address judge)",
+];
+
+const JUDGE_REGISTRY_ABI = [
+  "function judgeOf(address operator) view returns (address)",
+  "function operatorOf(address judge) view returns (address)",
+  "function judgeCount() view returns (uint256)",
+  "function judgeAt(uint256 index) view returns (address)",
+  "function setJudge(address judge)",
+  "function clearMyJudge()",
 ];
 
 const OFFICIAL_BOND_DIRECTORY_ABI = [
@@ -1814,6 +1832,7 @@ async function switchChain(chainIdStr) {
   onTokenChange();
   updateTokenExplainer();
   loadJudgeSelectOnCreate();
+  judgeProfileEditorOpen = false;
   refreshJudgeProfileEditor();
 
   // Update URL
@@ -1890,6 +1909,7 @@ async function disconnectWallet() {
   tokenCache = {};
   myBondsLoaded = false;
   currentJudgeProfileView = null;
+  judgeProfileEditorOpen = false;
 
   document.getElementById("walletInfo").classList.add("hidden");
   document.getElementById("connectBtn").classList.remove("hidden");
@@ -3344,9 +3364,10 @@ async function getJudgeContractInfos(addresses, { force = false, readProvider = 
 }
 
 async function discoverJudges(readProvider) {
-  const [officialSnapshot, logs] = await Promise.all([
+  const [officialSnapshot, logs, canonicalJudges] = await Promise.all([
     loadOfficialDirectorySnapshot(activeChainId, { readProvider }),
     chain().contract ? queryDetailedBondCreatedLogs(readProvider).catch(() => []) : Promise.resolve([]),
+    discoverCanonicalJudges(activeChainId, { readProvider }),
   ]);
   const iface = new ethers.Interface(BOND_ABI);
   const counts = new Map();
@@ -3368,14 +3389,14 @@ async function discoverJudges(readProvider) {
   }));
   const officialJudges = officialSnapshot?.judges || [];
   const allAddresses = [...new Set(
-    [...officialJudges, ...discovered, ...locallyTracked]
+    [...officialJudges, ...discovered, ...canonicalJudges, ...locallyTracked]
       .map((entry) => entry.address)
       .filter(Boolean)
       .map((address) => address.toLowerCase())
   )];
   const infoMap = await getJudgeContractInfos(allAddresses, { readProvider });
   return dedupeJudgesByAddress(
-    [...officialJudges, ...discovered, ...locallyTracked].map((entry) => ({
+    [...officialJudges, ...discovered, ...canonicalJudges, ...locallyTracked].map((entry) => ({
       ...entry,
       ...(infoMap.get(entry.address.toLowerCase()) || {}),
     }))
@@ -3609,6 +3630,7 @@ async function loadMyBonds() {
 const judgeProfileCacheByAddress = new Map();
 let currentJudgeProfileView = null;
 let currentJudgeProfileDraftTarget = null;
+let judgeProfileEditorOpen = false;
 const LOCAL_JUDGE_STORAGE_KEY_PREFIX = "simpleBondManualJudges:";
 
 function getLocalJudgeStorageKey(chainId = activeChainId) {
@@ -3654,6 +3676,18 @@ function getKnownJudgeAddresses() {
 async function getControlledJudgeContracts(readProvider = null) {
   if (!userAddr) return [];
   const providerToUse = readProvider || new ethers.JsonRpcProvider(chain().rpc);
+  const registry = getJudgeRegistry(activeChainId, providerToUse);
+
+  if (registry) {
+    try {
+      const judgeAddress = await registry.judgeOf(userAddr);
+      if (judgeAddress && judgeAddress !== ethers.ZeroAddress) {
+        return [await getJudgeContractInfo(judgeAddress, { force: true, readProvider: providerToUse })];
+      }
+      return [];
+    } catch (_) {}
+  }
+
   const knownAddresses = getKnownJudgeAddresses();
   if (knownAddresses.length === 0) return [];
 
@@ -3665,7 +3699,7 @@ async function getControlledJudgeContracts(readProvider = null) {
 }
 
 function setJudgeOnboardingBusy(isBusy) {
-  for (const id of ["judgeOnboardingDeployBtn", "judgeOnboardingActivateBtn", "judgeOnboardingEditBtn", "judgeOnboardingCopyBtn"]) {
+  for (const id of ["judgeOnboardingUseExistingBtn", "judgeOnboardingDeployBtn", "judgeOnboardingActivateBtn", "judgeOnboardingEditBtn", "judgeOnboardingCopyBtn"]) {
     const el = document.getElementById(id);
     if (el) el.disabled = isBusy;
   }
@@ -3689,12 +3723,14 @@ async function refreshJudgeOnboarding() {
   const hintEl = document.getElementById("judgeOnboardingHint");
   const statusEl = document.getElementById("judgeOnboardingStatus");
   const connectBtn = document.getElementById("judgeOnboardingConnectBtn");
+  const useExistingBtn = document.getElementById("judgeOnboardingUseExistingBtn");
   const deployBtn = document.getElementById("judgeOnboardingDeployBtn");
   const activateBtn = document.getElementById("judgeOnboardingActivateBtn");
   const editBtn = document.getElementById("judgeOnboardingEditBtn");
   const copyBtn = document.getElementById("judgeOnboardingCopyBtn");
 
   connectBtn.classList.toggle("hidden", !!userAddr);
+  useExistingBtn.classList.toggle("hidden", !userAddr);
   deployBtn.classList.add("hidden");
   activateBtn.classList.add("hidden");
   editBtn.classList.add("hidden");
@@ -3711,8 +3747,8 @@ async function refreshJudgeOnboarding() {
   const primaryJudge = controlledJudges[0] || null;
 
   if (!primaryJudge) {
-    hintEl.textContent = "You do not have a tracked judge contract on this chain yet.";
-    statusEl.textContent = "Create a ManualJudge now. The app will deploy it for your wallet and activate it immediately.";
+    hintEl.textContent = "No canonical judge is registered for this wallet yet.";
+    statusEl.textContent = "Register an existing judge contract or create a new one. Once registered, the app will treat it as your canonical judge everywhere.";
     deployBtn.classList.remove("hidden");
     return;
   }
@@ -3753,10 +3789,17 @@ async function deployOwnJudge() {
     const activateTx = await judge.acceptOperatorRole();
     await waitForTx(activateTx);
 
+    const registry = getJudgeRegistry(activeChainId, signer);
+    if (!registry) throw new Error("Judge registry is not configured on this chain.");
+    showMsg(msg, "Registering your canonical judge...", "info");
+    const registryTx = await registry.setJudge(judgeAddress);
+    await waitForTx(registryTx);
+
     judgeContractInfoCache.delete(judgeAddress.toLowerCase());
     judgesLoaded = false;
     await loadJudges();
     document.getElementById("judgeProfileTarget").value = judgeAddress;
+    judgeProfileEditorOpen = true;
     await loadJudgeProfileEditorTarget(judgeAddress, { force: true });
     await refreshJudgeOnboarding();
     showMsg(msg, `Judge created and activated at ${short(judgeAddress)}. Publish your profile next.`, "success");
@@ -3792,6 +3835,7 @@ async function acceptOwnJudgeRole() {
     judgesLoaded = false;
     await loadJudges();
     document.getElementById("judgeProfileTarget").value = pendingJudge.address;
+    judgeProfileEditorOpen = true;
     await loadJudgeProfileEditorTarget(pendingJudge.address, { force: true });
     await refreshJudgeOnboarding();
     showMsg(msg, "Judge activated. You can publish your public profile now.", "success");
@@ -3810,6 +3854,7 @@ async function openOwnJudgeProfile() {
     return;
   }
 
+  judgeProfileEditorOpen = true;
   document.getElementById("judgeProfileTarget").value = activeJudge.address;
   await loadJudgeProfileEditorTarget(activeJudge.address, { force: true });
 }
@@ -3830,6 +3875,47 @@ async function copyOwnJudgeAddress() {
   }
 }
 
+async function useExistingJudgeAddress() {
+  if (!signer || !userAddr) {
+    showConnectScreen();
+    return;
+  }
+
+  const msg = document.getElementById("judgesMsg");
+  const input = document.getElementById("judgeExistingAddress");
+  const raw = input.value.trim();
+  if (!ethers.isAddress(raw)) {
+    showMsg(msg, "Enter a valid existing judge contract address.", "error");
+    return;
+  }
+
+  const registry = getJudgeRegistry(activeChainId, signer);
+  if (!registry) {
+    showMsg(msg, "Judge registry is not configured on this chain.", "error");
+    return;
+  }
+
+  setJudgeOnboardingBusy(true);
+  try {
+    const judgeAddress = ethers.getAddress(raw);
+    showMsg(msg, "Registering your canonical judge...", "info");
+    const tx = await registry.setJudge(judgeAddress);
+    await waitForTx(tx);
+
+    rememberLocalJudgeAddress(judgeAddress);
+    judgeContractInfoCache.delete(judgeAddress.toLowerCase());
+    input.value = "";
+    judgesLoaded = false;
+    await loadJudges();
+    await refreshJudgeOnboarding();
+    showMsg(msg, `Canonical judge set to ${short(judgeAddress)}.`, "success");
+  } catch (err) {
+    showMsg(msg, err.reason || err.message, "error");
+  } finally {
+    setJudgeOnboardingBusy(false);
+  }
+}
+
 function getChainParamById(chainId) {
   return chainId === 100 ? "gnosis" : null;
 }
@@ -3847,6 +3933,46 @@ function getJudgeProfileRegistry(chainId = activeChainId, signerOrProvider = nul
   if (!registryAddress) return null;
   const connection = signerOrProvider || new ethers.JsonRpcProvider(CHAINS[chainId].rpc);
   return new ethers.Contract(registryAddress, JUDGE_PROFILE_REGISTRY_ABI, connection);
+}
+
+function getJudgeRegistryAddress(chainId = activeChainId) {
+  return CHAINS[chainId]?.judgeRegistry || null;
+}
+
+function getJudgeRegistry(chainId = activeChainId, signerOrProvider = null) {
+  const registryAddress = getJudgeRegistryAddress(chainId);
+  if (!registryAddress) return null;
+  const connection = signerOrProvider || new ethers.JsonRpcProvider(CHAINS[chainId].rpc);
+  return new ethers.Contract(registryAddress, JUDGE_REGISTRY_ABI, connection);
+}
+
+async function discoverCanonicalJudges(chainId = activeChainId, { readProvider = null } = {}) {
+  const registry = getJudgeRegistry(chainId, readProvider);
+  if (!registry) return [];
+
+  try {
+    const count = Number(await registry.judgeCount());
+    if (count === 0) return [];
+
+    const addresses = await Promise.all(
+      Array.from({ length: count }, (_, index) => registry.judgeAt(index))
+    );
+    const uniqueAddresses = [...new Set(addresses
+      .filter((address) => address && address !== ethers.ZeroAddress)
+      .map((address) => ethers.getAddress(address))
+    )];
+
+    const operators = await Promise.all(uniqueAddresses.map((address) => registry.operatorOf(address)));
+    return uniqueAddresses
+      .map((address, index) => ({
+        address,
+        operator: operators[index] && operators[index] !== ethers.ZeroAddress ? ethers.getAddress(operators[index]) : null,
+      }))
+      .filter((entry) => entry.operator);
+  } catch (err) {
+    console.warn("Judge registry lookup failed:", err);
+    return [];
+  }
 }
 
 function normalizeJudgeProfile(address, chainId, rawProfile) {
@@ -4112,9 +4238,13 @@ async function refreshJudgeProfileEditor() {
   if (!editorEl) return;
   await refreshJudgeOnboarding();
 
-  if (!userAddr || !chain().judgeProfileRegistry) {
+  if (!userAddr || !chain().judgeProfileRegistry || !judgeProfileEditorOpen) {
     editorEl.classList.add("hidden");
-    resetJudgeProfileEditorUi();
+    if (!judgeProfileEditorOpen) {
+      resetJudgeProfileEditorUi({ preserveTarget: false });
+    } else {
+      resetJudgeProfileEditorUi();
+    }
     return;
   }
 

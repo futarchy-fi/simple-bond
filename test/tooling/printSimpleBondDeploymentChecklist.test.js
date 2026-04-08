@@ -85,6 +85,33 @@ describe("printSimpleBondDeploymentChecklist", function () {
     ]);
   });
 
+  it("prints the Gnosis runtime-config checklist for JudgeRegistry deployments", function () {
+    const address = "0x000000000000000000000000000000000000bA11";
+    const lines = captureChecklist({
+      network: "gnosis",
+      contractName: "JudgeRegistry",
+      address,
+      txHash: "0xjudgecanon",
+      blockNumber: 8484,
+    });
+
+    expect(lines).to.deep.equal([
+      "",
+      "Post-deploy checklist:",
+      "  Contract: JudgeRegistry",
+      "  Network: gnosis",
+      `  Address: ${address}`,
+      "  Deploy tx hash: 0xjudgecanon",
+      "  Deploy block: 8484",
+      "  1. Verify on block explorer:",
+      `     npx hardhat verify --network gnosis ${address}`,
+      "  2. If this should be the live Gnosis judge registry, update frontend/runtime-config.js:",
+      `     set window.SIMPLE_BOND_CONFIG.gnosisJudgeRegistry = "${address}"`,
+      "  3. If this deployment is canonical, update README.md's Addresses table.",
+      "  4. Record the deployed address, tx hash, and block number in your release notes or ops log.",
+    ]);
+  });
+
   it("prints the Gnosis runtime-config checklist for OfficialBondDirectory deployments", function () {
     const address = "0x0000000000000000000000000000000000000Ff1";
     const lines = captureChecklist({
