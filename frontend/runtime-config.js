@@ -8,7 +8,7 @@ window.SIMPLE_BOND_CONFIG = Object.assign(
     // On-chain public profile registry for judge contracts on Gnosis.
     gnosisJudgeProfileRegistry: "0x5f2000E438533662A689311672a41aca3EDC88DD",
     // Futarchy-curated directory of official judges and supported tokens on Gnosis.
-    gnosisOfficialDirectory: null,
+    gnosisOfficialDirectory: "0xb32263E363f668f97137D53baF69CF7Fb388c343",
   },
   window.SIMPLE_BOND_CONFIG || {}
 );

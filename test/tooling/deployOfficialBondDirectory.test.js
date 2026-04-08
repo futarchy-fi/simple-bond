@@ -3,9 +3,21 @@ const { expect } = require("chai");
 const {
   DEFAULT_OWNER,
   main,
+  parseCliArgs,
 } = require("../../scripts/deployOfficialBondDirectory");
 
 describe("deployOfficialBondDirectory.js", function () {
+  it("parses CLI owner and admin overrides", async function () {
+    expect(parseCliArgs(["--owner", "0xowner", "--admin", "0xadmin"])).to.deep.equal({
+      owner: "0xowner",
+      admin: "0xadmin",
+    });
+  });
+
+  it("rejects missing CLI override values", async function () {
+    expect(() => parseCliArgs(["--owner"])).to.throw("Missing value for --owner");
+  });
+
   it("deploys with the default owner and deployer-admin by default", async function () {
     const logLines = [];
     let deployArgs;

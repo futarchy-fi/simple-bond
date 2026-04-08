@@ -26,6 +26,10 @@ describe("SimpleBondV5 frontend surface", function () {
     expect(frontendSource).to.not.include('<option value="137">Polygon</option>');
     expect(frontendSource).to.not.include('<option value="1">Ethereum</option>');
     expect(frontendSource).to.include("Select a judge contract...");
+    expect(frontendSource).to.include("Become a Judge");
+    expect(frontendSource).to.include("Create My Judge");
+    expect(frontendSource).to.include("function acceptOperatorRole()");
+    expect(frontendSource).to.include("New judges you create here appear immediately for you");
     expect(frontendSource).to.include("contract: window.SIMPLE_BOND_CONFIG?.gnosisBondContract || null");
     expect(frontendSource).to.include("judgeProfileRegistry: window.SIMPLE_BOND_CONFIG?.gnosisJudgeProfileRegistry || null");
     expect(frontendSource).to.include("officialDirectory: window.SIMPLE_BOND_CONFIG?.gnosisOfficialDirectory || null");
@@ -38,7 +42,7 @@ describe("SimpleBondV5 frontend surface", function () {
     expect(runtimeConfigSource).to.include('gnosisBondContract: "0x7dF485C013f8671B656d585f1d1411640B1D2776"');
     expect(runtimeConfigSource).to.include("gnosisDeployBlock: 45569363");
     expect(runtimeConfigSource).to.include('gnosisJudgeProfileRegistry: "0x5f2000E438533662A689311672a41aca3EDC88DD"');
-    expect(runtimeConfigSource).to.include("gnosisOfficialDirectory: null");
+    expect(runtimeConfigSource).to.include('gnosisOfficialDirectory: "0xb32263E363f668f97137D53baF69CF7Fb388c343"');
     expect(runtimeConfigSource).to.not.include("judgeApiBase");
   });
 });

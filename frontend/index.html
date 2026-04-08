@@ -413,6 +413,32 @@
   .register-judge-form { display: flex; gap: 8px; margin-bottom: 16px; align-items: flex-end; }
   .register-judge-form .form-group { margin-bottom: 0; flex: 1; }
   .register-judge-form button { flex-shrink: 0; height: 40px; }
+  .judge-onboarding-card {
+    margin-bottom: 16px;
+    padding: 16px;
+    background: linear-gradient(180deg, rgba(24,31,46,0.9), rgba(18,23,34,0.95));
+    border: 1px solid var(--border);
+    border-radius: 12px;
+  }
+  .judge-onboarding-card h3 {
+    margin: 0 0 6px;
+    font-size: 16px;
+  }
+  .judge-onboarding-status {
+    margin-top: 10px;
+    color: var(--muted);
+    font-size: 13px;
+  }
+  .judge-onboarding-address {
+    margin-top: 10px;
+    font-size: 13px;
+  }
+  .judge-onboarding-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 12px;
+  }
   .judge-public-link { color: var(--accent); text-decoration: none; word-break: break-all; }
   .judge-public-link:hover { text-decoration: underline; }
   .judge-profile-page { max-width: 760px; margin: 0 auto; }
@@ -614,12 +640,28 @@
 
     <!-- JUDGES -->
     <div id="tab-judges" class="card hidden">
-      <h2>Judge Contracts</h2>
+      <h2>Judges</h2>
       <div id="judgeRegisterSection">
-        <div id="judgeRegisterPrompt" class="connect-prompt">This list is discovered on-chain from `BondCreated` events on Gnosis. `V5` has no global judge registry.</div>
-        <div id="judgeRegisterNote" style="margin-top:8px;color:var(--muted);font-size:13px;">Use “Custom address...” in the create form to use a new judge contract before it appears here. Public judge profiles are stored on-chain in a separate registry.</div>
+        <div class="judge-onboarding-card">
+          <h3>Become a Judge</h3>
+          <div id="judgeOnboardingHint" class="hint">Sign in to deploy your own judge contract, activate it, and publish a public profile.</div>
+          <div id="judgeOnboardingStatus" class="judge-onboarding-status"></div>
+          <div id="judgeOnboardingAddressRow" class="judge-onboarding-address hidden">
+            Your judge contract:
+            <a id="judgeOnboardingAddress" class="judge-public-link" href="#"></a>
+          </div>
+          <div class="judge-onboarding-actions">
+            <button id="judgeOnboardingConnectBtn" class="secondary" onclick="showConnectScreen()">Sign In</button>
+            <button id="judgeOnboardingDeployBtn" class="hidden" onclick="deployOwnJudge()">Create My Judge</button>
+            <button id="judgeOnboardingActivateBtn" class="secondary hidden" onclick="acceptOwnJudgeRole()">Activate Judge</button>
+            <button id="judgeOnboardingEditBtn" class="secondary hidden" onclick="openOwnJudgeProfile()">Edit Public Profile</button>
+            <button id="judgeOnboardingCopyBtn" class="secondary hidden" onclick="copyOwnJudgeAddress()">Copy Address</button>
+          </div>
+        </div>
+        <div id="judgeRegisterPrompt" class="connect-prompt">This list is discovered from the official directory and on-chain `BondCreated` activity on Gnosis.</div>
+        <div id="judgeRegisterNote" style="margin-top:8px;color:var(--muted);font-size:13px;">New judges you create here appear immediately for you, even before they have judged a bond. Public judge profiles are stored on-chain in a separate registry.</div>
         <div id="judgeProfileEditor" class="hidden" style="margin-top:16px;padding:16px;background:var(--bg);border:1px solid var(--border);border-radius:10px;">
-          <h3 style="font-size:15px;margin-bottom:6px;">Edit Public Judge Profile</h3>
+          <h3 style="font-size:15px;margin-bottom:6px;">Public Judge Profile</h3>
           <div id="judgeProfileEditorHint" class="hint">Profiles live on-chain and are editable only by the judge contract or its declared profile controller.</div>
           <div id="judgeProfileControlledRow" class="hidden" style="margin-top:12px;">
             <label style="display:block;margin-bottom:6px;font-size:12px;color:var(--muted);">Discovered judge contracts you control</label>
@@ -988,10 +1030,13 @@ const MANUAL_JUDGE_ABI = [
   "function active() view returns (bool)",
   "function operator() view returns (address)",
   "function profileController() view returns (address)",
+  "function acceptOperatorRole()",
   "function ruleForPoster(address bondContract, uint256 bondId, uint256 feeCharged)",
   "function ruleForChallenger(address bondContract, uint256 bondId, uint256 feeCharged)",
   "function rejectBond(address bondContract, uint256 bondId)",
 ];
+
+const MANUAL_JUDGE_CREATION_CODE = "0x60a060405234801561001057600080fd5b5060405161086638038061086683398101604081905261002f9161008a565b6001600160a01b0381166100795760405162461bcd60e51b815260206004820152600d60248201526c2d32b9379037b832b930ba37b960991b604482015260640160405180910390fd5b6001600160a01b03166080526100ba565b60006020828403121561009c57600080fd5b81516001600160a01b03811681146100b357600080fd5b9392505050565b6080516107846100e26000396000818160e60152818161020c01526102c101526107846000f3fe608060405234801561001057600080fd5b506004361061009e5760003560e01c8063c032914d11610066578063c032914d1461013b578063c4abaf731461014e578063c5f3961c14610156578063dd61f3fa14610169578063e55dc4e61461017c57600080fd5b806302fb0c5e146100a357806318de2bf4146100cc5780632f3c2449146100e1578063570ca7351461012057806365c6f07214610133575b600080fd5b6000546100b790600160a01b900460ff1681565b60405190151581526020015b60405180910390f35b6100df6100da36600461063b565b61018f565b005b6101087f000000000000000000000000000000000000000000000000000000000000000081565b6040516001600160a01b0390911681526020016100c3565b600054610108906001600160a01b031681565b6101086101e7565b6100df61014936600461068e565b61022e565b6100df6102b6565b6100df6101643660046106c1565b6103c2565b6100df61017736600461068e565b61044a565b6100df61018a3660046106eb565b6104a8565b600054600160a01b900460ff166101de5760405162461bcd60e51b815260206004820152600e60248201526d4a7564676520696e61637469766560901b60448201526064015b60405180910390fd5b50505050505050565b600080546001600160a01b03161561020957506000546001600160a01b031690565b507f000000000000000000000000000000000000000000000000000000000000000090565b6000546001600160a01b031633146102585760405162461bcd60e51b81526004016101d590610727565b60405163920acaa160e01b815260048101839052602481018290526001600160a01b0384169063920acaa1906044015b600060405180830381600087803b1580156102a257600080fd5b505af11580156101de573d6000803e3d6000fd5b336001600160a01b037f000000000000000000000000000000000000000000000000000000000000000016146103275760405162461bcd60e51b815260206004820152601660248201527527b7363c90383937b837b9b2b21037b832b930ba37b960511b60448201526064016101d5565b600054600160a01b900460ff16156103725760405162461bcd60e51b815260206004820152600e60248201526d416c72656164792061637469766560901b60448201526064016101d5565b6000805460ff60a01b19339081166001600160a81b031990921691909117600160a01b17825560405190917f6317889d8001d27c355e09712356a69d4d49909c262df5cdc3d94df3fc6635b391a2565b6000546001600160a01b031633146103ec5760405162461bcd60e51b81526004016101d590610727565b6040516303356ef760e21b8152600481018290526001600160a01b03831690630cd5bbdc90602401600060405180830381600087803b15801561042e57600080fd5b505af1158015610442573d6000803e3d6000fd5b505050505050565b6000546001600160a01b031633146104745760405162461bcd60e51b81526004016101d590610727565b6040516357ec4df360e01b815260048101839052602481018290526001600160a01b038416906357ec4df390604401610288565b6000546001600160a01b031633146104d25760405162461bcd60e51b81526004016101d590610727565b6001600160a01b0382166105195760405162461bcd60e51b815260206004820152600e60248201526d16995c9bc81c9958da5c1a595b9d60921b60448201526064016101d5565b61052d6001600160a01b038416838361057f565b816001600160a01b0316836001600160a01b03167f5e110f8bc8a20b65dcc87f224bdf1cc039346e267118bae2739847f07321ffa88360405161057291815260200190565b60405180910390a3505050565b61058c83838360016105b9565b6105b457604051635274afe760e01b81526001600160a01b03841660048201526024016101d5565b505050565b60405163a9059cbb60e01b60008181526001600160a01b038616600452602485905291602083604481808b5af192506001600051148316610613578383151615610606573d6000823e3d81fd5b6000873b113d1516831692505b60405250949350505050565b80356001600160a01b038116811461063657600080fd5b919050565b600080600080600080600060e0888a03121561065657600080fd5b61065f8861061f565b9960208901359950604089013598606081013598506080810135975060a0810135965060c00135945092505050565b6000806000606084860312156106a357600080fd5b6106ac8461061f565b95602085013595506040909401359392505050565b600080604083850312156106d457600080fd5b6106dd8361061f565b946020939093013593505050565b60008060006060848603121561070057600080fd5b6107098461061f565b92506107176020850161061f565b9150604084013590509250925092565b6020808252600d908201526c27b7363c9037b832b930ba37b960991b60408201526060019056fea264697066735822122046a3d46e9654cdb7cdbf4f49139d83332499d6c81e020cb22b2a488ec378045864736f6c63430008180033";
 
 const BOND_JUDGE_ABI = [
   "function validateBond(address token, uint256 bondAmount, uint256 challengeAmount, uint256 judgeFee, uint256 deadline, uint256 acceptanceDelay, uint256 rulingBuffer) view",
@@ -1851,6 +1896,7 @@ async function disconnectWallet() {
   document.getElementById("connectScreen").classList.remove("hidden");
   document.getElementById("mainApp").classList.add("hidden");
   resetJudgeProfileEditorUi();
+  refreshJudgeOnboarding();
 }
 
 function browseWithoutWallet() {
@@ -3316,16 +3362,20 @@ async function discoverJudges(readProvider) {
   }
 
   const discovered = [...counts.values()];
+  const locallyTracked = getLocalJudgeAddresses(activeChainId).map((address) => ({
+    address,
+    bondCount: 0,
+  }));
   const officialJudges = officialSnapshot?.judges || [];
   const allAddresses = [...new Set(
-    [...officialJudges, ...discovered]
+    [...officialJudges, ...discovered, ...locallyTracked]
       .map((entry) => entry.address)
       .filter(Boolean)
       .map((address) => address.toLowerCase())
   )];
   const infoMap = await getJudgeContractInfos(allAddresses, { readProvider });
   return dedupeJudgesByAddress(
-    [...officialJudges, ...discovered].map((entry) => ({
+    [...officialJudges, ...discovered, ...locallyTracked].map((entry) => ({
       ...entry,
       ...(infoMap.get(entry.address.toLowerCase()) || {}),
     }))
@@ -3559,6 +3609,226 @@ async function loadMyBonds() {
 const judgeProfileCacheByAddress = new Map();
 let currentJudgeProfileView = null;
 let currentJudgeProfileDraftTarget = null;
+const LOCAL_JUDGE_STORAGE_KEY_PREFIX = "simpleBondManualJudges:";
+
+function getLocalJudgeStorageKey(chainId = activeChainId) {
+  return `${LOCAL_JUDGE_STORAGE_KEY_PREFIX}${Number(chainId)}`;
+}
+
+function getLocalJudgeAddresses(chainId = activeChainId) {
+  try {
+    const raw = localStorage.getItem(getLocalJudgeStorageKey(chainId));
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return [...new Set((Array.isArray(parsed) ? parsed : [])
+      .filter((address) => typeof address === "string" && ethers.isAddress(address))
+      .map((address) => ethers.getAddress(address)))];
+  } catch (_) {
+    return [];
+  }
+}
+
+function saveLocalJudgeAddresses(addresses, chainId = activeChainId) {
+  try {
+    localStorage.setItem(getLocalJudgeStorageKey(chainId), JSON.stringify(addresses));
+  } catch (_) {}
+}
+
+function rememberLocalJudgeAddress(address, chainId = activeChainId) {
+  if (!ethers.isAddress(address)) return;
+  const next = getLocalJudgeAddresses(chainId);
+  const checksum = ethers.getAddress(address);
+  if (!next.includes(checksum)) {
+    next.push(checksum);
+    saveLocalJudgeAddresses(next, chainId);
+  }
+}
+
+function getKnownJudgeAddresses() {
+  return [...new Set([
+    ...judgesList.map((judge) => judge.address),
+    ...getLocalJudgeAddresses(activeChainId),
+  ].filter(Boolean).map((address) => address.toLowerCase()))];
+}
+
+async function getControlledJudgeContracts(readProvider = null) {
+  if (!userAddr) return [];
+  const providerToUse = readProvider || new ethers.JsonRpcProvider(chain().rpc);
+  const knownAddresses = getKnownJudgeAddresses();
+  if (knownAddresses.length === 0) return [];
+
+  const infoMap = await getJudgeContractInfos(knownAddresses, { force: true, readProvider: providerToUse });
+  return knownAddresses
+    .map((address) => infoMap.get(address))
+    .filter((judge) => judge && judge.operator?.toLowerCase() === userAddr.toLowerCase())
+    .sort((left, right) => Number(left.active) - Number(right.active));
+}
+
+function setJudgeOnboardingBusy(isBusy) {
+  for (const id of ["judgeOnboardingDeployBtn", "judgeOnboardingActivateBtn", "judgeOnboardingEditBtn", "judgeOnboardingCopyBtn"]) {
+    const el = document.getElementById(id);
+    if (el) el.disabled = isBusy;
+  }
+}
+
+function setJudgeOnboardingAddress(address) {
+  const rowEl = document.getElementById("judgeOnboardingAddressRow");
+  const linkEl = document.getElementById("judgeOnboardingAddress");
+  if (!address || !ethers.isAddress(address)) {
+    rowEl.classList.add("hidden");
+    linkEl.href = "#";
+    linkEl.textContent = "";
+    return;
+  }
+
+  setJudgeLink(linkEl, address);
+  rowEl.classList.remove("hidden");
+}
+
+async function refreshJudgeOnboarding() {
+  const hintEl = document.getElementById("judgeOnboardingHint");
+  const statusEl = document.getElementById("judgeOnboardingStatus");
+  const connectBtn = document.getElementById("judgeOnboardingConnectBtn");
+  const deployBtn = document.getElementById("judgeOnboardingDeployBtn");
+  const activateBtn = document.getElementById("judgeOnboardingActivateBtn");
+  const editBtn = document.getElementById("judgeOnboardingEditBtn");
+  const copyBtn = document.getElementById("judgeOnboardingCopyBtn");
+
+  connectBtn.classList.toggle("hidden", !!userAddr);
+  deployBtn.classList.add("hidden");
+  activateBtn.classList.add("hidden");
+  editBtn.classList.add("hidden");
+  copyBtn.classList.add("hidden");
+  setJudgeOnboardingAddress(null);
+
+  if (!userAddr) {
+    hintEl.textContent = "Sign in to deploy your own judge contract, activate it, and publish a public profile.";
+    statusEl.textContent = "Judging uses an on-chain contract. The app can create one for your connected wallet in one flow.";
+    return;
+  }
+
+  const controlledJudges = await getControlledJudgeContracts(new ethers.JsonRpcProvider(chain().rpc));
+  const primaryJudge = controlledJudges[0] || null;
+
+  if (!primaryJudge) {
+    hintEl.textContent = "You do not have a tracked judge contract on this chain yet.";
+    statusEl.textContent = "Create a ManualJudge now. The app will deploy it for your wallet and activate it immediately.";
+    deployBtn.classList.remove("hidden");
+    return;
+  }
+
+  setJudgeOnboardingAddress(primaryJudge.address);
+  copyBtn.classList.remove("hidden");
+
+  if (primaryJudge.active) {
+    hintEl.textContent = "Your judge is active and ready to be selected in new bonds.";
+    statusEl.textContent = "Next step: publish a public profile so counterparties can review your judging policy.";
+    editBtn.classList.remove("hidden");
+    return;
+  }
+
+  hintEl.textContent = "Your judge contract exists but has not accepted the operator role yet.";
+  statusEl.textContent = "Activate it from this wallet to make it usable for new bonds.";
+  activateBtn.classList.remove("hidden");
+}
+
+async function deployOwnJudge() {
+  if (!signer || !userAddr) {
+    showConnectScreen();
+    return;
+  }
+
+  const msg = document.getElementById("judgesMsg");
+  setJudgeOnboardingBusy(true);
+
+  try {
+    showMsg(msg, "Deploying your judge contract...", "info");
+    const factory = new ethers.ContractFactory(MANUAL_JUDGE_ABI, MANUAL_JUDGE_CREATION_CODE, signer);
+    const judge = await factory.deploy(userAddr);
+    await judge.waitForDeployment();
+    const judgeAddress = await judge.getAddress();
+    rememberLocalJudgeAddress(judgeAddress);
+
+    showMsg(msg, "Activating your judge contract...", "info");
+    const activateTx = await judge.acceptOperatorRole();
+    await waitForTx(activateTx);
+
+    judgeContractInfoCache.delete(judgeAddress.toLowerCase());
+    judgesLoaded = false;
+    await loadJudges();
+    document.getElementById("judgeProfileTarget").value = judgeAddress;
+    await loadJudgeProfileEditorTarget(judgeAddress, { force: true });
+    await refreshJudgeOnboarding();
+    showMsg(msg, `Judge created and activated at ${short(judgeAddress)}. Publish your profile next.`, "success");
+  } catch (err) {
+    showMsg(msg, err.reason || err.message, "error");
+  } finally {
+    setJudgeOnboardingBusy(false);
+  }
+}
+
+async function acceptOwnJudgeRole() {
+  if (!signer || !userAddr) {
+    showConnectScreen();
+    return;
+  }
+
+  const msg = document.getElementById("judgesMsg");
+  setJudgeOnboardingBusy(true);
+
+  try {
+    const controlledJudges = await getControlledJudgeContracts(new ethers.JsonRpcProvider(chain().rpc));
+    const pendingJudge = controlledJudges.find((judge) => judge.active === false);
+    if (!pendingJudge) {
+      throw new Error("No inactive judge contract found for this wallet.");
+    }
+
+    const judge = new ethers.Contract(pendingJudge.address, MANUAL_JUDGE_ABI, signer);
+    showMsg(msg, "Activating your judge contract...", "info");
+    const tx = await judge.acceptOperatorRole();
+    await waitForTx(tx);
+
+    judgeContractInfoCache.delete(pendingJudge.address.toLowerCase());
+    judgesLoaded = false;
+    await loadJudges();
+    document.getElementById("judgeProfileTarget").value = pendingJudge.address;
+    await loadJudgeProfileEditorTarget(pendingJudge.address, { force: true });
+    await refreshJudgeOnboarding();
+    showMsg(msg, "Judge activated. You can publish your public profile now.", "success");
+  } catch (err) {
+    showMsg(msg, err.reason || err.message, "error");
+  } finally {
+    setJudgeOnboardingBusy(false);
+  }
+}
+
+async function openOwnJudgeProfile() {
+  const controlledJudges = await getControlledJudgeContracts(new ethers.JsonRpcProvider(chain().rpc));
+  const activeJudge = controlledJudges.find((judge) => judge.active);
+  if (!activeJudge) {
+    await refreshJudgeOnboarding();
+    return;
+  }
+
+  document.getElementById("judgeProfileTarget").value = activeJudge.address;
+  await loadJudgeProfileEditorTarget(activeJudge.address, { force: true });
+}
+
+async function copyOwnJudgeAddress() {
+  const controlledJudges = await getControlledJudgeContracts(new ethers.JsonRpcProvider(chain().rpc));
+  const primaryJudge = controlledJudges[0];
+  if (!primaryJudge) {
+    alert("No judge contract found for this wallet yet.");
+    return;
+  }
+
+  try {
+    await navigator.clipboard.writeText(primaryJudge.address);
+    showNotifyToast("Judge address copied.", "success");
+  } catch (_) {
+    prompt("Copy this judge address:", primaryJudge.address);
+  }
+}
 
 function getChainParamById(chainId) {
   return chainId === 100 ? "gnosis" : null;
@@ -3840,6 +4110,7 @@ async function loadJudgeProfileEditorTarget(target, { force = false } = {}) {
 async function refreshJudgeProfileEditor() {
   const editorEl = document.getElementById("judgeProfileEditor");
   if (!editorEl) return;
+  await refreshJudgeOnboarding();
 
   if (!userAddr || !chain().judgeProfileRegistry) {
     editorEl.classList.add("hidden");

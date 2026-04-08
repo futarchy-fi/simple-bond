@@ -159,7 +159,7 @@ window.SIMPLE_BOND_CONFIG = {
   gnosisBondContract: "0x7dF485C013f8671B656d585f1d1411640B1D2776",
   gnosisDeployBlock: 45569363,
   gnosisJudgeProfileRegistry: "0x5f2000E438533662A689311672a41aca3EDC88DD",
-  gnosisOfficialDirectory: null,
+  gnosisOfficialDirectory: "0xb32263E363f668f97137D53baF69CF7Fb388c343",
 };
 ```
 
@@ -211,6 +211,7 @@ Current canonical Gnosis deployment:
 |-------|-------|---------|
 | SimpleBondV5 | Gnosis | `0x7dF485C013f8671B656d585f1d1411640B1D2776` |
 | JudgeProfileRegistry | Gnosis | `0x5f2000E438533662A689311672a41aca3EDC88DD` |
+| OfficialBondDirectory | Gnosis | `0xb32263E363f668f97137D53baF69CF7Fb388c343` |
 | SimpleBondV4 | Gnosis | `0xCe8799303AeaEC861142470d754F74E09EfD1C45` |
 | SimpleBondV4 | Polygon | `0x6B24380B1980db3e2DfDd2b62f5ed3E7E88DFA43` |
 | KlerosJudge | Gnosis | `0x71e15D42bE15BAE117096E12C9dBA25E67d14C67` |
@@ -218,6 +219,11 @@ Current canonical Gnosis deployment:
 | WXDAI | Gnosis | `0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d` |
 
 Judge profile registry control:
+
+- owner: `0x645A3D9208523bbFEE980f7269ac72C61Dd3b552`
+- admin: `0x693E3FB46Bb36eE43C702FE94f9463df0691b43d`
+
+Official bond directory control:
 
 - owner: `0x645A3D9208523bbFEE980f7269ac72C61Dd3b552`
 - admin: `0x693E3FB46Bb36eE43C702FE94f9463df0691b43d`
