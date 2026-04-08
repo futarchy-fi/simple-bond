@@ -18,6 +18,10 @@ This document describes the intended behavior of the `SimpleBondV5` core system.
 - the judge must be a contract
 - the bond core no longer contains a global judge registry
 
+There is also one deliberate behavior fix relative to `V4`:
+
+- concession now closes on a real time-based deadline instead of implicitly remaining open until queue state changes
+
 Current repository locations:
 
 - `contracts/core/SimpleBondV5.sol`
@@ -58,6 +62,18 @@ Creation rules:
 
 The poster transfers `bondAmount` into `SimpleBondV5`.
 
+`validateBond(...)` is a creation-time compatibility and term-acceptance check only.
+
+It means:
+
+- this judge contract recognizes the `V5` interface
+- this judge contract accepts the proposed static bond terms at creation time
+
+It does not mean:
+
+- the judge contract is obligated to later resolve the dispute on the merits
+- the judge contract cannot later refuse, reject the bond, or allow timeout to occur
+
 ## Challenges
 
 Any challenger may call `challenge(bondId, metadata)` before `deadline`.
@@ -72,6 +88,8 @@ Each challenge:
 Challenges are FIFO.
 
 The active challenge is `currentChallenge`.
+
+This preserves the `V4` FIFO anti-gaming property. Later challengers cannot jump ahead of earlier challengers.
 
 ## Concession Window
 
@@ -90,6 +108,8 @@ rulingWindowStart(bondId) = max(deadline, lastChallengeTime + acceptanceDelay)
 Concession is therefore a real time-based window.
 
 If the concession window closes, the poster cannot concede anymore and must wait for judge resolution or timeout.
+
+This is an intentional fix to the unintended `V4` behavior where concession remained available based on queue state rather than an explicit time cutoff.
 
 ## Concession Outcome
 
@@ -131,7 +151,19 @@ The core enforces:
 
 The fee is paid in the bond token and routed to the judge contract address, not to the judge operator directly.
 
+This is intentional. The bond core pays the judge contract, and any further accounting or refunding logic belongs to the judge implementation rather than the core.
+
 `SimpleBondV5` does not model any external arbitration-cost system.
+
+## Token Assumptions
+
+`SimpleBondV5` is intended for standard ERC-20 tokens whose transfers move the requested nominal amount.
+
+Out of scope for the intended design:
+
+- fee-on-transfer tokens
+- rebasing or elastic-supply tokens
+- tokens with transfer callbacks or other non-standard side effects that materially change accounting assumptions
 
 ## `ruleForPoster`
 
@@ -207,5 +239,7 @@ The intended invariants are:
 - it becomes active only after the proposed operator accepts
 - only the accepted operator may forward rulings or rejection calls
 - it is intentionally portable across compatible bond contracts
+
+That portability is deliberate. `ManualJudge` is not bound to a single `SimpleBondV5` instance so a future compatible bond core can reuse the same wrapper instead of forcing redeployment.
 
 `ManualJudge` does not impose policy on how the operator judges disputes. It only enforces operator authorization and exposes the generic judge interface expected by `SimpleBondV5`.

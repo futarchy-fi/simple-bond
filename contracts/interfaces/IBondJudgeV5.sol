@@ -1,8 +1,15 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+/// @notice Generic creation-time compatibility hook for SimpleBondV5 judges.
+/// @dev This hook is intentionally narrow: it lets the bond core verify that a
+/// compatible judge contract accepts the proposed static terms, while keeping
+/// later dispute-handling policy inside the judge implementation itself.
 interface IBondJudgeV5 {
     /// @notice Revert if this judge refuses the proposed bond terms.
+    /// @dev A successful call does not obligate the judge to later rule on the
+    /// merits. The judge may still reject the bond later or simply do nothing
+    /// until timeout, depending on its own policy.
     function validateBond(
         address token,
         uint256 bondAmount,
