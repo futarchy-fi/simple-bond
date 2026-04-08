@@ -15,6 +15,9 @@ import "../interfaces/IBondJudgeV5.sol";
 contract SimpleBondV5 {
     using SafeERC20 for IERC20;
 
+    uint256 public constant MAX_ACCEPTANCE_DELAY = 365 days;
+    uint256 public constant MAX_RULING_BUFFER = 365 days;
+
     struct Challenge {
         address challenger;
         uint8 status; // 0=pending, 1=won, 2=lost, 3=refunded
@@ -139,8 +142,13 @@ contract SimpleBondV5 {
         require(judge != address(0), "Zero judge");
         require(judge.code.length > 0, "Judge must be contract");
         require(deadline > block.timestamp, "Deadline in past");
+        // Bound timing values so the dispute lifecycle stays within a
+        // reasonable envelope and downstream window arithmetic remains safe.
+        require(acceptanceDelay <= MAX_ACCEPTANCE_DELAY, "Acceptance delay too long");
         require(rulingBuffer > 0, "Zero ruling buffer");
+        require(rulingBuffer <= MAX_RULING_BUFFER, "Ruling buffer too long");
         require(judgeFee <= challengeAmount, "Fee > challenge amount");
+        require(deadline <= type(uint256).max - acceptanceDelay - rulingBuffer, "Unsafe timing params");
 
         // Creation-time interface/policy probe. This is not a promise that the
         // judge will later rule on the merits; it only means the judge accepts

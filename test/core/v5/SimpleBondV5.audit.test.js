@@ -339,77 +339,59 @@ describe("SimpleBondV5 audit coverage", function () {
   });
 
   // -------------------------------------------------------------------------
-  // L-02: Extreme parameter overflow
+  // L-02: Timing parameter bounds
   // -------------------------------------------------------------------------
 
-  describe("Extreme parameter overflow (L-02)", function () {
-    it("extremely large acceptanceDelay causes rulingWindowStart to revert after a challenge", async function () {
-      // Use an acceptanceDelay large enough that
-      // lastChallengeTime + acceptanceDelay overflows uint256.
-      const hugeDelay = ethers.MaxUint256;
+  describe("Timing parameter bounds (L-02)", function () {
+    it("allows acceptanceDelay exactly at the configured maximum and rejects max + 1", async function () {
+      const maxAcceptanceDelay = await bond.MAX_ACCEPTANCE_DELAY();
 
-      const overflowFixture = await deploySimpleBondV5FuzzFixture({
-        acceptanceDelay: hugeDelay,
-      });
-      await overflowFixture.actions.createBond();
-
-      // Challenge succeeds (no overflow yet — lastChallengeTime not used in challenge).
-      await overflowFixture.actions.challenge({
-        challenger: overflowFixture.actors.challenger1,
-        metadata: "Overflow test",
-      });
-
-      // rulingWindowStart now overflows.
       await expect(
-        overflowFixture.bond.rulingWindowStart(0)
-      ).to.be.reverted;
-
-      // concessionDeadline, rulingDeadline, claimTimeout all revert.
-      await expect(
-        overflowFixture.bond.concessionDeadline(0)
-      ).to.be.reverted;
-      await expect(
-        overflowFixture.bond.rulingDeadline(0)
-      ).to.be.reverted;
-
-      // rejectBond is the only escape hatch.
-      await expect(
-        overflowFixture.actions.rejectBond()
+        fixture.actions.createBond({
+          acceptanceDelay: maxAcceptanceDelay,
+          metadata: "Max acceptance delay",
+        })
       ).to.not.be.reverted;
-      await overflowFixture.actions.claimAllRefunds();
 
-      expect(await overflowFixture.token.balanceOf(
-        await overflowFixture.bond.getAddress()
-      )).to.equal(0n);
+      await expect(
+        fixture.actions.createBond({
+          acceptanceDelay: maxAcceptanceDelay + 1n,
+          metadata: "Too much acceptance delay",
+        })
+      ).to.be.revertedWith("Acceptance delay too long");
     });
 
-    it("extremely large rulingBuffer causes rulingDeadline to revert", async function () {
-      const hugeBuffer = ethers.MaxUint256;
+    it("allows rulingBuffer exactly at the configured maximum and rejects max + 1", async function () {
+      const maxRulingBuffer = await bond.MAX_RULING_BUFFER();
 
-      const overflowFixture = await deploySimpleBondV5FuzzFixture({
-        rulingBuffer: hugeBuffer,
-      });
-      await overflowFixture.actions.createBond();
-      await overflowFixture.actions.challenge({
-        challenger: overflowFixture.actors.challenger1,
-        metadata: "Overflow buffer test",
-      });
-
-      // rulingWindowStart is fine (no overflow there).
       await expect(
-        overflowFixture.bond.rulingWindowStart(0)
+        fixture.actions.createBond({
+          rulingBuffer: maxRulingBuffer,
+          metadata: "Max ruling buffer",
+        })
       ).to.not.be.reverted;
 
-      // rulingDeadline overflows.
       await expect(
-        overflowFixture.bond.rulingDeadline(0)
-      ).to.be.reverted;
+        fixture.actions.createBond({
+          rulingBuffer: maxRulingBuffer + 1n,
+          metadata: "Too much ruling buffer",
+        })
+      ).to.be.revertedWith("Ruling buffer too long");
+    });
 
-      // rejectBond still works.
+    it("rejects deadlines that would make later window arithmetic unsafe", async function () {
+      const maxAcceptanceDelay = await bond.MAX_ACCEPTANCE_DELAY();
+      const maxRulingBuffer = await bond.MAX_RULING_BUFFER();
+      const unsafeDeadline = ethers.MaxUint256 - maxAcceptanceDelay - maxRulingBuffer + 1n;
+
       await expect(
-        overflowFixture.actions.rejectBond()
-      ).to.not.be.reverted;
-      await overflowFixture.actions.claimAllRefunds();
+        fixture.actions.createBond({
+          deadline: unsafeDeadline,
+          acceptanceDelay: maxAcceptanceDelay,
+          rulingBuffer: maxRulingBuffer,
+          metadata: "Unsafe timing claim",
+        })
+      ).to.be.revertedWith("Unsafe timing params");
     });
   });
 
