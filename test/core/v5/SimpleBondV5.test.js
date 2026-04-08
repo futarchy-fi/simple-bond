@@ -187,6 +187,50 @@ describe("SimpleBondV5", function () {
       expect(createdBond.acceptanceDelay).to.equal(0n);
     });
 
+    it("allows acceptanceDelay exactly at the configured maximum", async function () {
+      const maxAcceptanceDelay = await bond.MAX_ACCEPTANCE_DELAY();
+      await fixture.actions.createBond({
+        acceptanceDelay: maxAcceptanceDelay,
+        metadata: "Max delay claim",
+      });
+
+      const createdBond = await bond.bonds(0);
+      expect(createdBond.acceptanceDelay).to.equal(maxAcceptanceDelay);
+    });
+
+    it("reverts if acceptanceDelay exceeds the configured maximum", async function () {
+      const maxAcceptanceDelay = await bond.MAX_ACCEPTANCE_DELAY();
+
+      await expect(
+        fixture.actions.createBond({
+          acceptanceDelay: maxAcceptanceDelay + 1n,
+          metadata: "Too much delay",
+        })
+      ).to.be.revertedWith("Acceptance delay too long");
+    });
+
+    it("allows rulingBuffer exactly at the configured maximum", async function () {
+      const maxRulingBuffer = await bond.MAX_RULING_BUFFER();
+      await fixture.actions.createBond({
+        rulingBuffer: maxRulingBuffer,
+        metadata: "Max buffer claim",
+      });
+
+      const createdBond = await bond.bonds(0);
+      expect(createdBond.rulingBuffer).to.equal(maxRulingBuffer);
+    });
+
+    it("reverts if rulingBuffer exceeds the configured maximum", async function () {
+      const maxRulingBuffer = await bond.MAX_RULING_BUFFER();
+
+      await expect(
+        fixture.actions.createBond({
+          rulingBuffer: maxRulingBuffer + 1n,
+          metadata: "Too much buffer",
+        })
+      ).to.be.revertedWith("Ruling buffer too long");
+    });
+
     it("reverts on deadline in the past", async function () {
       await expect(
         bond.connect(poster).createBond(
@@ -201,6 +245,21 @@ describe("SimpleBondV5", function () {
           ""
         )
       ).to.be.revertedWith("Deadline in past");
+    });
+
+    it("reverts on timing params that would overflow later window arithmetic", async function () {
+      const maxAcceptanceDelay = await bond.MAX_ACCEPTANCE_DELAY();
+      const maxRulingBuffer = await bond.MAX_RULING_BUFFER();
+      const unsafeDeadline = ethers.MaxUint256 - maxAcceptanceDelay - maxRulingBuffer + 1n;
+
+      await expect(
+        fixture.actions.createBond({
+          deadline: unsafeDeadline,
+          acceptanceDelay: maxAcceptanceDelay,
+          rulingBuffer: maxRulingBuffer,
+          metadata: "Unsafe timing claim",
+        })
+      ).to.be.revertedWith("Unsafe timing params");
     });
 
     it("increments bondId for sequential creates", async function () {

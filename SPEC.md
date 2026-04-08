@@ -58,8 +58,11 @@ Creation rules:
 - `judge != address(0)`
 - `judge` must be a contract
 - `deadline > block.timestamp`
+- `acceptanceDelay <= 365 days`
 - `rulingBuffer > 0`
+- `rulingBuffer <= 365 days`
 - `judgeFee <= challengeAmount`
+- `deadline + acceptanceDelay + rulingBuffer` must remain arithmetic-safe
 - the judge contract must accept the proposed terms via `validateBond(...)`
 
 The poster transfers `bondAmount` into `SimpleBondV5`.
@@ -78,7 +81,7 @@ It does not mean:
 
 ## Challenges
 
-Any challenger may call `challenge(bondId, metadata)` before `deadline`.
+Any challenger may call `challenge(bondId, metadata)` at or before `deadline`.
 
 Each challenge:
 
