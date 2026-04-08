@@ -401,14 +401,7 @@
     font-size: 13px;
   }
   .create-stage {
-    margin-top: 18px;
-    padding-top: 18px;
-    border-top: 1px solid var(--border);
-  }
-  .create-stage:first-of-type {
-    margin-top: 0;
-    padding-top: 0;
-    border-top: none;
+    min-height: 320px;
   }
   .create-stage-header {
     display: flex;
@@ -438,8 +431,57 @@
     color: var(--muted);
     font-size: 12px;
   }
+  .create-wizard-shell {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: rgba(10,10,15,0.55);
+    padding: 18px;
+  }
+  .create-wizard-top {
+    margin-bottom: 18px;
+  }
+  .create-wizard-stepcount {
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+  .create-wizard-progress {
+    width: 100%;
+    height: 6px;
+    border-radius: 999px;
+    background: var(--bg);
+    overflow: hidden;
+  }
+  .create-wizard-progress-bar {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent), var(--blue));
+    width: 20%;
+    transition: width 0.2s ease;
+  }
+  .create-wizard-nav {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: 18px;
+  }
+  .create-wizard-nav button {
+    min-width: 120px;
+  }
+  .create-wizard-nav .nav-spacer {
+    flex: 1;
+  }
+  .create-review-block {
+    margin-bottom: 16px;
+  }
+  .create-review-title {
+    font-size: 12px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
+  }
   .create-summary-card {
-    margin: 18px 0 14px;
+    margin: 0 0 14px;
     padding: 16px;
     border: 1px solid var(--border);
     border-radius: 10px;
@@ -650,134 +692,181 @@
       <div id="createForm" class="hidden">
         <!-- Funding Banner -->
         <div id="fundingBanner" class="funding-banner hidden"></div>
-        <div class="create-lead">Start with the claim, amount, judge, and deadline. The app fills in the standard economics by default, and you can override them only if you need to.</div>
-
-        <div class="create-stage">
-          <div class="create-stage-header">
-            <div class="create-stage-number">1</div>
-            <div class="create-stage-title">Define the claim</div>
-          </div>
-          <div class="create-stage-hint">Start with the public claim and the amount you want to put behind it.</div>
-          <div class="form-group">
-            <label for="bondMetadata">What is this bond for?</label>
-            <textarea id="bondMetadata" placeholder="e.g. &quot;All statistical claims in my March 2026 blog post are accurate and properly sourced.&quot;" rows="2" oninput="refreshCreateProgressiveDisclosure()"></textarea>
-          </div>
-          <div class="form-group">
-            <label for="bondAmount">Amount (USD)</label>
-            <input type="text" id="bondAmount" placeholder="100.00" oninput="onAmountChange()">
-            <div id="tokenExplainer" class="hint"></div>
-            <div id="tokenBalanceInfo" class="token-balance"></div>
-            <div id="approvalStatus" class="approval-status"></div>
-          </div>
-        </div>
-
-        <div id="createStageJudge" class="create-stage hidden">
-          <div class="create-stage-header">
-            <div class="create-stage-number">2</div>
-            <div class="create-stage-title">Choose judge and timing</div>
-          </div>
-          <div class="create-stage-hint">Only after the bond basics are set do you need to pick who judges it and how long challenges stay open.</div>
-          <div class="form-group">
-            <label for="judgeSelect">Judge</label>
-            <select id="judgeSelect" onchange="onJudgeSelectChange()">
-              <option value="">Select a judge contract...</option>
-            </select>
-            <div id="judgeMinFeeHint" class="hint">Pick a judge contract both parties trust. The bond contract rejects EOAs and judges that refuse the proposed terms.</div>
-            <div id="judgeCustomField" class="hidden" style="margin-top:8px;">
-              <input type="text" id="judgeAddr" placeholder="0x... or name.eth" oninput="resolveJudgeEns()">
-              <div id="judgeEnsHint" class="hint"></div>
+        <div class="create-wizard-shell">
+          <div class="create-wizard-top">
+            <div id="createWizardStepCount" class="create-wizard-stepcount">Step 1 of 5</div>
+            <div class="create-wizard-progress">
+              <div id="createWizardProgressBar" class="create-wizard-progress-bar"></div>
             </div>
           </div>
 
-          <div class="form-group">
-            <label for="deadline">Deadline</label>
-            <div class="preset-row">
-              <button type="button" class="preset" data-days="30" onclick="setDeadline(30)">1 month</button>
-              <button type="button" class="preset" data-days="90" onclick="setDeadline(90)">3 months</button>
-              <button type="button" class="preset" data-days="180" onclick="setDeadline(180)">6 months</button>
-              <button type="button" class="preset" data-days="365" onclick="setDeadline(365)">1 year</button>
+          <div id="createStageClaim" class="create-stage">
+            <div class="create-stage-header">
+              <div class="create-stage-number">1</div>
+              <div class="create-stage-title">Claim</div>
             </div>
-            <input type="date" id="deadline" oninput="refreshCreateProgressiveDisclosure()">
-            <div class="hint">Last date someone can challenge this bond.</div>
+            <div class="create-stage-hint">What public claim are you willing to stake money on?</div>
+            <div class="form-group">
+              <label for="bondMetadata">What is this bond for?</label>
+              <textarea id="bondMetadata" placeholder="e.g. &quot;All statistical claims in my March 2026 blog post are accurate and properly sourced.&quot;" rows="3" oninput="refreshCreateWizard()"></textarea>
+            </div>
           </div>
-        </div>
 
-        <div id="createStageReview" class="create-summary-card hidden">
-          <div class="create-summary-header">
-            <div class="create-summary-title">Recommended Setup</div>
-            <button type="button" id="createAdvancedToggleBtn" class="secondary create-summary-toggle" onclick="toggleCreateAdvanced()">Customize</button>
-          </div>
-          <div class="create-summary-grid">
-            <div class="create-summary-item">
-              <div class="create-summary-label">Currency</div>
-              <div class="create-summary-value" id="createSummaryCurrency">sDAI</div>
+          <div id="createStageStake" class="create-stage hidden">
+            <div class="create-stage-header">
+              <div class="create-stage-number">2</div>
+              <div class="create-stage-title">Stake</div>
             </div>
-            <div class="create-summary-item">
-              <div class="create-summary-label">Challenge Amount</div>
-              <div class="create-summary-value" id="createSummaryChallenge">$0.00</div>
-            </div>
-            <div class="create-summary-item">
-              <div class="create-summary-label">Judge Fee</div>
-              <div class="create-summary-value" id="createSummaryFee">$0.00</div>
-            </div>
-            <div class="create-summary-item">
-              <div class="create-summary-label">Timing</div>
-              <div class="create-summary-value" id="createSummaryTiming">3d acceptance, 30d ruling</div>
-            </div>
-            <div class="create-summary-item full">
-              <div class="create-summary-label">Judge</div>
-              <div class="create-summary-value" id="createSummaryJudge">Select a judge contract</div>
+            <div class="create-stage-hint">How much do you want to put behind the claim?</div>
+            <div class="form-group">
+              <label for="bondAmount">Amount (USD)</label>
+              <input type="text" id="bondAmount" placeholder="100.00" oninput="onAmountChange()">
             </div>
           </div>
-          <div id="createSummaryHint" class="hint">Defaults use the standard bond settings: 50% challenge amount, 5% judge fee, 3-day acceptance delay, and 30-day ruling window.</div>
 
-          <div id="createAdvancedPanel" class="create-advanced-panel hidden">
-            <div class="form-group advanced-field" id="advTokenField">
-              <label for="tokenSelect">Currency</label>
-              <div class="token-row">
-                <select id="tokenSelect" onchange="onTokenChange()"></select>
-                <button type="button" class="secondary add-token-btn" onclick="addCustomToken()">+ Add Custom</button>
+          <div id="createStageJudge" class="create-stage hidden">
+            <div class="create-stage-header">
+              <div class="create-stage-number">3</div>
+              <div class="create-stage-title">Judge</div>
+            </div>
+            <div class="create-stage-hint">Choose the judge contract both parties will trust.</div>
+            <div class="form-group">
+              <label for="judgeSelect">Judge</label>
+              <select id="judgeSelect" onchange="onJudgeSelectChange()">
+                <option value="">Select a judge contract...</option>
+              </select>
+              <div id="judgeMinFeeHint" class="hint">Pick a judge contract both parties trust.</div>
+              <div id="judgeCustomField" class="hidden" style="margin-top:8px;">
+                <input type="text" id="judgeAddr" placeholder="0x... or name.eth" oninput="resolveJudgeEns()">
+                <div id="judgeEnsHint" class="hint"></div>
               </div>
             </div>
+          </div>
 
-            <div class="form-group advanced-field" id="advChallengeField">
-              <label for="challengeAmount">Challenge Amount</label>
-              <input type="text" id="challengeAmount" placeholder="50.0" oninput="this.dataset.userEdited='1'; updateCreateSummary();">
-              <div class="hint">Amount each challenger must deposit. Default: 50% of bond.</div>
+          <div id="createStageDeadline" class="create-stage hidden">
+            <div class="create-stage-header">
+              <div class="create-stage-number">4</div>
+              <div class="create-stage-title">Deadline</div>
             </div>
-
-            <div class="form-group advanced-field" id="advJudgeFeeField">
-              <label for="judgeFee">Judge Fee</label>
-              <input type="text" id="judgeFee" placeholder="10.0" oninput="this.dataset.userEdited='1'; updateCreateSummary();">
-              <div class="hint">Fee the judge receives per ruling. Default: 5% of bond.</div>
-            </div>
-
-            <div class="form-group advanced-field" id="advAcceptanceDelayField">
-              <label>Acceptance Delay</label>
+            <div class="create-stage-hint">How long should challengers have to dispute the claim?</div>
+            <div class="form-group">
+              <label for="deadline">Deadline</label>
               <div class="preset-row">
-                <button type="button" class="preset acceptance-preset" data-adelay="1" onclick="setAcceptanceDelay(1)">1 day</button>
-                <button type="button" class="preset acceptance-preset active" data-adelay="3" onclick="setAcceptanceDelay(3)">3 days</button>
-                <button type="button" class="preset acceptance-preset" data-adelay="7" onclick="setAcceptanceDelay(7)">7 days</button>
-                <button type="button" class="preset acceptance-preset" data-adelay="14" onclick="setAcceptanceDelay(14)">14 days</button>
+                <button type="button" class="preset" data-days="30" onclick="setDeadline(30)">1 month</button>
+                <button type="button" class="preset" data-days="90" onclick="setDeadline(90)">3 months</button>
+                <button type="button" class="preset" data-days="180" onclick="setDeadline(180)">6 months</button>
+                <button type="button" class="preset" data-days="365" onclick="setDeadline(365)">1 year</button>
               </div>
-              <div class="hint">Grace period to concede before the judge can rule. Default: 3 days.</div>
+              <input type="date" id="deadline" oninput="refreshCreateWizard()">
+            </div>
+          </div>
+
+          <div id="createStageReview" class="create-stage hidden">
+            <div class="create-stage-header">
+              <div class="create-stage-number">5</div>
+              <div class="create-stage-title">Review</div>
+            </div>
+            <div class="create-stage-hint">Confirm the bond details, then create it.</div>
+
+            <div class="create-review-block">
+              <div class="create-review-title">Funding</div>
+              <div id="tokenExplainer" class="hint"></div>
+              <div id="tokenBalanceInfo" class="token-balance"></div>
+              <div id="approvalStatus" class="approval-status"></div>
             </div>
 
-            <div class="form-group advanced-field" id="advRulingBufferField">
-              <label>Ruling Window</label>
-              <div class="preset-row">
-                <button type="button" class="preset ruling-preset" data-buffer="7" onclick="setRulingBuffer(7)">7 days</button>
-                <button type="button" class="preset ruling-preset" data-buffer="14" onclick="setRulingBuffer(14)">14 days</button>
-                <button type="button" class="preset ruling-preset active" data-buffer="30" onclick="setRulingBuffer(30)">30 days</button>
+            <div class="create-summary-card">
+              <div class="create-summary-header">
+                <div class="create-summary-title">Standard Terms</div>
+                <button type="button" id="createAdvancedToggleBtn" class="secondary create-summary-toggle" onclick="toggleCreateAdvanced()">Customize</button>
               </div>
-              <div class="hint">Time for the judge to rule. If missed, everyone is refunded. Default: 30 days.</div>
+              <div class="create-summary-grid">
+                <div class="create-summary-item full">
+                  <div class="create-summary-label">Claim</div>
+                  <div class="create-summary-value" id="createSummaryClaim">No claim yet</div>
+                </div>
+                <div class="create-summary-item">
+                  <div class="create-summary-label">Bond Amount</div>
+                  <div class="create-summary-value" id="createSummaryBond">$0.00</div>
+                </div>
+                <div class="create-summary-item">
+                  <div class="create-summary-label">Currency</div>
+                  <div class="create-summary-value" id="createSummaryCurrency">sDAI</div>
+                </div>
+                <div class="create-summary-item">
+                  <div class="create-summary-label">Challenge Amount</div>
+                  <div class="create-summary-value" id="createSummaryChallenge">$0.00</div>
+                </div>
+                <div class="create-summary-item">
+                  <div class="create-summary-label">Judge Fee</div>
+                  <div class="create-summary-value" id="createSummaryFee">$0.00</div>
+                </div>
+                <div class="create-summary-item">
+                  <div class="create-summary-label">Judge</div>
+                  <div class="create-summary-value" id="createSummaryJudge">Select a judge contract</div>
+                </div>
+                <div class="create-summary-item">
+                  <div class="create-summary-label">Deadline</div>
+                  <div class="create-summary-value" id="createSummaryDeadline">Choose a deadline</div>
+                </div>
+                <div class="create-summary-item full">
+                  <div class="create-summary-label">Timing</div>
+                  <div class="create-summary-value" id="createSummaryTiming">3d acceptance, 30d ruling</div>
+                </div>
+              </div>
+              <div id="createSummaryHint" class="hint">Defaults stay hidden until you choose to customize them.</div>
+
+              <div id="createAdvancedPanel" class="create-advanced-panel hidden">
+                <div class="form-group advanced-field" id="advTokenField">
+                  <label for="tokenSelect">Currency</label>
+                  <div class="token-row">
+                    <select id="tokenSelect" onchange="onTokenChange()"></select>
+                    <button type="button" class="secondary add-token-btn" onclick="addCustomToken()">+ Add Custom</button>
+                  </div>
+                </div>
+
+                <div class="form-group advanced-field" id="advChallengeField">
+                  <label for="challengeAmount">Challenge Amount</label>
+                  <input type="text" id="challengeAmount" placeholder="50.0" oninput="this.dataset.userEdited='1'; updateCreateSummary();">
+                </div>
+
+                <div class="form-group advanced-field" id="advJudgeFeeField">
+                  <label for="judgeFee">Judge Fee</label>
+                  <input type="text" id="judgeFee" placeholder="10.0" oninput="this.dataset.userEdited='1'; updateCreateSummary();">
+                </div>
+
+                <div class="form-group advanced-field" id="advAcceptanceDelayField">
+                  <label>Acceptance Delay</label>
+                  <div class="preset-row">
+                    <button type="button" class="preset acceptance-preset" data-adelay="1" onclick="setAcceptanceDelay(1)">1 day</button>
+                    <button type="button" class="preset acceptance-preset active" data-adelay="3" onclick="setAcceptanceDelay(3)">3 days</button>
+                    <button type="button" class="preset acceptance-preset" data-adelay="7" onclick="setAcceptanceDelay(7)">7 days</button>
+                    <button type="button" class="preset acceptance-preset" data-adelay="14" onclick="setAcceptanceDelay(14)">14 days</button>
+                  </div>
+                </div>
+
+                <div class="form-group advanced-field" id="advRulingBufferField">
+                  <label>Ruling Window</label>
+                  <div class="preset-row">
+                    <button type="button" class="preset ruling-preset" data-buffer="7" onclick="setRulingBuffer(7)">7 days</button>
+                    <button type="button" class="preset ruling-preset" data-buffer="14" onclick="setRulingBuffer(14)">14 days</button>
+                    <button type="button" class="preset ruling-preset active" data-buffer="30" onclick="setRulingBuffer(30)">30 days</button>
+                  </div>
+                </div>
+              </div>
             </div>
+          </div>
+
+          <div class="create-wizard-nav">
+            <button id="createPrevBtn" class="secondary hidden" type="button" onclick="moveCreateWizard(-1)">← Back</button>
+            <div class="nav-spacer"></div>
+            <button id="createNextBtn" type="button" onclick="moveCreateWizard(1)">Continue</button>
           </div>
         </div>
 
         <div id="createStepper"></div>
 
-        <button id="createBtn" onclick="smartCreateBond()" style="width:100%;margin-top:16px;">Create Bond</button>
+        <button id="createBtn" class="hidden" onclick="smartCreateBond()" style="width:100%;margin-top:16px;">Create Bond</button>
         <div id="createMsg"></div>
       </div>
     </div>
@@ -1151,6 +1240,7 @@ let currentMode = 'simple';
 function chain() { return CHAINS[activeChainId]; }
 
 const WEB3AUTH_CLIENT_ID = "BPt1ahKWn4CSezBP6MhIZQQICRcOjt6epWT9jQ45M4sGQyO3jimvzjdBN93ukw2tBR_4PyRBI94FsFLZBfYQFWo";
+const WEB3AUTH_ENABLED = false;
 
 // Gnosis-specific addresses (kept for wrapping logic)
 const SDAI_ADDRESS  = "0xaf204776c7245bF4147c2612BF6e5972Ee483701";
@@ -1787,7 +1877,7 @@ function setWeb3AuthButtonState(enabled) {
 }
 
 async function initWeb3Auth() {
-  if (WEB3AUTH_CLIENT_ID === "YOUR_WEB3AUTH_CLIENT_ID") {
+  if (!WEB3AUTH_ENABLED || WEB3AUTH_CLIENT_ID === "YOUR_WEB3AUTH_CLIENT_ID") {
     setWeb3AuthButtonState(false);
     return null;
   }
@@ -5291,7 +5381,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   let autoConnected = false;
 
   // Check Web3Auth reconnection
-  if (WEB3AUTH_CLIENT_ID !== "YOUR_WEB3AUTH_CLIENT_ID") {
+  if (WEB3AUTH_ENABLED && WEB3AUTH_CLIENT_ID !== "YOUR_WEB3AUTH_CLIENT_ID") {
     try {
       const w3a = await initWeb3Auth();
       if (w3a && w3a.connected) {
