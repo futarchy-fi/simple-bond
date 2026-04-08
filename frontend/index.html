@@ -3806,7 +3806,7 @@ async function getControlledJudgeContracts(readProvider = null) {
 }
 
 function setJudgeOnboardingBusy(isBusy) {
-  for (const id of ["judgeOnboardingUseExistingBtn", "judgeOnboardingDeployBtn", "judgeOnboardingToggleExistingBtn", "judgeOnboardingActivateBtn", "judgeOnboardingEditBtn", "judgeOnboardingInlineEditBtn", "judgeOnboardingCopyBtn"]) {
+  for (const id of ["judgeOnboardingUseExistingBtn", "judgeOnboardingDeployBtn", "judgeOnboardingToggleExistingBtn", "judgeOnboardingActivateBtn", "judgeOnboardingEditBtn", "judgeOnboardingCopyBtn"]) {
     const el = document.getElementById(id);
     if (el) el.disabled = isBusy;
   }
@@ -3873,7 +3873,6 @@ async function refreshJudgeOnboarding() {
   const toggleExistingBtn = document.getElementById("judgeOnboardingToggleExistingBtn");
   const activateBtn = document.getElementById("judgeOnboardingActivateBtn");
   const editBtn = document.getElementById("judgeOnboardingEditBtn");
-  const inlineEditBtn = document.getElementById("judgeOnboardingInlineEditBtn");
   const copyBtn = document.getElementById("judgeOnboardingCopyBtn");
 
   titleEl.textContent = "Become a Judge";
@@ -3883,7 +3882,6 @@ async function refreshJudgeOnboarding() {
   deployBtn.classList.add("hidden");
   activateBtn.classList.add("hidden");
   editBtn.classList.add("hidden");
-  inlineEditBtn.classList.add("hidden");
   copyBtn.classList.add("hidden");
   judgeExistingAddressRowOpen = false;
   syncJudgeExistingAddressRow();
@@ -4287,6 +4285,7 @@ function getJudgeProfileRouteChainId() {
 function updateJudgeProfileEditorLink(target) {
   const rowEl = document.getElementById("judgeOwnProfileLinkRow");
   const linkEl = document.getElementById("judgeOwnProfileLink");
+  if (!rowEl || !linkEl) return;
   if (!target || !ethers.isAddress(target)) {
     rowEl.classList.add("hidden");
     linkEl.href = "#";
@@ -4301,14 +4300,22 @@ function updateJudgeProfileEditorLink(target) {
 }
 
 function resetJudgeProfileEditorUi({ preserveTarget = false } = {}) {
-  if (!preserveTarget) {
-    document.getElementById("judgeProfileTarget").value = "";
+  const targetEl = document.getElementById("judgeProfileTarget");
+  const displayNameEl = document.getElementById("judgeProfileDisplayName");
+  const statementEl = document.getElementById("judgeProfileStatement");
+  const linkEl = document.getElementById("judgeProfileLink");
+  const metadataEl = document.getElementById("judgeProfileMetadata");
+  const hintEl = document.getElementById("judgeProfileTargetHint");
+  if (!preserveTarget && targetEl) {
+    targetEl.value = "";
   }
-  document.getElementById("judgeProfileDisplayName").value = "";
-  document.getElementById("judgeProfileStatement").value = "";
-  document.getElementById("judgeProfileLink").value = "";
-  document.getElementById("judgeProfileMetadata").value = "";
-  document.getElementById("judgeProfileTargetHint").textContent = "Enter the judge contract address you control. The registry rejects EOAs.";
+  if (displayNameEl) displayNameEl.value = "";
+  if (statementEl) statementEl.value = "";
+  if (linkEl) linkEl.value = "";
+  if (metadataEl) metadataEl.value = "";
+  if (hintEl) {
+    hintEl.textContent = "Enter the judge contract address you control. The registry rejects EOAs.";
+  }
   currentJudgeProfileDraftTarget = null;
   updateJudgeProfileEditorLink(null);
   setJudgeProfileEditorEnabled(false);
@@ -4329,15 +4336,20 @@ function setJudgeProfileEditorEnabled(enabled) {
 }
 
 function populateJudgeProfileEditor(profile) {
-  document.getElementById("judgeProfileDisplayName").value = profile?.displayName || "";
-  document.getElementById("judgeProfileStatement").value = profile?.statement || "";
-  document.getElementById("judgeProfileLink").value = profile?.linkURI || "";
-  document.getElementById("judgeProfileMetadata").value = profile?.metadataURI || "";
+  const displayNameEl = document.getElementById("judgeProfileDisplayName");
+  const statementEl = document.getElementById("judgeProfileStatement");
+  const linkEl = document.getElementById("judgeProfileLink");
+  const metadataEl = document.getElementById("judgeProfileMetadata");
+  if (displayNameEl) displayNameEl.value = profile?.displayName || "";
+  if (statementEl) statementEl.value = profile?.statement || "";
+  if (linkEl) linkEl.value = profile?.linkURI || "";
+  if (metadataEl) metadataEl.value = profile?.metadataURI || "";
 }
 
 function populateControlledJudgeSelect(controlledJudges) {
   const rowEl = document.getElementById("judgeProfileControlledRow");
   const selectEl = document.getElementById("judgeProfileControlledSelect");
+  if (!rowEl || !selectEl) return;
   selectEl.innerHTML = '<option value="">Choose a judge contract...</option>';
 
   if (!userAddr || !controlledJudges || controlledJudges.length === 0) {
@@ -4360,6 +4372,8 @@ function populateControlledJudgeSelect(controlledJudges) {
 
 async function loadJudgeProfileEditorTarget(target, { force = false } = {}) {
   const hintEl = document.getElementById("judgeProfileTargetHint");
+  const targetInputEl = document.getElementById("judgeProfileTarget");
+  if (!hintEl || !targetInputEl) return;
 
   if (!target || !ethers.isAddress(target)) {
     currentJudgeProfileDraftTarget = null;
@@ -4380,7 +4394,7 @@ async function loadJudgeProfileEditorTarget(target, { force = false } = {}) {
   ]);
 
   currentJudgeProfileDraftTarget = checksum;
-  document.getElementById("judgeProfileTarget").value = checksum;
+  targetInputEl.value = checksum;
   populateJudgeProfileEditor(profile);
   updateJudgeProfileEditorLink(checksum);
   setJudgeProfileEditorEnabled(canEdit);
@@ -4413,7 +4427,8 @@ async function refreshJudgeProfileEditor() {
   const controlledJudges = judgesList.filter((judge) => judge.operator?.toLowerCase() === userAddr.toLowerCase());
   populateControlledJudgeSelect(controlledJudges);
 
-  const currentTarget = document.getElementById("judgeProfileTarget").value.trim();
+  const targetEl = document.getElementById("judgeProfileTarget");
+  const currentTarget = targetEl ? targetEl.value.trim() : "";
   if (currentTarget && ethers.isAddress(currentTarget)) {
     await loadJudgeProfileEditorTarget(currentTarget, { force: true });
     return;
@@ -4421,7 +4436,8 @@ async function refreshJudgeProfileEditor() {
 
   if (controlledJudges.length === 1) {
     await loadJudgeProfileEditorTarget(controlledJudges[0].address, { force: true });
-    document.getElementById("judgeProfileControlledSelect").value = controlledJudges[0].address;
+    const selectEl = document.getElementById("judgeProfileControlledSelect");
+    if (selectEl) selectEl.value = controlledJudges[0].address;
     return;
   }
 
@@ -4429,13 +4445,18 @@ async function refreshJudgeProfileEditor() {
 }
 
 function selectControlledJudgeProfileTarget() {
-  const value = document.getElementById("judgeProfileControlledSelect").value;
-  document.getElementById("judgeProfileTarget").value = value;
+  const selectEl = document.getElementById("judgeProfileControlledSelect");
+  const targetEl = document.getElementById("judgeProfileTarget");
+  if (!selectEl || !targetEl) return;
+  const value = selectEl.value;
+  targetEl.value = value;
   loadJudgeProfileEditorTarget(value, { force: true });
 }
 
 function onJudgeProfileTargetInput() {
-  const value = document.getElementById("judgeProfileTarget").value.trim();
+  const targetEl = document.getElementById("judgeProfileTarget");
+  if (!targetEl) return;
+  const value = targetEl.value.trim();
   if (!value) {
     resetJudgeProfileEditorUi({ preserveTarget: true });
     return;
@@ -4445,7 +4466,8 @@ function onJudgeProfileTargetInput() {
     currentJudgeProfileDraftTarget = null;
     updateJudgeProfileEditorLink(null);
     setJudgeProfileEditorEnabled(false);
-    document.getElementById("judgeProfileTargetHint").textContent = "Enter a valid judge contract address. ENS names are not supported here yet.";
+    const hintEl = document.getElementById("judgeProfileTargetHint");
+    if (hintEl) hintEl.textContent = "Enter a valid judge contract address. ENS names are not supported here yet.";
     return;
   }
 
