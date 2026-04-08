@@ -12,6 +12,7 @@ The goal of this audit is to answer:
 - does the `V5` concession window behave as specified?
 - does the move from EOA judges to contract judges introduce new security issues?
 - is the minimal `ManualJudge` wrapper safe within its intended trust model?
+- does the bounded refund-claim path avoid large-queue settlement DoS?
 
 ## In Scope
 
@@ -104,6 +105,8 @@ The audit should treat the following as intentional `V5` design changes, not acc
 - judge term acceptance is checked at bond creation through `validateBond(...)`
 - `validateBond(...)` is only a creation-time compatibility and term-acceptance check; it does not obligate the judge to later rule
 - concession now closes on a real time-based cutoff via `concessionDeadline(bondId)`, fixing the unintended `V4` behavior that depended on queue state rather than time
+- the poster may withdraw only after the public challenge deadline expires
+- challenger refunds are claimed through bounded `claimRefunds(...)` batches rather than an unbounded settlement loop
 
 ## Explicitly Deferred Work
 
@@ -123,5 +126,6 @@ Please prioritize:
 - FIFO queue behavior under repeated challenges
 - concession and timeout edge cases
 - judge-fee handling
+- bounded refund-claim behavior for large challenger queues
 - access control boundaries between poster, challengers, judge contract, and judge operator
 - griefing or stuck-fund scenarios

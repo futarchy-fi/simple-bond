@@ -104,6 +104,7 @@ async function runSeededPosterFlow(seed) {
   }
 
   if (posterWins === challengeCount) {
+    await fixture.actions.advancePastDeadline();
     await fixture.actions.withdrawBond();
     const afterWithdraw = await snapshot(fixture);
     expectWithdrawBondOutcome(previous, afterWithdraw);
@@ -117,6 +118,7 @@ async function runSeededPosterFlow(seed) {
   if (terminalAction === 0) {
     const feeCharged = pickFee(nextUint32);
     await fixture.actions.ruleForChallenger({ feeCharged });
+    await fixture.actions.claimAllRefunds();
     const afterChallengerWin = await snapshot(fixture);
     expectRuleForChallengerOutcome(previous, afterChallengerWin, feeCharged);
     expectGenericInvariants(previous, afterChallengerWin, baseline);
@@ -126,6 +128,7 @@ async function runSeededPosterFlow(seed) {
 
   if (terminalAction === 1) {
     await fixture.actions.rejectBond();
+    await fixture.actions.claimAllRefunds();
     const afterReject = await snapshot(fixture);
     expectRejectBondOutcome(previous, afterReject);
     expectGenericInvariants(previous, afterReject, baseline);
@@ -135,6 +138,7 @@ async function runSeededPosterFlow(seed) {
 
   await fixture.actions.advancePastRulingDeadline();
   await fixture.actions.claimTimeout();
+  await fixture.actions.claimAllRefunds();
   const afterTimeout = await snapshot(fixture);
   expectTimeoutOutcome(previous, afterTimeout);
   expectGenericInvariants(previous, afterTimeout, baseline);
@@ -152,6 +156,7 @@ async function runSeededConcedeFlow(seed) {
   await fixture.actions.concede({
     metadata: `Concede seed ${seed}`,
   });
+  await fixture.actions.claimAllRefunds();
 
   const afterConcede = await snapshot(fixture);
   expectConcedeOutcome(previous, afterConcede);

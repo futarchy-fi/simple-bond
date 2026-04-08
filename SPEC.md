@@ -18,9 +18,11 @@ This document describes the intended behavior of the `SimpleBondV5` core system.
 - the judge must be a contract
 - the bond core no longer contains a global judge registry
 
-There is also one deliberate behavior fix relative to `V4`:
+There are also deliberate hardening changes relative to `V4`:
 
 - concession now closes on a real time-based deadline instead of implicitly remaining open until queue state changes
+- the poster cannot withdraw before the public challenge deadline expires
+- challenger refunds are claimed in bounded batches rather than an unbounded settlement loop
 
 Current repository locations:
 
@@ -118,7 +120,7 @@ If the poster concedes:
 - `settled = true`
 - `conceded = true`
 - poster receives the full `bondAmount`
-- all pending challengers receive their full `challengeAmount`
+- all pending challengers become refundable for their full `challengeAmount`
 - judge receives nothing
 
 This is intended to preserve the public concession signal while refunding capital.
@@ -155,6 +157,21 @@ This is intentional. The bond core pays the judge contract, and any further acco
 
 `SimpleBondV5` does not model any external arbitration-cost system.
 
+## Refund Claims
+
+Some terminal outcomes can leave a large unresolved suffix of the FIFO challenge
+queue. `SimpleBondV5` therefore does not perform an unbounded refund loop while
+settling those outcomes.
+
+Instead:
+
+- settlement records a refundable contiguous suffix of the challenge queue
+- anyone may call `claimRefunds(bondId, maxCount)` to process a bounded batch
+- each claimed refund still goes to the original challenger
+
+This preserves the intended economics while avoiding a large-queue settlement
+DoS.
+
 ## Token Assumptions
 
 `SimpleBondV5` is intended for standard ERC-20 tokens whose transfers move the requested nominal amount.
@@ -185,14 +202,14 @@ When the judge rules for the active challenger:
 - bond is settled
 - challenger receives `bondAmount + challengeAmount - feeCharged`
 - judge contract receives `feeCharged`
-- all later pending challengers are refunded
+- all later pending challengers become refundable through bounded refund claims
 
 ## `rejectBond`
 
 The judge contract may refuse the bond and trigger a full refund path:
 
 - poster receives the full `bondAmount`
-- all pending challengers receive the full `challengeAmount`
+- all pending challengers become refundable for the full `challengeAmount`
 - judge receives nothing
 - bond becomes settled
 
@@ -204,6 +221,7 @@ The poster may withdraw the bond only when:
 
 - the bond is not already settled
 - the caller is the poster
+- the public challenge deadline has passed
 - there are no pending challenges
 
 Withdrawal returns the full `bondAmount` to the poster and settles the bond.
@@ -214,7 +232,7 @@ If the ruling deadline passes while there is still an unresolved active challeng
 
 - anyone may call `claimTimeout(bondId)`
 - poster receives the full `bondAmount`
-- all unresolved pending challengers receive the full `challengeAmount`
+- all unresolved pending challengers become refundable for the full `challengeAmount`
 - judge receives nothing
 - bond becomes settled
 
@@ -238,6 +256,7 @@ The intended invariants are:
 - anyone may deploy it for a proposed operator
 - it becomes active only after the proposed operator accepts
 - only the accepted operator may forward rulings or rejection calls
+- only the accepted operator may withdraw accrued judge fees
 - it is intentionally portable across compatible bond contracts
 
 That portability is deliberate. `ManualJudge` is not bound to a single `SimpleBondV5` instance so a future compatible bond core can reuse the same wrapper instead of forcing redeployment.

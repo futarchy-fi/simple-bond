@@ -109,6 +109,8 @@ async function captureBondSnapshot(fixture, bondId = 0, options = {}) {
     currentChallenge,
     rawChallenges,
     contractBalance,
+    refundCursor,
+    refundEnd,
     trackedBalances,
   ] = await Promise.all([
     fixture.read.getBond(bondId),
@@ -116,6 +118,8 @@ async function captureBondSnapshot(fixture, bondId = 0, options = {}) {
     fixture.read.getCurrentChallenge(bondId),
     fixture.read.getChallenges(bondId),
     fixture.read.contractBalance(),
+    fixture.read.refundCursor(bondId),
+    fixture.read.refundEnd(bondId),
     fixture.read.balancesOf(trackedAddresses),
   ]);
 
@@ -158,6 +162,8 @@ async function captureBondSnapshot(fixture, bondId = 0, options = {}) {
     pendingChallengeIndices: pendingChallenges.map(({ index }) => index),
     pendingChallenges,
     refundedChallenges,
+    refundCursor,
+    refundEnd,
     resolvedChallenges,
     roleAddresses,
     totalTrackedTokens: sumBalances(trackedAddresses, balancesByAddress) + contractBalance,

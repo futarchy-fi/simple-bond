@@ -168,6 +168,14 @@ async function deploySimpleBondV5FuzzFixture(options = {}) {
       return bond.rulingDeadline(bondId);
     },
 
+    async refundCursor(bondId = 0) {
+      return bond.refundCursor(bondId);
+    },
+
+    async refundEnd(bondId = 0) {
+      return bond.refundEnd(bondId);
+    },
+
     async latestTime() {
       return time.latest();
     },
@@ -256,6 +264,15 @@ async function deploySimpleBondV5FuzzFixture(options = {}) {
       return { bondId, timestamp };
     },
 
+    async advancePastDeadline({ bondId = 0 } = {}) {
+      const bondState = await read.getBond(bondId);
+      const latest = await time.latest();
+      const timestamp = Math.max(latest + 1, Number(bondState.deadline) + 1);
+      await time.increaseTo(timestamp);
+
+      return { bondId, timestamp };
+    },
+
     async ruleForPoster({ bondId = 0, feeCharged = defaults.judgeFee, caller = actors.judgeOperator } = {}) {
       const challengeIndex = await read.getCurrentChallenge(bondId);
       const tx = await judge.connect(caller).ruleForPoster(bondAddress, bondId, feeCharged);
@@ -284,6 +301,26 @@ async function deploySimpleBondV5FuzzFixture(options = {}) {
       const receipt = await tx.wait();
 
       return { bondId, tx, receipt };
+    },
+
+    async claimRefunds({ bondId = 0, maxCount = 1, caller = actors.outsider } = {}) {
+      const tx = await bond.connect(caller).claimRefunds(bondId, maxCount);
+      const receipt = await tx.wait();
+
+      return { bondId, tx, receipt };
+    },
+
+    async claimAllRefunds({ bondId = 0, maxCountPerTx = 50, caller = actors.outsider } = {}) {
+      const receipts = [];
+
+      while ((await read.refundCursor(bondId)) < (await read.refundEnd(bondId))) {
+        const remaining = (await read.refundEnd(bondId)) - (await read.refundCursor(bondId));
+        const batchSize = Number(remaining > BigInt(maxCountPerTx) ? BigInt(maxCountPerTx) : remaining);
+        const { tx, receipt } = await actions.claimRefunds({ bondId, maxCount: batchSize, caller });
+        receipts.push({ tx, receipt });
+      }
+
+      return { bondId, receipts };
     },
 
     async concede({ bondId = 0, metadata = defaults.concessionMetadata, caller = actors.poster } = {}) {
