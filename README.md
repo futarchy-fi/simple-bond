@@ -89,6 +89,7 @@ The poster can publicly admit their claim is wrong by calling `concede()` with a
 
 ### Acceptance Delay
 After a challenge, the poster has a configurable window (set at bond creation) to concede before the judge can rule. The judge's ruling window opens at `max(deadline, lastChallengeTime + acceptanceDelay)`.
+The judge may still call `rejectBond()` at any time before settlement; only merits rulings wait for the ruling window.
 
 ### Challenge Metadata
 Challengers attach their reasoning when challenging — explains *why* they think the poster is wrong. Stored on-chain.
