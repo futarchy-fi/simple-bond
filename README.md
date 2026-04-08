@@ -5,11 +5,11 @@ A truth-machine bond contract. Make a claim, back it with money, and let the wor
 
 ## Repository Status
 
-The repository now contains both legacy deployed lines and the current `V5` core audit target.
+The repository now contains both legacy deployed lines and the current `v0.5` core audit target.
 
 - current core line: `contracts/core/SimpleBondV5.sol`
 - current minimal judge wrapper: `contracts/judges/ManualJudge.sol`
-- current `V5` audit docs: `AUDIT_SCOPE.md` and `SPEC.md`
+- current `v0.5` audit docs: `AUDIT_SCOPE.md` and `SPEC.md`
 - legacy contract lines and the current Kleros adapter: `contracts/legacy/`
 
 ## Repository Layout
@@ -19,8 +19,8 @@ The repository now contains both legacy deployed lines and the current `V5` core
 - `contracts/interfaces/` - shared interfaces
 - `contracts/legacy/` - older contract generations and legacy adapters
 - `contracts/test/` - test-only Solidity contracts
-- `test/core/v5/` - active `V5` test suites
-- `test/helpers/v5/` - active `V5` test helpers
+- `test/core/v5/` - active `v0.5` test suites
+- `test/helpers/v5/` - active `v0.5` test helpers
 - `test/legacy/` - legacy regression suites for older contract lines
 - `test/frontend/` - frontend/backend consumer and helper tests
 - `test/tooling/` - deploy and repository-tooling tests
@@ -213,7 +213,7 @@ Current canonical Gnosis deployment:
 
 | Asset | Chain | Address |
 |-------|-------|---------|
-| SimpleBondV5 | Gnosis | `0x7dF485C013f8671B656d585f1d1411640B1D2776` |
+| SimpleBond v0.5 (`SimpleBondV5`) | Gnosis | `0x7dF485C013f8671B656d585f1d1411640B1D2776` |
 | JudgeProfileRegistry | Gnosis | `0x5f2000E438533662A689311672a41aca3EDC88DD` |
 | JudgeRegistry | Gnosis | `0xf2F50455D3E1956EF4DF8BBA9a93CeDaF4aE9A3D` |
 | OfficialBondDirectory | Gnosis | `0xb32263E363f668f97137D53baF69CF7Fb388c343` |

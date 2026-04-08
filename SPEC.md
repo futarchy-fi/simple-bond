@@ -1,6 +1,6 @@
-# SimpleBondV5 Core Spec
+# SimpleBond v0.5 Core Spec
 
-This document describes the intended behavior of the `SimpleBondV5` core system.
+This document describes the intended behavior of the `SimpleBondV5` core system, released as SimpleBond `v0.5`.
 
 ## Overview
 
@@ -13,7 +13,7 @@ This document describes the intended behavior of the `SimpleBondV5` core system.
 - if the poster does not concede, the configured judge contract may resolve the active challenge
 - if the active challenge is not resolved in time, anyone may trigger a timeout and refund the unresolved parties
 
-`V5` is intentionally close to `V4`, with two major changes:
+`v0.5` is intentionally close to `V4`, with two major changes:
 
 - the judge must be a contract
 - the bond core no longer contains a global judge registry
@@ -71,7 +71,7 @@ The poster transfers `bondAmount` into `SimpleBondV5`.
 
 It means:
 
-- this judge contract recognizes the `V5` interface
+- this judge contract recognizes the `v0.5` interface
 - this judge contract accepts the proposed static bond terms at creation time
 
 It does not mean:

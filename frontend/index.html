@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SimpleBond v5 — Futarchy</title>
+<title>SimpleBond v0.5 — Futarchy</title>
 <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.4/dist/ethers.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@web3auth/modal@9/dist/modal.umd.min.js"></script>
 <script src="/runtime-config.js"></script>
@@ -480,7 +480,7 @@
 <body>
 <div class="container">
   <header>
-    <h1>SimpleBond <span>v5 — by Futarchy</span></h1>
+    <h1>SimpleBond <span>v0.5 — by Futarchy</span></h1>
     <div class="header-right">
       <select id="chainSelect" class="chain-select" onchange="switchChain(this.value)">
         <option value="100">Gnosis</option>
@@ -534,7 +534,7 @@
   <!-- MAIN APP (hidden until connected or browsing) -->
   <div id="mainApp" class="hidden">
     <div id="chainNotDeployed" class="hidden" style="text-align:center;padding:40px 20px;color:var(--muted);">
-      <h3 style="color:var(--text);margin-bottom:8px;">SimpleBond V5 Not Configured</h3>
+      <h3 style="color:var(--text);margin-bottom:8px;">SimpleBond v0.5 Not Configured</h3>
       <p>No `SimpleBondV5` contract address is configured for <span id="notDeployedChain">Gnosis</span> yet.</p>
       <p style="margin-top:8px;">Set `window.SIMPLE_BOND_CONFIG.gnosisBondContract` and `gnosisDeployBlock` to enable the app.</p>
     </div>
@@ -1033,7 +1033,7 @@ function getDefaultTokens() { return chain().tokens; }
 
 // ─── ABIs ─────────────────────────────────────────────────────────────
 const BOND_ABI = [
-  // V5 core functions
+  // v0.5 core functions
   "function createBond(address token, uint256 bondAmount, uint256 challengeAmount, uint256 judgeFee, address judge, uint256 deadline, uint256 acceptanceDelay, uint256 rulingBuffer, string metadata) returns (uint256)",
   "function challenge(uint256 bondId, string metadata)",
   "function concede(uint256 bondId, string metadata)",

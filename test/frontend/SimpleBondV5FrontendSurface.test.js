@@ -5,11 +5,11 @@ const { resolve } = require("path");
 const FRONTEND_PATH = resolve(__dirname, "..", "..", "frontend", "index.html");
 const RUNTIME_CONFIG_PATH = resolve(__dirname, "..", "..", "frontend", "runtime-config.js");
 
-describe("SimpleBondV5 frontend surface", function () {
+describe("SimpleBond v0.5 frontend surface", function () {
   const frontendSource = readFileSync(FRONTEND_PATH, "utf8");
   const runtimeConfigSource = readFileSync(RUNTIME_CONFIG_PATH, "utf8");
 
-  it("uses the V5 refund batching surface instead of the old judge registry ABI", function () {
+  it("uses the v0.5 refund batching surface instead of the old judge registry ABI", function () {
     expect(frontendSource).to.include("function claimRefunds(uint256 bondId, uint256 maxCount)");
     expect(frontendSource).to.include("function refundCursor(uint256 bondId) view returns (uint256)");
     expect(frontendSource).to.include("function refundEnd(uint256 bondId) view returns (uint256)");
@@ -21,7 +21,7 @@ describe("SimpleBondV5 frontend surface", function () {
     expect(frontendSource).to.not.include("event JudgeFeeUpdated(address indexed judge, address indexed token, uint256 newMinFee)");
   });
 
-  it("treats the app as Gnosis-only and runtime-configured for the V5 deployment", function () {
+  it("treats the app as Gnosis-only and runtime-configured for the v0.5 deployment", function () {
     expect(frontendSource).to.include('<option value="100">Gnosis</option>');
     expect(frontendSource).to.not.include('<option value="137">Polygon</option>');
     expect(frontendSource).to.not.include('<option value="1">Ethereum</option>');
