@@ -40,7 +40,7 @@
   header h1 span { color: var(--muted); font-weight: 400; }
   .wallet-info { text-align: right; font-size: 13px; }
   .wallet-info .address { color: var(--accent); font-family: monospace; }
-  .wallet-info .chain { color: var(--muted); font-size: 11px; }
+  .wallet-info .chain { color: var(--muted); font-size: 10px; opacity: 0.75; }
   .wallet-info .disconnect-link {
     color: var(--muted); font-size: 11px; cursor: pointer;
     text-decoration: underline; margin-top: 2px;
@@ -377,14 +377,15 @@
   /* ─── Chain Selector ─── */
   .chain-select {
     background: var(--bg); color: var(--text); border: 1px solid var(--border);
-    border-radius: 20px; padding: 5px 12px; font-size: 12px; cursor: pointer;
+    border-radius: 20px; padding: 4px 10px; font-size: 11px; cursor: pointer;
     outline: none; appearance: none; -webkit-appearance: none;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%238888a0'/%3E%3C/svg%3E");
     background-repeat: no-repeat; background-position: right 10px center;
     padding-right: 26px;
+    opacity: 0.72;
   }
-  .chain-select:hover { border-color: var(--accent); }
-  .chain-select:focus { border-color: var(--accent); }
+  .chain-select:hover { border-color: var(--muted); opacity: 0.9; }
+  .chain-select:focus { border-color: var(--muted); opacity: 0.9; }
   .header-right { display: flex; align-items: center; gap: 10px; }
   .chain-note { font-size: 12px; color: var(--muted); text-align: center; margin-bottom: 12px; }
 
@@ -1237,6 +1238,7 @@ const CHAINS = {
 
 let activeChainId = 100;
 let currentMode = 'simple';
+let currentCreateStep = 0;
 function chain() { return CHAINS[activeChainId]; }
 
 const WEB3AUTH_CLIENT_ID = "BPt1ahKWn4CSezBP6MhIZQQICRcOjt6epWT9jQ45M4sGQyO3jimvzjdBN93ukw2tBR_4PyRBI94FsFLZBfYQFWo";
@@ -1598,6 +1600,81 @@ function onAmountChange() {
   checkApproval();
 }
 
+function getCreateStepIds() {
+  return [
+    "createStageClaim",
+    "createStageStake",
+    "createStageJudge",
+    "createStageDeadline",
+    "createStageReview",
+  ];
+}
+
+function getCreateStepValidity(step) {
+  const claim = document.getElementById("bondMetadata")?.value.trim() || "";
+  const amount = parseFloat(document.getElementById("bondAmount")?.value || "");
+  const judgeSelectVal = document.getElementById("judgeSelect")?.value || "";
+  const customJudgeVal = document.getElementById("judgeAddr")?.value.trim() || "";
+  const deadlineVal = document.getElementById("deadline")?.value || "";
+
+  if (step === 0) return claim.length > 0;
+  if (step === 1) return Number.isFinite(amount) && amount > 0;
+  if (step === 2) return !!judgeSelectVal && (judgeSelectVal !== "__custom__" || !!customJudgeVal);
+  if (step === 3) return !!deadlineVal;
+  return true;
+}
+
+function refreshCreateAccessState() {
+  const promptEl = document.getElementById("createConnectPrompt");
+  const formEl = document.getElementById("createForm");
+  const btnEl = document.getElementById("createBtn");
+  if (promptEl) promptEl.classList.add("hidden");
+  if (formEl) formEl.classList.remove("hidden");
+  if (btnEl) btnEl.textContent = signer ? "Create Bond" : "Sign In to Create";
+}
+
+function refreshCreateWizard() {
+  const stepIds = getCreateStepIds();
+  currentCreateStep = Math.max(0, Math.min(currentCreateStep, stepIds.length - 1));
+
+  stepIds.forEach((id, index) => {
+    const el = document.getElementById(id);
+    if (el) el.classList.toggle("hidden", index !== currentCreateStep);
+  });
+
+  const stepCountEl = document.getElementById("createWizardStepCount");
+  if (stepCountEl) stepCountEl.textContent = `Step ${currentCreateStep + 1} of ${stepIds.length}`;
+
+  const progressEl = document.getElementById("createWizardProgressBar");
+  if (progressEl) progressEl.style.width = `${((currentCreateStep + 1) / stepIds.length) * 100}%`;
+
+  const prevBtn = document.getElementById("createPrevBtn");
+  if (prevBtn) prevBtn.classList.toggle("hidden", currentCreateStep === 0);
+
+  const nextBtn = document.getElementById("createNextBtn");
+  const createBtn = document.getElementById("createBtn");
+  const onReviewStep = currentCreateStep === stepIds.length - 1;
+  if (nextBtn) nextBtn.classList.toggle("hidden", onReviewStep);
+  if (createBtn) createBtn.classList.toggle("hidden", !onReviewStep);
+
+  if (nextBtn) {
+    nextBtn.disabled = !getCreateStepValidity(currentCreateStep);
+  }
+
+  refreshCreateAccessState();
+  updateCreateSummary();
+  if (onReviewStep) {
+    updateTokenExplainer();
+    checkApproval();
+  }
+}
+
+function moveCreateWizard(direction) {
+  if (direction > 0 && !getCreateStepValidity(currentCreateStep)) return;
+  currentCreateStep += direction;
+  refreshCreateWizard();
+}
+
 // ─── Simple / Advanced toggle ─────────────────────────────────────────
 function toggleCreateAdvanced() {
   setMode(currentMode === "advanced" ? "simple" : "advanced");
@@ -1629,30 +1706,20 @@ function formatUsdPreview(value) {
 }
 
 function refreshCreateProgressiveDisclosure() {
-  const claim = document.getElementById("bondMetadata")?.value.trim() || "";
-  const amount = parseFloat(document.getElementById("bondAmount")?.value || "");
-  const judgeStage = document.getElementById("createStageJudge");
-  const reviewStage = document.getElementById("createStageReview");
-  const judgeSelectVal = document.getElementById("judgeSelect")?.value || "";
-  const customJudgeVal = document.getElementById("judgeAddr")?.value.trim() || "";
-  const deadlineVal = document.getElementById("deadline")?.value || "";
-
-  const hasBasics = claim.length > 0 && Number.isFinite(amount) && amount > 0;
-  const hasJudge = judgeSelectVal && (judgeSelectVal !== "__custom__" || customJudgeVal);
-  const hasDeadline = !!deadlineVal;
-
-  if (judgeStage) judgeStage.classList.toggle("hidden", !hasBasics);
-  if (reviewStage) reviewStage.classList.toggle("hidden", !(hasBasics && hasJudge && hasDeadline));
+  refreshCreateWizard();
 }
 
 function updateCreateSummary() {
+  const claimEl = document.getElementById("createSummaryClaim");
+  const bondEl = document.getElementById("createSummaryBond");
   const currencyEl = document.getElementById("createSummaryCurrency");
   const challengeEl = document.getElementById("createSummaryChallenge");
   const feeEl = document.getElementById("createSummaryFee");
   const timingEl = document.getElementById("createSummaryTiming");
   const judgeEl = document.getElementById("createSummaryJudge");
+  const deadlineEl = document.getElementById("createSummaryDeadline");
   const hintEl = document.getElementById("createSummaryHint");
-  if (!currencyEl || !challengeEl || !feeEl || !timingEl || !judgeEl || !hintEl) return;
+  if (!claimEl || !bondEl || !currencyEl || !challengeEl || !feeEl || !timingEl || !judgeEl || !deadlineEl || !hintEl) return;
 
   const tokenAddr = getSelectedToken();
   const tokenInfo = tokenAddr
@@ -1663,8 +1730,11 @@ function updateCreateSummary() {
   const bondVal = parseFloat(document.getElementById("bondAmount").value);
   const challengeRaw = document.getElementById("challengeAmount").value.trim();
   const feeRaw = document.getElementById("judgeFee").value.trim();
+  const claimText = document.getElementById("bondMetadata").value.trim();
   const challengeVal = challengeRaw && !isNaN(challengeRaw) ? parseFloat(challengeRaw) : (Number.isFinite(bondVal) && bondVal > 0 ? bondVal * 0.5 : 0);
   const feeVal = feeRaw && !isNaN(feeRaw) ? parseFloat(feeRaw) : (Number.isFinite(bondVal) && bondVal > 0 ? bondVal * 0.05 : 0);
+  claimEl.textContent = claimText || "No claim yet";
+  bondEl.textContent = formatUsdPreview(Number.isFinite(bondVal) ? bondVal : 0);
   challengeEl.textContent = formatUsdPreview(challengeVal);
   feeEl.textContent = formatUsdPreview(feeVal);
   timingEl.textContent = `${acceptanceDelayDays}d acceptance, ${rulingBufferDays}d ruling`;
@@ -1680,10 +1750,12 @@ function updateCreateSummary() {
     judgeEl.textContent = "Select a judge contract";
   }
 
+  const deadlineValue = document.getElementById("deadline").value;
+  deadlineEl.textContent = deadlineValue || "Choose a deadline";
+
   hintEl.textContent = currentMode === "advanced"
     ? "You are overriding the standard bond economics below."
-    : "Defaults use the standard bond settings: 50% challenge amount, 5% judge fee, 3-day acceptance delay, and 30-day ruling window.";
-  refreshCreateProgressiveDisclosure();
+    : "Defaults stay hidden until you choose to customize them.";
 }
 
 async function updateTokenExplainer() {
@@ -2190,8 +2262,7 @@ function onWalletConnected() {
   document.getElementById("walletAddr").textContent = short(userAddr);
   document.getElementById("chainName").textContent = chain().name;
   syncChainAvailabilityUI();
-  document.getElementById("createConnectPrompt").classList.add("hidden");
-  document.getElementById("createForm").classList.remove("hidden");
+  refreshCreateAccessState();
   document.getElementById("myBondsConnect").classList.add("hidden");
   document.getElementById("myBondsContent").classList.remove("hidden");
 
@@ -2204,6 +2275,7 @@ function onWalletConnected() {
   judgesLoaded = false;
   refreshAllBalances();
   loadJudgeSelectOnCreate();
+  refreshCreateWizard();
   refreshJudgeProfileEditor();
   checkNotifyStatus();
 
@@ -2255,7 +2327,8 @@ function browseWithoutWallet() {
   document.getElementById("connectScreen").classList.add("hidden");
   document.getElementById("mainApp").classList.remove("hidden");
   document.getElementById("connectBtn").classList.remove("hidden");
-  switchTab("browse");
+  refreshCreateAccessState();
+  refreshCreateWizard();
 }
 
 // ─── Onboarding State Machine ─────────────────────────────────────────
@@ -2587,7 +2660,10 @@ function buildTxSteps(tokenAddr, amountWei) {
 
 // ─── Smart Create Bond (with stepper) ─────────────────────────────────
 async function smartCreateBond() {
-  if (!signer) return;
+  if (!signer) {
+    showConnectScreen();
+    return;
+  }
   const btn = document.getElementById("createBtn");
   const msg = document.getElementById("createMsg");
   const stepperEl = document.getElementById("createStepper");
@@ -5360,7 +5436,8 @@ window.addEventListener("DOMContentLoaded", async () => {
   setMode('simple');
   loadJudgeSelectOnCreate();
   restoreForm();
-  refreshCreateProgressiveDisclosure();
+  refreshCreateAccessState();
+  refreshCreateWizard();
 
   const bondParam = params.get("bond");
   if (judgeProfileRouteId) {
@@ -5406,7 +5483,12 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   // If no auto-connect and no deep link, show connect screen
   if (!autoConnected && bondParam === null && !judgeProfileRouteId) {
-    showConnectScreen();
+    document.getElementById("connectScreen").classList.add("hidden");
+    document.getElementById("mainApp").classList.remove("hidden");
+    document.getElementById("connectBtn").classList.remove("hidden");
+    syncChainAvailabilityUI();
+    refreshCreateAccessState();
+    refreshCreateWizard();
   }
 
   // Handle notification query params
