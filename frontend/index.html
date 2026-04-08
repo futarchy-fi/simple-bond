@@ -4385,6 +4385,7 @@ async function deployOwnJudge() {
     judgeProfileEditorOpen = true;
     await refreshJudgeProfileEditor();
     await loadJudgeProfileEditorTarget(judgeAddress, { force: true });
+    revealJudgeProfileEditor();
     await refreshJudgeOnboarding();
     showMsg(msg, `Judge created and activated at ${short(judgeAddress)}. Publish your profile next.`, "success");
   } catch (err) {
@@ -4422,6 +4423,7 @@ async function acceptOwnJudgeRole() {
     judgeProfileEditorOpen = true;
     await refreshJudgeProfileEditor();
     await loadJudgeProfileEditorTarget(pendingJudge.address, { force: true });
+    revealJudgeProfileEditor();
     await refreshJudgeOnboarding();
     showMsg(msg, "Judge activated. You can publish your public profile now.", "success");
   } catch (err) {
@@ -4443,6 +4445,7 @@ async function openOwnJudgeProfile() {
   document.getElementById("judgeProfileTarget").value = activeJudge.address;
   await refreshJudgeProfileEditor();
   await loadJudgeProfileEditorTarget(activeJudge.address, { force: true });
+  revealJudgeProfileEditor();
 }
 
 async function copyOwnJudgeAddress() {
@@ -4748,6 +4751,16 @@ function resetJudgeProfileEditorUi({ preserveTarget = false } = {}) {
   setJudgeProfileEditorEnabled(false);
 }
 
+function revealJudgeProfileEditor() {
+  const editorEl = document.getElementById("judgeProfileEditor");
+  if (!editorEl) return;
+  editorEl.scrollIntoView({ behavior: "smooth", block: "start" });
+  const firstField = document.getElementById("judgeProfileDisplayName");
+  if (firstField && !firstField.disabled) {
+    setTimeout(() => firstField.focus(), 120);
+  }
+}
+
 function setJudgeProfileEditorEnabled(enabled) {
   for (const id of [
     "judgeProfileDisplayName",
@@ -5039,6 +5052,7 @@ async function openJudgeProfileEditor(address = currentJudgeProfileView?.address
     await refreshJudgeProfileEditor();
     document.getElementById("judgeProfileTarget").value = address;
     await loadJudgeProfileEditorTarget(address, { force: true });
+    revealJudgeProfileEditor();
   }
 }
 
