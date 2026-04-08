@@ -104,6 +104,7 @@ async function runSeededPosterFlow(seed) {
   }
 
   if (posterWins === challengeCount) {
+    await fixture.actions.advancePastRulingDeadline();
     await fixture.actions.withdrawBond();
     const afterWithdraw = await snapshot(fixture);
     expectWithdrawBondOutcome(previous, afterWithdraw);

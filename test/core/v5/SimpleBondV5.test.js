@@ -61,6 +61,12 @@ describe("SimpleBondV5", function () {
     await fixture.actions.advancePastRulingDeadline({ bondId: id });
   }
 
+  async function advancePastDeadline() {
+    const latest = await fixture.read.latestTime();
+    const target = deadline > latest ? deadline : latest;
+    await time.increaseTo(target + 1);
+  }
+
   beforeEach(async function () {
     fixture = await deploySimpleBondV5FuzzFixture();
     bond = fixture.bond;
@@ -265,6 +271,7 @@ describe("SimpleBondV5", function () {
     });
 
     it("reverts challenge on settled bond", async function () {
+      await advancePastDeadline();
       await bond.connect(poster).withdrawBond(0);
 
       await expect(
@@ -719,6 +726,7 @@ describe("SimpleBondV5", function () {
       await fixture.actions.ruleForPoster();
       await fixture.actions.ruleForPoster();
 
+      await advancePastDeadline();
       await bond.connect(poster).withdrawBond(0);
       const createdBond = await bond.bonds(0);
 
@@ -761,6 +769,7 @@ describe("SimpleBondV5", function () {
 
     it("poster withdraws with no challenges", async function () {
       const before = await token.balanceOf(poster.address);
+      await advancePastDeadline();
       await bond.connect(poster).withdrawBond(0);
 
       expect(await token.balanceOf(poster.address) - before).to.equal(BOND_AMOUNT);
@@ -772,6 +781,7 @@ describe("SimpleBondV5", function () {
       await fixture.actions.ruleForPoster();
 
       const before = await token.balanceOf(poster.address);
+      await advancePastDeadline();
       await bond.connect(poster).withdrawBond(0);
 
       expect(await token.balanceOf(poster.address) - before).to.equal(BOND_AMOUNT);
@@ -779,6 +789,7 @@ describe("SimpleBondV5", function () {
 
     it("reverts withdrawal if challenges are pending", async function () {
       await bond.connect(challenger1).challenge(0, "");
+      await advancePastDeadline();
 
       await expect(
         bond.connect(poster).withdrawBond(0)
@@ -786,17 +797,25 @@ describe("SimpleBondV5", function () {
     });
 
     it("reverts withdrawal by a non-poster", async function () {
+      await advancePastDeadline();
       await expect(
         bond.connect(outsider).withdrawBond(0)
       ).to.be.revertedWith("Only poster");
     });
 
     it("reverts double withdrawal", async function () {
+      await advancePastDeadline();
       await bond.connect(poster).withdrawBond(0);
 
       await expect(
         bond.connect(poster).withdrawBond(0)
       ).to.be.revertedWith("Already settled");
+    });
+
+    it("reverts withdrawal before the challenge deadline", async function () {
+      await expect(
+        bond.connect(poster).withdrawBond(0)
+      ).to.be.revertedWith("Before deadline");
     });
   });
 
