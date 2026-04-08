@@ -1,7 +1,7 @@
 const {
   JUDGE_FEE,
   deploySimpleBondV4FuzzFixture,
-} = require("./helpers/simpleBondV4Fuzz");
+} = require("../helpers/v4/simpleBondV4Fuzz");
 const {
   captureBondSnapshot,
   expectConcedeOutcome,
@@ -13,7 +13,7 @@ const {
   expectTimeoutOutcome,
   expectTokenConservation,
   expectWithdrawBondOutcome,
-} = require("./helpers/simpleBondV4Invariants");
+} = require("../helpers/v4/simpleBondV4Invariants");
 
 function createPrng(seed) {
   // Mulberry32 keeps adjacent small integer seeds from collapsing into the same path shape.

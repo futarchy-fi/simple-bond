@@ -4,7 +4,7 @@ const {
   parseJudgeRegistration,
   dedupeJudgesByAddress,
   getJudgeSelectEntries,
-} = require("../frontend/judges.js");
+} = require("../../frontend/judges.js");
 
 describe("judge dropdown helpers", function () {
   it("normalizes judge registration getter results into booleans", function () {

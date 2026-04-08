@@ -1,5 +1,5 @@
 const { expect } = require("chai");
-const { main } = require("../scripts/deploy");
+const { main } = require("../../scripts/deploy");
 
 describe("deploy.js", function () {
   it("prints deployment metadata and passes it to the checklist helper", async function () {

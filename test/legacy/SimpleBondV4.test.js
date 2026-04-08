@@ -13,7 +13,7 @@ const {
   ONE_DAY,
   RULING_BUFFER,
   deploySimpleBondV4FuzzFixture,
-} = require("./helpers/simpleBondV4Fuzz");
+} = require("../helpers/v4/simpleBondV4Fuzz");
 
 // --- Constants -----------------------------------------------------------
 // Robin Hanson's preferred numbers: bond=$10K, challenge=$3K, judgeFee=$0.5K

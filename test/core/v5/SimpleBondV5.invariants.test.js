@@ -1,8 +1,9 @@
 const { expect } = require("chai");
 const {
   JUDGE_FEE,
-  deploySimpleBondV4FuzzFixture,
-} = require("./helpers/simpleBondV4Fuzz");
+  ONE_DAY,
+  deploySimpleBondV5FuzzFixture,
+} = require("../../helpers/v5/simpleBondV5Fuzz");
 const {
   captureBondSnapshot,
   expectConcedeOutcome,
@@ -14,9 +15,9 @@ const {
   expectTimeoutOutcome,
   expectTokenConservation,
   expectWithdrawBondOutcome,
-} = require("./helpers/simpleBondV4Invariants");
+} = require("../../helpers/v5/simpleBondV5Invariants");
 
-describe("SimpleBondV4 invariant helpers", function () {
+describe("SimpleBondV5 invariant helpers", function () {
   let fixture;
 
   async function snapshot() {
@@ -40,8 +41,14 @@ describe("SimpleBondV4 invariant helpers", function () {
     expectCurrentChallengeBounds(after);
   }
 
+  function expectOperatorBalanceUnchanged(before, after) {
+    const operatorAddress = before.roleAddresses.judgeOperator;
+    expect((after.balancesByAddress[operatorAddress] ?? 0n) - (before.balancesByAddress[operatorAddress] ?? 0n))
+      .to.equal(0n);
+  }
+
   beforeEach(async function () {
-    fixture = await deploySimpleBondV4FuzzFixture();
+    fixture = await deploySimpleBondV5FuzzFixture();
   });
 
   it("tracks conservation, queue monotonicity, and bounds across a deterministic sequence", async function () {
@@ -57,6 +64,7 @@ describe("SimpleBondV4 invariant helpers", function () {
     });
     const afterFirstChallenge = await snapshot();
     expectGenericInvariants(baseline, afterFirstChallenge, baseline);
+    expectOperatorBalanceUnchanged(baseline, afterFirstChallenge);
 
     await fixture.actions.challenge({
       challenger: fixture.actors.challenger2,
@@ -64,15 +72,18 @@ describe("SimpleBondV4 invariant helpers", function () {
     });
     const afterSecondChallenge = await snapshot();
     expectGenericInvariants(afterFirstChallenge, afterSecondChallenge, baseline);
+    expectOperatorBalanceUnchanged(afterFirstChallenge, afterSecondChallenge);
 
     await fixture.actions.advanceToRulingWindow();
     await fixture.actions.ruleForPoster({ feeCharged: JUDGE_FEE });
     const afterFirstPosterWin = await snapshot();
     expectGenericInvariants(afterSecondChallenge, afterFirstPosterWin, baseline);
+    expectOperatorBalanceUnchanged(afterSecondChallenge, afterFirstPosterWin);
 
     await fixture.actions.ruleForPoster({ feeCharged: JUDGE_FEE });
     const afterSecondPosterWin = await snapshot();
     expectGenericInvariants(afterFirstPosterWin, afterSecondPosterWin, baseline);
+    expectOperatorBalanceUnchanged(afterFirstPosterWin, afterSecondPosterWin);
     expect(afterSecondPosterWin.currentChallenge).to.equal(afterSecondPosterWin.challengeCount);
   });
 
@@ -87,11 +98,13 @@ describe("SimpleBondV4 invariant helpers", function () {
     const afterFirstWin = await snapshot();
     expectPosterWinLockedBondBehavior(beforeFirstWin, afterFirstWin, JUDGE_FEE);
     expectGenericInvariants(beforeFirstWin, afterFirstWin, baseline);
+    expectOperatorBalanceUnchanged(beforeFirstWin, afterFirstWin);
 
     await fixture.actions.ruleForPoster({ feeCharged: JUDGE_FEE });
     const afterSecondWin = await snapshot();
     expectPosterWinLockedBondBehavior(afterFirstWin, afterSecondWin, JUDGE_FEE);
     expectGenericInvariants(afterFirstWin, afterSecondWin, baseline);
+    expectOperatorBalanceUnchanged(afterFirstWin, afterSecondWin);
   });
 
   it("validates withdraw outcomes from a post-ruling snapshot", async function () {
@@ -107,6 +120,7 @@ describe("SimpleBondV4 invariant helpers", function () {
 
     expectWithdrawBondOutcome(beforeWithdraw, afterWithdraw);
     expectGenericInvariants(beforeWithdraw, afterWithdraw, baseline);
+    expectOperatorBalanceUnchanged(beforeWithdraw, afterWithdraw);
   });
 
   it("validates concede outcomes from queued challenges", async function () {
@@ -119,6 +133,7 @@ describe("SimpleBondV4 invariant helpers", function () {
 
     expectConcedeOutcome(beforeConcede, afterConcede);
     expectGenericInvariants(beforeConcede, afterConcede, baseline);
+    expectOperatorBalanceUnchanged(beforeConcede, afterConcede);
   });
 
   it("validates reject outcomes after an earlier poster win", async function () {
@@ -134,6 +149,7 @@ describe("SimpleBondV4 invariant helpers", function () {
 
     expectRejectBondOutcome(beforeReject, afterReject);
     expectGenericInvariants(beforeReject, afterReject, baseline);
+    expectOperatorBalanceUnchanged(beforeReject, afterReject);
   });
 
   it("validates timeout outcomes from a partially consumed queue", async function () {
@@ -150,6 +166,7 @@ describe("SimpleBondV4 invariant helpers", function () {
 
     expectTimeoutOutcome(beforeTimeout, afterTimeout);
     expectGenericInvariants(beforeTimeout, afterTimeout, baseline);
+    expectOperatorBalanceUnchanged(beforeTimeout, afterTimeout);
   });
 
   it("validates challenger-win outcomes from the active queue item", async function () {
@@ -165,5 +182,51 @@ describe("SimpleBondV4 invariant helpers", function () {
 
     expectRuleForChallengerOutcome(beforeChallengerWin, afterChallengerWin, JUDGE_FEE);
     expectGenericInvariants(beforeChallengerWin, afterChallengerWin, baseline);
+    expectOperatorBalanceUnchanged(beforeChallengerWin, afterChallengerWin);
+  });
+
+  it("keeps judge fees on the judge contract rather than the operator", async function () {
+    await createBondWithChallenges(1);
+    await fixture.actions.advanceToRulingWindow();
+
+    const before = await snapshot();
+    await fixture.actions.ruleForPoster({ feeCharged: JUDGE_FEE / 2n });
+    const after = await snapshot();
+
+    expect(after.balancesByRole.judge - before.balancesByRole.judge).to.equal(JUDGE_FEE / 2n);
+    expect(after.balancesByRole.judgeOperator - before.balancesByRole.judgeOperator).to.equal(0n);
+  });
+
+  it("keeps concession open until rulingWindowStart and closes it afterward", async function () {
+    fixture = await deploySimpleBondV5FuzzFixture({
+      deadlineLeadTime: ONE_DAY,
+      acceptanceDelay: 12 * 60 * 60,
+    });
+    await fixture.actions.createBond();
+    await fixture.actions.challenge({
+      challenger: fixture.actors.challenger1,
+      metadata: "Challenge 1",
+    });
+
+    const concessionDeadline = await fixture.read.concessionDeadline();
+    expect(concessionDeadline).to.equal(await fixture.read.rulingWindowStart());
+
+    await fixture.actions.concede({ metadata: "Timely concession" });
+
+    fixture = await deploySimpleBondV5FuzzFixture({
+      deadlineLeadTime: ONE_DAY,
+      acceptanceDelay: 12 * 60 * 60,
+    });
+    await fixture.actions.createBond();
+    await fixture.actions.challenge({
+      challenger: fixture.actors.challenger1,
+      metadata: "Challenge 1",
+    });
+
+    await fixture.actions.advanceToRulingWindow();
+
+    await expect(
+      fixture.actions.concede({ metadata: "Too late" })
+    ).to.be.revertedWith("Concession window closed");
   });
 });

@@ -17,35 +17,35 @@ The goal of this audit is to answer:
 
 Contracts:
 
-- `contracts/SimpleBondV5.sol`
+- `contracts/core/SimpleBondV5.sol`
 - `contracts/interfaces/IBondJudgeV5.sol`
-- `contracts/ManualJudge.sol`
+- `contracts/judges/ManualJudge.sol`
 
 Primary tests:
 
-- `test/SimpleBondV5.test.js`
-- `test/SimpleBondV5.fuzz.test.js`
-- `test/SimpleBondV5.invariants.test.js`
-- `test/helpers/simpleBondV5Fuzz.js`
-- `test/helpers/simpleBondV5Invariants.js`
+- `test/core/v5/SimpleBondV5.test.js`
+- `test/core/v5/SimpleBondV5.fuzz.test.js`
+- `test/core/v5/SimpleBondV5.invariants.test.js`
+- `test/helpers/v5/simpleBondV5Fuzz.js`
+- `test/helpers/v5/simpleBondV5Invariants.js`
 
 ## Out Of Scope
 
 Legacy contracts:
 
-- `contracts/SimpleBond.sol`
-- `contracts/SimpleBondV3.sol`
-- `contracts/SimpleBondV4.sol`
+- `contracts/legacy/SimpleBond.sol`
+- `contracts/legacy/SimpleBondV3.sol`
+- `contracts/legacy/SimpleBondV4.sol`
 
 Legacy or future adapters:
 
-- `contracts/KlerosJudge.sol`
+- `contracts/legacy/KlerosJudge.sol`
 - any future `KlerosJudgeV2` work
 
 Other contracts and tooling:
 
-- `contracts/MockArbitrator.sol`
-- `contracts/TestToken.sol`
+- `contracts/test/MockArbitrator.sol`
+- `contracts/test/TestToken.sol`
 - frontend code
 - backend notification code
 - deployment scripts and deployment checklist tooling
@@ -57,15 +57,15 @@ These files may remain in the repository for regression and development reasons,
 
 Please audit against the exact git commit selected at engagement kickoff, not a floating branch name.
 
-At the time of writing, the intended `V5` core branch is `simplebond-v5-scaffold`.
+At the time of writing, the intended `V5` core audit target is the `main` line at an exact agreed commit hash.
 
 ## Test Commands
 
 Primary `V5` commands:
 
 ```bash
-npx hardhat test test/SimpleBondV5.test.js
-npx hardhat test test/SimpleBondV5.fuzz.test.js test/SimpleBondV5.invariants.test.js
+npx hardhat test test/core/v5/SimpleBondV5.test.js
+npx hardhat test test/core/v5/SimpleBondV5.fuzz.test.js test/core/v5/SimpleBondV5.invariants.test.js
 ```
 
 Repository-wide regression command:
