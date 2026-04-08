@@ -5027,7 +5027,7 @@ function closeJudgeProfilePage() {
   switchTab("judges");
 }
 
-function openJudgeProfileEditor(address = currentJudgeProfileView?.address || null) {
+async function openJudgeProfileEditor(address = currentJudgeProfileView?.address || null) {
   if (!userAddr) {
     showConnectScreen();
     return;
