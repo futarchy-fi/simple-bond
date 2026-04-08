@@ -4383,6 +4383,7 @@ async function deployOwnJudge() {
     await loadJudges();
     document.getElementById("judgeProfileTarget").value = judgeAddress;
     judgeProfileEditorOpen = true;
+    await refreshJudgeProfileEditor();
     await loadJudgeProfileEditorTarget(judgeAddress, { force: true });
     await refreshJudgeOnboarding();
     showMsg(msg, `Judge created and activated at ${short(judgeAddress)}. Publish your profile next.`, "success");
@@ -4419,6 +4420,7 @@ async function acceptOwnJudgeRole() {
     await loadJudges();
     document.getElementById("judgeProfileTarget").value = pendingJudge.address;
     judgeProfileEditorOpen = true;
+    await refreshJudgeProfileEditor();
     await loadJudgeProfileEditorTarget(pendingJudge.address, { force: true });
     await refreshJudgeOnboarding();
     showMsg(msg, "Judge activated. You can publish your public profile now.", "success");
@@ -4439,6 +4441,7 @@ async function openOwnJudgeProfile() {
 
   judgeProfileEditorOpen = true;
   document.getElementById("judgeProfileTarget").value = activeJudge.address;
+  await refreshJudgeProfileEditor();
   await loadJudgeProfileEditorTarget(activeJudge.address, { force: true });
 }
 
@@ -5032,8 +5035,10 @@ function openJudgeProfileEditor(address = currentJudgeProfileView?.address || nu
   closeJudgeProfilePage();
   switchTab("judges");
   if (address) {
+    judgeProfileEditorOpen = true;
+    await refreshJudgeProfileEditor();
     document.getElementById("judgeProfileTarget").value = address;
-    loadJudgeProfileEditorTarget(address, { force: true });
+    await loadJudgeProfileEditorTarget(address, { force: true });
   }
 }
 
