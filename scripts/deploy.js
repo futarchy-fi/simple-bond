@@ -8,11 +8,11 @@ async function main({
     log = console.log,
     printSimpleBondDeploymentChecklist = defaultPrintSimpleBondDeploymentChecklist,
 } = {}) {
-    const SimpleBondV4 = await hre.ethers.getContractFactory("SimpleBondV4");
-    const bond = await SimpleBondV4.deploy();
+    const SimpleBondV5 = await hre.ethers.getContractFactory("SimpleBondV5");
+    const bond = await SimpleBondV5.deploy();
     await bond.waitForDeployment();
     const addr = await bond.getAddress();
-    log("SimpleBondV4 deployed to:", addr);
+    log("SimpleBondV5 deployed to:", addr);
 
     const deployTx = bond.deploymentTransaction();
     let blockNumber;
@@ -27,7 +27,7 @@ async function main({
 
     printSimpleBondDeploymentChecklist({
         network: hre.network.name,
-        contractName: "SimpleBondV4",
+        contractName: "SimpleBondV5",
         address: addr,
         txHash,
         blockNumber,

@@ -40,15 +40,15 @@ describe("deploy.js", function () {
       },
     });
 
-    expect(requestedContract).to.equal("SimpleBondV4");
+    expect(requestedContract).to.equal("SimpleBondV5");
     expect(logLines).to.deep.equal([
-      "SimpleBondV4 deployed to: 0x000000000000000000000000000000000000c0de",
+      "SimpleBondV5 deployed to: 0x000000000000000000000000000000000000c0de",
       "Deploy tx hash: 0xtxhash",
       "Block number: 123456",
     ]);
     expect(checklistArgs).to.deep.equal({
       network: "hardhat",
-      contractName: "SimpleBondV4",
+      contractName: "SimpleBondV5",
       address: "0x000000000000000000000000000000000000c0de",
       txHash: "0xtxhash",
       blockNumber: 123456,
@@ -86,11 +86,11 @@ describe("deploy.js", function () {
     });
 
     expect(logLines).to.deep.equal([
-      "SimpleBondV4 deployed to: 0x000000000000000000000000000000000000beef",
+      "SimpleBondV5 deployed to: 0x000000000000000000000000000000000000beef",
     ]);
     expect(checklistArgs).to.deep.equal({
       network: "hardhat",
-      contractName: "SimpleBondV4",
+      contractName: "SimpleBondV5",
       address: "0x000000000000000000000000000000000000beef",
       txHash: undefined,
       blockNumber: undefined,
