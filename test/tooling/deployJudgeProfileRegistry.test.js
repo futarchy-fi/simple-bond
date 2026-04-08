@@ -10,6 +10,7 @@ describe("deployJudgeProfileRegistry.js", function () {
     const logLines = [];
     let deployArgs;
     let requestedContract;
+    let checklistArgs;
 
     const fakeTx = {
       hash: "0xregistrytx",
@@ -21,6 +22,9 @@ describe("deployJudgeProfileRegistry.js", function () {
       deploymentTransaction: () => fakeTx,
     };
     const fakeHre = {
+      network: {
+        name: "gnosis",
+      },
       ethers: {
         getSigners: async () => [{
           getAddress: async () => "0x000000000000000000000000000000000000aDmin",
@@ -42,6 +46,9 @@ describe("deployJudgeProfileRegistry.js", function () {
       log: (...args) => {
         logLines.push(args.join(" "));
       },
+      printSimpleBondDeploymentChecklist: (args) => {
+        checklistArgs = args;
+      },
     });
 
     expect(requestedContract).to.equal("JudgeProfileRegistry");
@@ -56,10 +63,18 @@ describe("deployJudgeProfileRegistry.js", function () {
       "Deploy tx hash: 0xregistrytx",
       "Block number: 4242",
     ]);
+    expect(checklistArgs).to.deep.equal({
+      network: "gnosis",
+      contractName: "JudgeProfileRegistry",
+      address: "0x000000000000000000000000000000000000c0de",
+      txHash: "0xregistrytx",
+      blockNumber: 4242,
+    });
   });
 
   it("accepts explicit owner and admin overrides", async function () {
     let deployArgs;
+    let checklistArgs;
 
     const fakeRegistry = {
       waitForDeployment: async () => {},
@@ -67,6 +82,9 @@ describe("deployJudgeProfileRegistry.js", function () {
       deploymentTransaction: () => undefined,
     };
     const fakeHre = {
+      network: {
+        name: "hardhat",
+      },
       ethers: {
         getSigners: async () => [{
           getAddress: async () => "0x000000000000000000000000000000000000aDmin",
@@ -85,11 +103,21 @@ describe("deployJudgeProfileRegistry.js", function () {
       owner: "0x0000000000000000000000000000000000000F00",
       admin: "0x0000000000000000000000000000000000000BEE",
       log: () => {},
+      printSimpleBondDeploymentChecklist: (args) => {
+        checklistArgs = args;
+      },
     });
 
     expect(deployArgs).to.deep.equal([
       "0x0000000000000000000000000000000000000F00",
       "0x0000000000000000000000000000000000000BEE",
     ]);
+    expect(checklistArgs).to.deep.equal({
+      network: "hardhat",
+      contractName: "JudgeProfileRegistry",
+      address: "0x000000000000000000000000000000000000beef",
+      txHash: undefined,
+      blockNumber: undefined,
+    });
   });
 });
