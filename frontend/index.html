@@ -2560,11 +2560,11 @@ function switchTab(name, { updateUrl = true } = {}) {
   });
   if (updateUrl) updateTabUrl(name);
   if (name === "my" && userAddr) {
-    showMyBondsLoadingState();
+    if (!myBondsLoaded) showMyBondsLoadingState();
     loadMyBonds();
   }
   if (name === "browse") {
-    showBrowseLoadingState();
+    if (!browseBondsLoaded) showBrowseLoadingState();
     loadBrowseBonds();
   }
   if (name === "judges") loadJudges();
