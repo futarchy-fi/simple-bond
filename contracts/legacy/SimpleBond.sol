@@ -44,8 +44,11 @@ contract SimpleBond {
         uint256 currentChallenge; // index into challenges array
     }
 
+    /// @notice Returns the next bond ID that will be assigned by `createBond`.
     uint256 public nextBondId;
+    /// @notice Returns the stored bond fields for a bond ID.
     mapping(uint256 => Bond) public bonds;
+    /// @notice Returns the stored challenge fields for a bond ID and challenge index.
     mapping(uint256 => Challenge[]) public challenges;
 
     event BondCreated(
@@ -67,17 +70,16 @@ contract SimpleBond {
     event BondWithdrawn(uint256 indexed bondId);
     event BondTimedOut(uint256 indexed bondId);
 
-    /**
-     * @notice Create a bond. Caller deposits `bondAmount` of `token`.
-     * @param token           ERC-20 token to lock
-     * @param bondAmount      Amount the poster locks
-     * @param challengeAmount Amount each challenger must deposit
-     * @param judgeFee        Fixed fee paid to the judge per ruling
-     * @param judge           Address authorized to rule
-     * @param deadline        Challenges accepted before this timestamp
-     * @param rulingBuffer    Seconds after deadline for judge to rule
-     * @param metadata        Free-text description
-     */
+    /// @notice Create a bond asserting a claim and escrow the poster's collateral.
+    /// @param token ERC-20 token to lock as collateral.
+    /// @param bondAmount Amount the poster locks.
+    /// @param challengeAmount Amount each challenger must escrow.
+    /// @param judgeFee Fixed fee paid to the judge per ruling.
+    /// @param judge Address authorized to rule.
+    /// @param deadline Latest timestamp when a challenge may be filed while the bond remains active.
+    /// @param rulingBuffer Seconds after the challenge deadline for the judge to rule.
+    /// @param metadata Free-text claim description.
+    /// @return bondId Newly assigned bond identifier.
     function createBond(
         address token,
         uint256 bondAmount,
@@ -124,9 +126,8 @@ contract SimpleBond {
         );
     }
 
-    /**
-     * @notice Challenge a bond. Caller deposits challengeAmount.
-     */
+    /// @notice Challenge a bond and escrow the configured challenge amount.
+    /// @param bondId Bond to challenge.
     function challenge(uint256 bondId) external {
         Bond storage b = bonds[bondId];
         require(!b.settled, "Already settled");
@@ -144,11 +145,9 @@ contract SimpleBond {
         emit Challenged(bondId, idx, msg.sender);
     }
 
-    /**
-     * @notice Poster withdraws their bond.
-     *         Allowed before deadline if zero challenges, or after all
-     *         challenges have been resolved in poster's favor.
-     */
+    /// @notice Withdraw the poster's bond when no challenges remain pending.
+    /// @dev This is allowed before the deadline if no one challenged, or after every challenge was resolved for the poster.
+    /// @param bondId Bond to withdraw.
     function withdrawBond(uint256 bondId) external {
         Bond storage b = bonds[bondId];
         require(!b.settled, "Already settled");
@@ -161,13 +160,9 @@ contract SimpleBond {
         emit BondWithdrawn(bondId);
     }
 
-    /**
-     * @notice Judge rules in favor of the current challenger.
-     *         Challenger receives bondAmount + challengeAmount − judgeFee.
-     *         Judge receives judgeFee.
-     *         All remaining pending challengers are refunded.
-     *         Bond is settled.
-     */
+    /// @notice Rule in favor of the current challenger and settle the bond.
+    /// @dev Later pending challengers are refunded because this is a terminal challenger-win path.
+    /// @param bondId Bond to rule on.
     function ruleForChallenger(uint256 bondId) external {
         Bond storage b = bonds[bondId];
         require(!b.settled, "Already settled");
@@ -196,12 +191,8 @@ contract SimpleBond {
         _refundRemaining(bondId, idx + 1);
     }
 
-    /**
-     * @notice Judge rules in favor of the poster on the current challenge.
-     *         Poster receives challengeAmount − judgeFee.
-     *         Judge receives judgeFee.
-     *         Queue advances to the next challenger.
-     */
+    /// @notice Rule in favor of the poster on the current challenge and advance the queue.
+    /// @param bondId Bond to rule on.
     function ruleForPoster(uint256 bondId) external {
         Bond storage b = bonds[bondId];
         require(!b.settled, "Already settled");
@@ -227,11 +218,9 @@ contract SimpleBond {
         b.currentChallenge = idx + 1;
     }
 
-    /**
-     * @notice Anyone can call after rulingDeadline if there are pending
-     *         challenges. Refunds poster's bond and all pending challengers.
-     *         Judge gets nothing.
-     */
+    /// @notice Resolve an expired dispute by refunding the poster and all pending challengers.
+    /// @dev Anyone may call this after the ruling deadline passes with unresolved pending challenges.
+    /// @param bondId Bond whose unresolved challenge queue has timed out.
     function claimTimeout(uint256 bondId) external {
         Bond storage b = bonds[bondId];
         require(!b.settled, "Already settled");
@@ -251,10 +240,18 @@ contract SimpleBond {
 
     // ─── Views ───────────────────────────────────────────────────────────
 
-    function getChallengeCount(uint256 bondId) external view returns (uint256) {
+    /// @notice Return the total number of challenges recorded for a bond.
+    /// @param bondId Bond to inspect.
+    /// @return count Total number of challenges filed against the bond.
+    function getChallengeCount(uint256 bondId) external view returns (uint256 count) {
         return challenges[bondId].length;
     }
 
+    /// @notice Return the stored data for a specific challenge on a bond.
+    /// @param bondId Bond to inspect.
+    /// @param index Challenge index to read.
+    /// @return challenger Challenger address.
+    /// @return status Recorded challenge status.
     function getChallenge(uint256 bondId, uint256 index)
         external view returns (address challenger, uint8 status)
     {
