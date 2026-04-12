@@ -1,15 +1,15 @@
-# SimpleBondV5 Audit Scope
+# SimpleBond v0.5 Audit Scope
 
-This document defines the intended audit scope for the `SimpleBondV5` core line.
+This document defines the intended audit scope for the `SimpleBondV5` core line, released as SimpleBond `v0.5`.
 
 ## Objective
 
-Audit the `V5` core bond mechanism and the minimal contract-judge wrapper, without pulling legacy contracts or the current Kleros adapter into scope.
+Audit the `v0.5` core bond mechanism and the minimal contract-judge wrapper, without pulling legacy contracts or the current Kleros adapter into scope.
 
 The goal of this audit is to answer:
 
 - does `SimpleBondV5` preserve the intended bond economics and queue semantics?
-- does the `V5` concession window behave as specified?
+- does the `v0.5` concession window behave as specified?
 - does the move from EOA judges to contract judges introduce new security issues?
 - is the minimal `ManualJudge` wrapper safe within its intended trust model?
 - does the bounded refund-claim path avoid large-queue settlement DoS?
@@ -52,7 +52,7 @@ Other contracts and tooling:
 - deployment scripts and deployment checklist tooling
 - judge dropdown / registry UX
 
-These files may remain in the repository for regression and development reasons, but they are not intended audit targets for the `V5` core engagement.
+These files may remain in the repository for regression and development reasons, but they are not intended audit targets for the `v0.5` core engagement.
 
 ## Audit Model
 
@@ -70,7 +70,7 @@ If the team intentionally moves or recreates the tag before audit kickoff, the n
 
 ## Test Commands
 
-Primary `V5` commands:
+Primary `v0.5` commands:
 
 ```bash
 npx hardhat test test/core/v5/SimpleBondV5.test.js
@@ -98,7 +98,7 @@ npm test
 
 ## Intentional Diffs From V4
 
-The audit should treat the following as intentional `V5` design changes, not accidental divergences:
+The audit should treat the following as intentional `v0.5` design changes, not accidental divergences:
 
 - the bond core no longer contains an on-chain judge registry
 - the configured `judge` must be a contract, not an EOA
@@ -113,8 +113,8 @@ The audit should treat the following as intentional `V5` design changes, not acc
 These are expected future work items and should not be treated as missing pieces in this audit:
 
 - `KlerosJudgeV2`
-- frontend support for `V5`
-- deploy-path migration from `V4` to `V5`
+- frontend support for `v0.5`
+- deploy-path migration from `V4` to `v0.5`
 - UI judge discovery / curation for contract judges
 
 ## Intended Reviewer Focus

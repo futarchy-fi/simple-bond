@@ -1,19 +1,17 @@
 (function (root) {
-  function parseJudgeRegistration(value) {
-    if (typeof value === "boolean") return value;
-    if (value && typeof value === "object") {
-      if (typeof value.registered === "boolean") return value.registered;
-      if (typeof value[0] === "boolean") return value[0];
-    }
-    return false;
+  function getJudgeDisplayName(judge) {
+    if (!judge) return "";
+    return judge.officialDisplayName || judge.profile?.displayName || "";
   }
 
-  function normalizeTokenFees(tokenFees) {
-    const normalized = new Map();
-    for (const [tokenAddr, fee] of (tokenFees || new Map()).entries()) {
-      normalized.set(tokenAddr.toLowerCase(), fee);
-    }
-    return normalized;
+  function getJudgeStatement(judge) {
+    if (!judge) return "";
+    return judge.officialStatement || judge.profile?.statement || "";
+  }
+
+  function getJudgeExternalLink(judge) {
+    if (!judge) return null;
+    return judge.officialLinkURI || judge.profile?.linkURI || null;
   }
 
   function dedupeJudgesByAddress(entries) {
@@ -21,60 +19,106 @@
     for (const entry of entries || []) {
       if (!entry || !entry.address) continue;
       const key = entry.address.toLowerCase();
-      const normalizedFees = normalizeTokenFees(entry.tokenFees);
 
       if (!merged.has(key)) {
         merged.set(key, {
           address: entry.address,
-          tokenFees: normalizedFees,
           bondCount: entry.bondCount || 0,
+          judgedCount: entry.judgedCount || 0,
+          kind: entry.kind || "generic",
+          operator: entry.operator || null,
+          active: typeof entry.active === "boolean" ? entry.active : null,
+          profile: entry.profile || null,
+          official: !!entry.official,
+          officialSortOrder: Number.isFinite(entry.officialSortOrder) ? entry.officialSortOrder : null,
+          officialDisplayName: entry.officialDisplayName || "",
+          officialStatement: entry.officialStatement || "",
+          officialLinkURI: entry.officialLinkURI || "",
         });
         continue;
       }
 
       const current = merged.get(key);
       current.bondCount = Math.max(current.bondCount, entry.bondCount || 0);
-      for (const [tokenAddr, fee] of normalizedFees.entries()) {
-        current.tokenFees.set(tokenAddr, fee);
+      current.judgedCount = Math.max(current.judgedCount, entry.judgedCount || 0);
+      if (current.kind === "generic" && entry.kind) {
+        current.kind = entry.kind;
+      }
+      if (!current.operator && entry.operator) {
+        current.operator = entry.operator;
+      }
+      if (current.active == null && typeof entry.active === "boolean") {
+        current.active = entry.active;
+      }
+      if (!current.profile && entry.profile) {
+        current.profile = entry.profile;
+      }
+      if (!current.official && entry.official) {
+        current.official = true;
+      }
+      if (current.officialSortOrder == null && Number.isFinite(entry.officialSortOrder)) {
+        current.officialSortOrder = entry.officialSortOrder;
+      }
+      if (!current.officialDisplayName && entry.officialDisplayName) {
+        current.officialDisplayName = entry.officialDisplayName;
+      }
+      if (!current.officialStatement && entry.officialStatement) {
+        current.officialStatement = entry.officialStatement;
+      }
+      if (!current.officialLinkURI && entry.officialLinkURI) {
+        current.officialLinkURI = entry.officialLinkURI;
       }
     }
 
     return [...merged.values()];
   }
 
-  function getJudgeSelectEntries(judges, klerosAddr) {
-    const deduped = new Map();
+  function compareJudges(a, b) {
+    const aOfficial = !!a?.official;
+    const bOfficial = !!b?.official;
+    if (aOfficial !== bOfficial) return aOfficial ? -1 : 1;
 
-    if (klerosAddr) {
-      deduped.set(klerosAddr.toLowerCase(), {
-        address: klerosAddr,
-        kind: "kleros",
-      });
+    if (aOfficial && bOfficial) {
+      const aOrder = a.officialSortOrder == null ? Number.MAX_SAFE_INTEGER : a.officialSortOrder;
+      const bOrder = b.officialSortOrder == null ? Number.MAX_SAFE_INTEGER : b.officialSortOrder;
+      if (aOrder !== bOrder) return aOrder - bOrder;
     }
 
-    for (const judge of judges || []) {
-      if (!judge || !judge.address) continue;
-      const key = judge.address.toLowerCase();
-      if (deduped.has(key)) continue;
-      deduped.set(key, {
-        address: judge.address,
-        kind: "judge",
-        judge,
-      });
-    }
+    const judgedDelta = (b?.judgedCount || 0) - (a?.judgedCount || 0);
+    if (judgedDelta !== 0) return judgedDelta;
 
-    return [...deduped.values()];
+    const bondDelta = (b?.bondCount || 0) - (a?.bondCount || 0);
+    if (bondDelta !== 0) return bondDelta;
+
+    const aName = getJudgeDisplayName(a).toLowerCase();
+    const bName = getJudgeDisplayName(b).toLowerCase();
+    if (aName !== bName) return aName.localeCompare(bName);
+
+    return (a?.address || "").toLowerCase().localeCompare((b?.address || "").toLowerCase());
+  }
+
+  function getJudgeSelectEntries(judges) {
+    return dedupeJudgesByAddress(judges).sort(compareJudges).map((judge) => ({
+      address: judge.address,
+      judge,
+    }));
   }
 
   if (typeof module !== "undefined" && module.exports) {
     module.exports = {
-      parseJudgeRegistration,
+      compareJudges,
       dedupeJudgesByAddress,
+      getJudgeDisplayName,
+      getJudgeExternalLink,
       getJudgeSelectEntries,
+      getJudgeStatement,
     };
   }
 
-  root.parseJudgeRegistration = parseJudgeRegistration;
+  root.compareJudges = compareJudges;
   root.dedupeJudgesByAddress = dedupeJudgesByAddress;
+  root.getJudgeDisplayName = getJudgeDisplayName;
+  root.getJudgeExternalLink = getJudgeExternalLink;
   root.getJudgeSelectEntries = getJudgeSelectEntries;
+  root.getJudgeStatement = getJudgeStatement;
 })(typeof window !== "undefined" ? window : globalThis);

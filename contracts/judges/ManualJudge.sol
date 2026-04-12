@@ -5,6 +5,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 import "../interfaces/IBondJudgeV5.sol";
+import "../interfaces/IJudgeProfileControlled.sol";
 
 interface IBondJudgeTarget {
     /// @notice Record a ruling in favor of the poster on a target bond contract.
@@ -25,7 +26,7 @@ interface IBondJudgeTarget {
 /// @dev This contract is intentionally portable across compatible bond
 /// contracts. It is not bound to a single SimpleBond instance so a later core
 /// version can reuse the same wrapper instead of forcing redeployment.
-contract ManualJudge is IBondJudgeV5 {
+contract ManualJudge is IBondJudgeV5, IJudgeProfileControlled {
     using SafeERC20 for IERC20;
 
     /// @notice Returns the address that may accept the operator role.
@@ -87,6 +88,16 @@ contract ManualJudge is IBondJudgeV5 {
         // ManualJudge does not inspect bond terms. Its only creation-time
         // policy is whether the proposed operator has accepted activation.
         require(active, "Judge inactive");
+    }
+
+    /// @notice Returns the address that controls this judge's profile.
+    /// @return The operator if set, otherwise the proposed operator.
+    function profileController() external view override returns (address) {
+        if (operator != address(0)) {
+            return operator;
+        }
+
+        return proposedOperator;
     }
 
     /// @notice Withdraw fees accrued to this wrapper contract.

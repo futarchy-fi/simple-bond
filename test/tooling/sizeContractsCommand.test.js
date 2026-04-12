@@ -11,6 +11,9 @@ const EXPECTED_CONTRACTS = [
   "SimpleBond",
   "TestToken",
   "ManualJudge",
+  "JudgeProfileRegistry",
+  "JudgeRegistry",
+  "OfficialBondDirectory",
   "MockArbitrator",
 ];
 
@@ -19,6 +22,7 @@ const INTERFACE_ARTIFACTS = [
   "contracts/interfaces/IArbitrator.sol:IArbitrable",
   "contracts/interfaces/IArbitrator.sol:IEvidence",
   "contracts/interfaces/IBondJudgeV5.sol:IBondJudgeV5",
+  "contracts/interfaces/IJudgeProfileControlled.sol:IJudgeProfileControlled",
   "contracts/legacy/KlerosJudge.sol:ISimpleBondV4",
   "contracts/judges/ManualJudge.sol:IBondJudgeTarget",
 ];

@@ -31,7 +31,7 @@ describe("printSimpleBondDeploymentChecklist", function () {
     const address = "0x000000000000000000000000000000000000c0de";
     const lines = captureChecklist({
       network: "gnosis",
-      contractName: "SimpleBondV4",
+      contractName: "SimpleBondV5",
       address,
       txHash: "0xtxhash",
       blockNumber: 123456,
@@ -40,17 +40,17 @@ describe("printSimpleBondDeploymentChecklist", function () {
     expect(lines).to.deep.equal([
       "",
       "Post-deploy checklist:",
-      "  Contract: SimpleBondV4",
+      "  Contract: SimpleBondV5",
       "  Network: gnosis",
       `  Address: ${address}`,
       "  Deploy tx hash: 0xtxhash",
       "  Deploy block: 123456",
       "  1. Verify on block explorer:",
       `     npx hardhat verify --network gnosis ${address}`,
-      "  2. If this should be the live Gnosis deployment, update frontend/index.html:",
-      `     set CHAINS[100].contract = "${address}"`,
-      "     set CHAINS[100].deployBlock = 123456",
-      "  3. If the notification backend should watch this deployment, update backend/config.mjs:",
+      "  2. If this should be the live Gnosis deployment, update frontend/runtime-config.js:",
+      `     set window.SIMPLE_BOND_CONFIG.gnosisBondContract = "${address}"`,
+      "     set window.SIMPLE_BOND_CONFIG.gnosisDeployBlock = 123456",
+      "  3. If email notifications should watch this deployment, update backend/config.mjs:",
       `     set CHAINS[100].contract = "${address}"`,
       "     set CHAINS[100].startBlock = 123456",
       "  4. If this deployment is canonical, update README.md's Addresses table.",
@@ -58,11 +58,92 @@ describe("printSimpleBondDeploymentChecklist", function () {
     ]);
   });
 
+  it("prints the Gnosis runtime-config checklist for JudgeProfileRegistry deployments", function () {
+    const address = "0x000000000000000000000000000000000000bEEF";
+    const lines = captureChecklist({
+      network: "gnosis",
+      contractName: "JudgeProfileRegistry",
+      address,
+      txHash: "0xregistry",
+      blockNumber: 4242,
+    });
+
+    expect(lines).to.deep.equal([
+      "",
+      "Post-deploy checklist:",
+      "  Contract: JudgeProfileRegistry",
+      "  Network: gnosis",
+      `  Address: ${address}`,
+      "  Deploy tx hash: 0xregistry",
+      "  Deploy block: 4242",
+      "  1. Verify on block explorer:",
+      `     npx hardhat verify --network gnosis ${address}`,
+      "  2. If this should be the live Gnosis judge profile registry, update frontend/runtime-config.js:",
+      `     set window.SIMPLE_BOND_CONFIG.gnosisJudgeProfileRegistry = "${address}"`,
+      "  3. If this deployment is canonical, update README.md's Addresses table.",
+      "  4. Record the deployed address, tx hash, and block number in your release notes or ops log.",
+    ]);
+  });
+
+  it("prints the Gnosis runtime-config checklist for JudgeRegistry deployments", function () {
+    const address = "0x000000000000000000000000000000000000bA11";
+    const lines = captureChecklist({
+      network: "gnosis",
+      contractName: "JudgeRegistry",
+      address,
+      txHash: "0xjudgecanon",
+      blockNumber: 8484,
+    });
+
+    expect(lines).to.deep.equal([
+      "",
+      "Post-deploy checklist:",
+      "  Contract: JudgeRegistry",
+      "  Network: gnosis",
+      `  Address: ${address}`,
+      "  Deploy tx hash: 0xjudgecanon",
+      "  Deploy block: 8484",
+      "  1. Verify on block explorer:",
+      `     npx hardhat verify --network gnosis ${address}`,
+      "  2. If this should be the live Gnosis judge registry, update frontend/runtime-config.js:",
+      `     set window.SIMPLE_BOND_CONFIG.gnosisJudgeRegistry = "${address}"`,
+      "  3. If this deployment is canonical, update README.md's Addresses table.",
+      "  4. Record the deployed address, tx hash, and block number in your release notes or ops log.",
+    ]);
+  });
+
+  it("prints the Gnosis runtime-config checklist for OfficialBondDirectory deployments", function () {
+    const address = "0x0000000000000000000000000000000000000Ff1";
+    const lines = captureChecklist({
+      network: "gnosis",
+      contractName: "OfficialBondDirectory",
+      address,
+      txHash: "0xdirectory",
+      blockNumber: 5150,
+    });
+
+    expect(lines).to.deep.equal([
+      "",
+      "Post-deploy checklist:",
+      "  Contract: OfficialBondDirectory",
+      "  Network: gnosis",
+      `  Address: ${address}`,
+      "  Deploy tx hash: 0xdirectory",
+      "  Deploy block: 5150",
+      "  1. Verify on block explorer:",
+      `     npx hardhat verify --network gnosis ${address}`,
+      "  2. If this should be the live Gnosis official directory, update frontend/runtime-config.js:",
+      `     set window.SIMPLE_BOND_CONFIG.gnosisOfficialDirectory = "${address}"`,
+      "  3. If this deployment is canonical, update README.md's Addresses table.",
+      "  4. Record the deployed address, tx hash, and block number in your release notes or ops log.",
+    ]);
+  });
+
   it("prints the unsupported-network warning for Ethereum deployments", function () {
     const address = "0x000000000000000000000000000000000000dEaD";
     const lines = captureChecklist({
       network: "ethereum",
-      contractName: "SimpleBondV4",
+      contractName: "SimpleBondV5",
       address,
       txHash: "0xeth",
       blockNumber: 999,
@@ -71,17 +152,18 @@ describe("printSimpleBondDeploymentChecklist", function () {
     expect(lines).to.deep.equal([
       "",
       "Post-deploy checklist:",
-      "  Contract: SimpleBondV4",
+      "  Contract: SimpleBondV5",
       "  Network: ethereum",
       `  Address: ${address}`,
       "  Deploy tx hash: 0xeth",
       "  Deploy block: 999",
       "  1. Verify on block explorer:",
       `     npx hardhat verify --network ethereum ${address}`,
-      "  2. frontend/index.html and backend/config.mjs currently ship active SimpleBond runtime config only for Gnosis and Polygon.",
+      "  2. The product frontend currently ships active runtime config only for Gnosis in frontend/runtime-config.js.",
       "     If this deployment should be product-supported, add the new chain/address/block there before treating it as live.",
-      "  3. If this deployment is canonical, update README.md's Addresses table.",
-      "  4. Record the deployed address, tx hash, and block number in your release notes or ops log.",
+      "  3. If email notifications should watch this deployment, also update backend/config.mjs.",
+      "  4. If this deployment is canonical, update README.md's Addresses table.",
+      "  5. Record the deployed address, tx hash, and block number in your release notes or ops log.",
     ]);
   });
 
@@ -89,7 +171,7 @@ describe("printSimpleBondDeploymentChecklist", function () {
     const address = "0x000000000000000000000000000000000000f00d";
     const lines = captureChecklist({
       network: "hardhat",
-      contractName: "SimpleBondV4",
+      contractName: "SimpleBondV5",
       address,
       txHash: "0xlocal",
       blockNumber: 111,
@@ -98,20 +180,21 @@ describe("printSimpleBondDeploymentChecklist", function () {
     expect(lines).to.deep.equal([
       "",
       "Post-deploy checklist:",
-      "  Contract: SimpleBondV4",
+      "  Contract: SimpleBondV5",
       "  Network: hardhat",
       `  Address: ${address}`,
       "  Deploy tx hash: 0xlocal",
       "  Deploy block: 111",
       "  1. Skip explorer verification on the local hardhat network.",
-      "  2. frontend/index.html and backend/config.mjs currently ship active SimpleBond runtime config only for Gnosis and Polygon.",
+      "  2. The product frontend currently ships active runtime config only for Gnosis in frontend/runtime-config.js.",
       "     If this deployment should be product-supported, add the new chain/address/block there before treating it as live.",
-      "  3. If this deployment is canonical, update README.md's Addresses table.",
-      "  4. Record the deployed address, tx hash, and block number in your release notes or ops log.",
+      "  3. If email notifications should watch this deployment, also update backend/config.mjs.",
+      "  4. If this deployment is canonical, update README.md's Addresses table.",
+      "  5. Record the deployed address, tx hash, and block number in your release notes or ops log.",
     ]);
   });
 
-  it("defaults the CLI contract name to SimpleBondV4", function () {
+  it("defaults the CLI contract name to SimpleBondV5", function () {
     const address = "0x000000000000000000000000000000000000beef";
     const result = spawnSync(
       process.execPath,
@@ -121,7 +204,7 @@ describe("printSimpleBondDeploymentChecklist", function () {
 
     expect(result.status).to.equal(0);
     expect(result.stderr).to.equal("");
-    expect(result.stdout).to.contain("  Contract: SimpleBondV4");
+    expect(result.stdout).to.contain("  Contract: SimpleBondV5");
     expect(result.stdout).to.contain(
       `     npx hardhat verify --network gnosis ${address}`
     );
