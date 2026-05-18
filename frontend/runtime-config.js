@@ -1,7 +1,9 @@
 window.SIMPLE_BOND_CONFIG = Object.assign(
   {
-    // Override these when the static frontend and APIs live on different origins.
-    notifyApiBase: "/api/notify",
+    // Frontend (Netlify) and notification API (GCP VM behind Caddy) live on
+    // different origins, so this points at the absolute API base. The API
+    // sends Access-Control-Allow-Origin: * so cross-origin fetches work.
+    notifyApiBase: "https://api.bond.futarchy.ai/api/notify",
     // Live Gnosis deployment for bond.futarchy.ai.
     gnosisBondContract: "0x7dF485C013f8671B656d585f1d1411640B1D2776",
     gnosisDeployBlock: 45569363,

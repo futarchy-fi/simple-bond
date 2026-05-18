@@ -1,0 +1,11 @@
+# Host-level Caddy config on the futarchy-indexers VM.
+# Install: apt-get install -y caddy
+# Place at /etc/caddy/Caddyfile and `systemctl reload caddy`.
+#
+# Requires:
+#   - DNS A record api.bond.futarchy.ai -> 34.88.170.88 (Cloudflare, DNS-only)
+#   - GCP firewall allowing tcp:80,443 to the VM
+# Caddy then auto-provisions a Let's Encrypt certificate.
+api.bond.futarchy.ai {
+	reverse_proxy 127.0.0.1:3200
+}
