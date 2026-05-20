@@ -1,5 +1,6 @@
 // Deploy the full v0.6 stack: profile registries, SimpleBondV6, ManualJudgeV6,
-// OfficialBondDirectory. Prints a runtime-config block ready to paste into
+// OfficialBondDirectory. Writes deployments/<network>.json with all addresses
+// and prints a runtime-config block ready to paste into
 // frontend/runtime-config.js and backend/config.mjs.
 //
 // Env:
@@ -11,6 +12,8 @@
 //                   On mainnet pass sUSDS: 0xa3931d71877C0E7a3148CB7Eb4463524FEc27fbD.
 //                   On Sepolia pass the MockSUSDS address from deployMockSUSDS.js.
 const hre = require("hardhat");
+const fs = require("fs");
+const path = require("path");
 
 async function main() {
     const network = hre.network.name;
@@ -72,6 +75,27 @@ async function main() {
         console.log(`Skipping setToken (likely owner/admin is not the deployer): ${e.message}`);
     }
 
+    // Persist deployment record to deployments/<network>.json.
+    const deploymentRecord = {
+        chainId,
+        network,
+        deployer: deployer.address,
+        approvedToken,
+        manualJudgeOperator: operator,
+        directoryOwner: owner,
+        directoryAdmin: admin,
+        contracts: Object.fromEntries(
+            Object.entries(out).map(([k, v]) => [k, { address: v.address, blockNumber: v.blockNumber }])
+        ),
+        deployedAt: new Date().toISOString(),
+    };
+    const recordDir = path.resolve(__dirname, "..", "..", "deployments");
+    fs.mkdirSync(recordDir, { recursive: true });
+    const recordPath = path.join(recordDir, `${networkSafeName(network, chainId)}.json`);
+    fs.writeFileSync(recordPath, JSON.stringify(deploymentRecord, null, 2) + "\n");
+    console.log(``);
+    console.log(`Wrote ${recordPath}`);
+
     console.log(``);
     console.log(`=== Runtime config block (paste into frontend/runtime-config.js) ===`);
     const networkKey = chainId === 1 ? "mainnet" : chainId === 11155111 ? "sepolia" : `chain${chainId}`;
@@ -123,6 +147,12 @@ async function main() {
         const args = info.constructorArgs.join(" ");
         console.log(`npx hardhat verify --network ${network} ${info.address}${args ? " " + args : ""}`);
     }
+}
+
+function networkSafeName(network, chainId) {
+    if (network === "ethereum") return "mainnet";
+    if (network === "sepolia") return "sepolia";
+    return `chain${chainId}`;
 }
 
 async function deploySimple(name, args) {
