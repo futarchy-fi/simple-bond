@@ -1,0 +1,149 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+
+import "../interfaces/IBondJudgeV6.sol";
+
+/// @title SimpleBondV6
+/// @notice v0.6 bond core. Adds versioned claims, per-challenge concession, per-challenge timing,
+///         judge out-of-scope refunds, close/open toggle, maxChallenges, and hash+event metadata.
+/// @dev Bond `deadline` is removed; the lifecycle is event-driven (closed/withdrawn/settled).
+contract SimpleBondV6 {
+    using SafeERC20 for IERC20;
+
+    uint256 public constant MAX_ACCEPTANCE_DELAY = 365 days;
+    uint256 public constant MAX_RULING_BUFFER = 365 days;
+
+    enum ChallengeStatus {
+        Pending,
+        Won,
+        Lost,
+        Conceded,
+        RejectedByJudge,
+        Refunded
+    }
+
+    struct Bond {
+        address poster;
+        address judge;
+        address token;
+        uint256 bondAmount;
+        uint256 challengeAmount;
+        uint256 judgeFee;
+        uint256 acceptanceDelay;
+        uint256 rulingBuffer;
+        uint256 maxChallenges;
+        bytes32 claimHash;
+        uint256 claimVersion;
+        uint256 judgeProfileId;
+        bool settled;
+        bool closed;
+    }
+
+    struct Challenge {
+        address challenger;
+        ChallengeStatus status;
+        uint256 timestamp;
+        uint256 challengeAtVersion;
+        bytes32 claimHashAtChallenge;
+        bytes32 metadataHash;
+        bytes32 rulingMetadataHash;
+    }
+
+    uint256 public nextBondId;
+    mapping(uint256 => Bond) public bonds;
+    mapping(uint256 => Challenge[]) public challenges;
+
+    event BondCreated(
+        uint256 indexed bondId,
+        address indexed poster,
+        address indexed judge,
+        uint256 judgeProfileId,
+        address token,
+        uint256 bondAmount,
+        uint256 challengeAmount,
+        uint256 judgeFee,
+        uint256 acceptanceDelay,
+        uint256 rulingBuffer,
+        uint256 maxChallenges,
+        bytes32 claimHash,
+        string claimContent
+    );
+
+    /// @notice Create a new v0.6 bond, escrow the poster's bondAmount, and emit BondCreated.
+    /// @dev `judgeProfileId` is stored at creation but not yet validated against a registry.
+    ///      Registry wiring is added in a follow-up task. Callers may pass 0 in unit tests.
+    function createBond(
+        address token,
+        uint256 bondAmount,
+        uint256 challengeAmount,
+        uint256 judgeFee,
+        address judge,
+        uint256 acceptanceDelay,
+        uint256 rulingBuffer,
+        uint256 maxChallenges,
+        uint256 judgeProfileId,
+        string calldata claimContent
+    ) external returns (uint256 bondId) {
+        require(bondAmount > 0, "Zero bond amount");
+        require(challengeAmount > 0, "Zero challenge amount");
+        require(judge != address(0), "Zero judge");
+        require(judge.code.length > 0, "Judge must be contract");
+        require(judgeFee <= challengeAmount, "Fee > challenge amount");
+        require(maxChallenges > 0, "Zero maxChallenges");
+        require(acceptanceDelay <= MAX_ACCEPTANCE_DELAY, "Acceptance delay too long");
+        require(rulingBuffer > 0, "Zero ruling buffer");
+        require(rulingBuffer <= MAX_RULING_BUFFER, "Ruling buffer too long");
+
+        IBondJudgeV6(judge).validateBond(
+            token,
+            bondAmount,
+            challengeAmount,
+            judgeFee,
+            acceptanceDelay,
+            rulingBuffer,
+            maxChallenges
+        );
+
+        bondId = nextBondId++;
+
+        bytes32 claimHash = keccak256(bytes(claimContent));
+
+        bonds[bondId] = Bond({
+            poster: msg.sender,
+            judge: judge,
+            token: token,
+            bondAmount: bondAmount,
+            challengeAmount: challengeAmount,
+            judgeFee: judgeFee,
+            acceptanceDelay: acceptanceDelay,
+            rulingBuffer: rulingBuffer,
+            maxChallenges: maxChallenges,
+            claimHash: claimHash,
+            claimVersion: 1,
+            judgeProfileId: judgeProfileId,
+            settled: false,
+            closed: false
+        });
+
+        IERC20(token).safeTransferFrom(msg.sender, address(this), bondAmount);
+
+        emit BondCreated(
+            bondId,
+            msg.sender,
+            judge,
+            judgeProfileId,
+            token,
+            bondAmount,
+            challengeAmount,
+            judgeFee,
+            acceptanceDelay,
+            rulingBuffer,
+            maxChallenges,
+            claimHash,
+            claimContent
+        );
+    }
+}
