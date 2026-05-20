@@ -18,6 +18,7 @@ const EXPECTED_CONTRACTS = [
   "ChallengerProfileRegistry",
   "JudgeProfileRegistryV6",
   "ManualJudge",
+  "ManualJudgeV6",
   "JudgeProfileRegistry",
   "JudgeRegistry",
   "OfficialBondDirectory",
