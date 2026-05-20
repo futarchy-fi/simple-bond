@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SimpleBond v0.6</title>
+    <style>
+        body { font-family: Georgia, serif; max-width: 960px; margin: 30px auto; padding: 0 20px; color: #222; }
+        h1, h2, h3 { font-family: Georgia, serif; }
+        header { display: flex; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid #ddd; flex-wrap: wrap; }
+        nav { display: flex; gap: 10px; }
+        nav a { text-decoration: none; color: #036; padding: 4px 8px; border-radius: 4px; }
+        nav a.active { background: #eef; }
+        label { display: block; margin: 10px 0 4px; font-weight: bold; font-size: 14px; }
+        input, select, textarea, button { font: inherit; padding: 6px 8px; }
+        input, textarea, select { width: 100%; box-sizing: border-box; }
+        textarea { min-height: 80px; }
+        button { cursor: pointer; padding: 8px 14px; }
+        button.primary { background: #036; color: #fff; border: none; border-radius: 4px; }
+        button.warn { background: #b00; color: #fff; border: none; border-radius: 4px; }
+        .card { border: 1px solid #ddd; border-radius: 6px; padding: 14px; margin: 10px 0; }
+        .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+        .grid { display: grid; grid-template-columns: 180px 1fr; gap: 6px 12px; font-size: 14px; }
+        .grid div:nth-child(odd) { color: #666; }
+        .status { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; }
+        .status-Pending { background: #ffc; }
+        .status-Won { background: #cfc; }
+        .status-Lost { background: #fcc; }
+        .status-Conceded { background: #ddf; }
+        .status-RejectedByJudge { background: #eed; }
+        .status-Refunded { background: #ddd; }
+        pre { background: #f4f4f4; padding: 8px; overflow-x: auto; font-size: 12px; max-height: 300px; }
+        #log { font-size: 12px; }
+        .err { color: #b00; }
+        .ok { color: #060; }
+        small { color: #666; }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/ethers@6.16.0/dist/ethers.umd.min.js"></script>
+    <script src="../runtime-config.js"></script>
+    <script src="./abi.js"></script>
+</head>
+<body>
+    <header>
+        <h1 style="margin: 0; flex: 1;">SimpleBond <small>v0.6</small></h1>
+        <select id="chainSelect"></select>
+        <button id="connectBtn" class="primary">Connect</button>
+        <span id="account"></span>
+    </header>
+
+    <nav>
+        <a href="#" data-view="list">Bonds</a>
+        <a href="#" data-view="create">Create bond</a>
+        <a href="#" data-view="profiles">Profiles</a>
+        <a href="#" data-view="about">About</a>
+    </nav>
+
+    <main id="view"></main>
+
+    <section class="card">
+        <h3>Log</h3>
+        <pre id="log">(no output)</pre>
+    </section>
+
+<script>
+(function () {
+    const $ = (id) => document.getElementById(id);
+    const cfg = window.SIMPLE_BOND_CONFIG || {};
+    const chains = cfg.chains || {};
+    let activeChainId = String(cfg.defaultChainId || Object.keys(chains)[0]);
+    let provider = null;
+    let signer = null;
+    let account = null;
+
+    const STATUS_NAMES = ["Pending", "Won", "Lost", "Conceded", "RejectedByJudge", "Refunded"];
+
+    function log(msg, level) {
+        const line = (typeof msg === 'string') ? msg : JSON.stringify(msg, null, 2);
+        const cls = level === 'err' ? 'err' : 'ok';
+        const el = $('log');
+        const ts = new Date().toLocaleTimeString();
+        el.innerHTML = `<span class="${cls}">[${ts}] ${line}</span>\n` + el.innerHTML;
+    }
+
+    function chain() { return chains[activeChainId]; }
+    function explorerLink(address) {
+        const c = chain();
+        return c && c.explorer ? `${c.explorer}/address/${address}` : '#';
+    }
+
+    function buildChainSelect() {
+        const sel = $('chainSelect');
+        sel.innerHTML = '';
+        for (const id of Object.keys(chains)) {
+            const c = chains[id];
+            if (c.bondVersion !== 6) continue;
+            const opt = document.createElement('option');
+            opt.value = id;
+            opt.textContent = `${c.name} (${id})`;
+            if (id === activeChainId) opt.selected = true;
+            sel.appendChild(opt);
+        }
+        if (sel.options.length === 0) {
+            const opt = document.createElement('option');
+            opt.textContent = 'No v0.6 chain configured';
+            opt.disabled = true;
+            sel.appendChild(opt);
+        }
+    }
+
+    $('chainSelect').addEventListener('change', (e) => {
+        activeChainId = e.target.value;
+        log(`Switched to chain ${activeChainId} (${chain().name})`);
+        render();
+    });
+
+    async function connect() {
+        if (!window.ethereum) { log('No window.ethereum — install MetaMask', 'err'); return; }
+        provider = new ethers.BrowserProvider(window.ethereum);
+        await provider.send('eth_requestAccounts', []);
+        signer = await provider.getSigner();
+        account = await signer.getAddress();
+        $('account').textContent = account.slice(0, 6) + '…' + account.slice(-4);
+        try {
+            await window.ethereum.request({
+                method: 'wallet_switchEthereumChain',
+                params: [{ chainId: '0x' + Number(activeChainId).toString(16) }],
+            });
+        } catch (e) { log(`switchChain: ${e.message}`, 'err'); }
+        log(`Connected ${account}`);
+        render();
+    }
+    $('connectBtn').addEventListener('click', () => connect().catch(e => log(e.message, 'err')));
+
+    function readProvider() {
+        return signer ? signer : new ethers.JsonRpcProvider(
+            chain() && chain().rpc
+                ? chain().rpc
+                : 'https://ethereum-sepolia-rpc.publicnode.com'
+        );
+    }
+    function bondContract(withSigner = false) {
+        const c = chain();
+        if (!c || !c.bondContract) throw new Error(`Missing bondContract in runtime-config.chains[${activeChainId}]`);
+        return new ethers.Contract(c.bondContract, window.SIMPLE_BOND_V6_ABI, withSigner ? signer : readProvider());
+    }
+    function registryContract(kind, withSigner = false) {
+        const c = chain();
+        const map = {
+            judge: { addr: c.judgeProfileRegistry, abi: window.SIMPLE_BOND_V6_JUDGE_REGISTRY_ABI },
+            poster: { addr: c.posterProfileRegistry, abi: window.SIMPLE_BOND_V6_REGISTRY_ABI },
+            challenger: { addr: c.challengerProfileRegistry, abi: window.SIMPLE_BOND_V6_REGISTRY_ABI },
+        };
+        const entry = map[kind];
+        if (!entry || !entry.addr) throw new Error(`Missing ${kind}ProfileRegistry address in runtime-config`);
+        return new ethers.Contract(entry.addr, entry.abi, withSigner ? signer : readProvider());
+    }
+
+    // --- Views ---
+
+    async function renderList() {
+        const view = $('view');
+        view.innerHTML = '<h2>Bonds</h2><div id="bonds">loading…</div>';
+        try {
+            const bc = bondContract();
+            const next = Number(await bc.nextBondId());
+            if (next === 0) {
+                $('bonds').innerHTML = '<p>No bonds yet on this chain.</p>';
+                return;
+            }
+            let html = '';
+            for (let i = next - 1; i >= 0 && i >= Math.max(0, next - 50); i--) {
+                const b = await bc.bonds(i);
+                const status = b.settled ? 'settled' : (b.closed ? 'closed' : 'open');
+                html += `<div class="card">
+                    <h3><a href="#" data-detail="${i}">Bond #${i}</a> — <small>${status}</small></h3>
+                    <div class="grid">
+                        <div>poster</div><div>${b.poster}</div>
+                        <div>judge</div><div>${b.judge}</div>
+                        <div>claim hash</div><div><code>${b.claimHash}</code></div>
+                        <div>claim version</div><div>${b.claimVersion}</div>
+                        <div>bond / challenge / fee</div><div>${ethers.formatEther(b.bondAmount)} / ${ethers.formatEther(b.challengeAmount)} / ${ethers.formatEther(b.judgeFee)}</div>
+                        <div>pending count</div><div>${b.pendingCount}</div>
+                    </div>
+                </div>`;
+            }
+            $('bonds').innerHTML = html;
+            $('bonds').querySelectorAll('a[data-detail]').forEach(a => {
+                a.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    location.hash = `#detail-${e.target.dataset.detail}`;
+                    render();
+                });
+            });
+        } catch (e) { $('bonds').innerHTML = `<p class="err">${e.message}</p>`; }
+    }
+
+    async function renderDetail(bondId) {
+        const view = $('view');
+        view.innerHTML = `<h2>Bond #${bondId}</h2><div id="detail">loading…</div>`;
+        try {
+            const bc = bondContract();
+            const b = await bc.bonds(bondId);
+            const count = Number(await bc.getChallengeCount(bondId));
+            let challengesHtml = '';
+            for (let i = 0; i < count; i++) {
+                const ch = await bc.getChallenge(bondId, i);
+                const statusName = STATUS_NAMES[Number(ch.status)] || 'Unknown';
+                let timing = '';
+                if (statusName === 'Pending') {
+                    const cd = Number(await bc.concessionDeadline(bondId, i));
+                    const rd = Number(await bc.rulingDeadline(bondId, i));
+                    timing = `<small>concede until ${new Date(cd * 1000).toLocaleString()} · rule until ${new Date(rd * 1000).toLocaleString()}</small><br>`;
+                }
+                const posterCanConcede = signer && account && account.toLowerCase() === b.poster.toLowerCase() && statusName === 'Pending';
+                challengesHtml += `<div class="card">
+                    <h3>Challenge ${i} <span class="status status-${statusName}">${statusName}</span></h3>
+                    <div class="grid">
+                        <div>challenger</div><div>${ch.challenger}</div>
+                        <div>at version</div><div>${ch.challengeAtVersion}</div>
+                        <div>metadata hash</div><div><code>${ch.metadataHash}</code></div>
+                        <div>timestamp</div><div>${new Date(Number(ch.timestamp) * 1000).toLocaleString()}</div>
+                    </div>
+                    ${timing}
+                    ${posterCanConcede ? `<div class="row">
+                        <textarea id="conc-${i}" placeholder="concession reasoning"></textarea>
+                        <button data-act="concede" data-i="${i}">Concede this challenge</button>
+                    </div>` : ''}
+                </div>`;
+            }
+            const isPoster = signer && account && account.toLowerCase() === b.poster.toLowerCase();
+            view.innerHTML = `<h2>Bond #${bondId} — ${b.settled ? 'settled' : (b.closed ? 'closed' : 'open')}</h2>
+                <div class="card">
+                    <div class="grid">
+                        <div>poster</div><div>${b.poster}</div>
+                        <div>judge</div><div>${b.judge}</div>
+                        <div>token</div><div>${b.token}</div>
+                        <div>bond amount</div><div>${ethers.formatEther(b.bondAmount)}</div>
+                        <div>challenge amount</div><div>${ethers.formatEther(b.challengeAmount)}</div>
+                        <div>judge fee (max)</div><div>${ethers.formatEther(b.judgeFee)}</div>
+                        <div>acceptance delay</div><div>${b.acceptanceDelay} s</div>
+                        <div>ruling buffer</div><div>${b.rulingBuffer} s</div>
+                        <div>max challenges</div><div>${b.maxChallenges}</div>
+                        <div>claim version</div><div>${b.claimVersion}</div>
+                        <div>claim hash</div><div><code>${b.claimHash}</code></div>
+                        <div>judgeProfileId</div><div>${b.judgeProfileId}</div>
+                        <div>pending count</div><div>${b.pendingCount}</div>
+                    </div>
+                </div>
+
+                ${signer ? `<div class="card">
+                    <h3>Actions</h3>
+                    <div class="row">
+                        <input id="approveAmt" placeholder="approve token amount (whole units)">
+                        <button id="approveBtn">Approve token</button>
+                    </div>
+                    <div class="row">
+                        <input id="chContent" placeholder="reason for challenge">
+                        <button id="challengeBtn">Challenge (v${b.claimVersion})</button>
+                    </div>
+                    ${isPoster ? `
+                    <div class="row">
+                        <input id="modText" placeholder="new claim text (requires no pending)">
+                        <button id="modBtn">Modify claim</button>
+                    </div>
+                    <div class="row">
+                        ${b.closed ? '<button id="openBtn">Open bond</button>' : '<button id="closeBtn">Close bond</button>'}
+                        <button id="withdrawBtn" class="warn">Withdraw (requires closed + 0 pending)</button>
+                    </div>` : ''}
+                    <div class="row">
+                        <input id="refundCount" type="number" value="10" min="1" style="width:80px">
+                        <button id="refundsBtn">Drain refunds (max N)</button>
+                    </div>
+                </div>` : '<p><em>Connect a wallet to interact.</em></p>'}
+
+                <h3>Challenges (${count})</h3>
+                <div id="challenges">${challengesHtml || '<p>None yet.</p>'}</div>
+                `;
+
+            wireDetailActions(bondId);
+        } catch (e) { $('detail').innerHTML = `<p class="err">${e.message}</p>`; }
+    }
+
+    function wireDetailActions(bondId) {
+        const bc = () => bondContract(true);
+        const c = chain();
+        const tokenAddr = (window.__cachedBondTokens || {})[bondId];
+
+        $('approveBtn')?.addEventListener('click', async () => {
+            try {
+                const amt = ethers.parseEther($('approveAmt').value || '0');
+                const bondData = await bondContract().bonds(bondId);
+                const t = new ethers.Contract(bondData.token, ["function approve(address,uint256) returns (bool)"], signer);
+                const tx = await t.approve(c.bondContract, amt);
+                await tx.wait();
+                log(`approved ${amt.toString()} to ${c.bondContract}`);
+            } catch (e) { log(e.message, 'err'); }
+        });
+
+        $('challengeBtn')?.addEventListener('click', async () => {
+            try {
+                const b = await bondContract().bonds(bondId);
+                const tx = await bc().challenge(bondId, b.claimVersion, $('chContent').value || '');
+                await tx.wait();
+                log(`challenge filed`);
+                renderDetail(bondId);
+            } catch (e) { log(e.message, 'err'); }
+        });
+
+        $('modBtn')?.addEventListener('click', async () => {
+            try {
+                const tx = await bc().modifyClaim(bondId, $('modText').value || '');
+                await tx.wait();
+                log(`claim modified`);
+                renderDetail(bondId);
+            } catch (e) { log(e.message, 'err'); }
+        });
+
+        $('closeBtn')?.addEventListener('click', async () => {
+            try { await (await bc().closeBond(bondId)).wait(); log('closed'); renderDetail(bondId); }
+            catch (e) { log(e.message, 'err'); }
+        });
+
+        $('openBtn')?.addEventListener('click', async () => {
+            try { await (await bc().openBond(bondId)).wait(); log('opened'); renderDetail(bondId); }
+            catch (e) { log(e.message, 'err'); }
+        });
+
+        $('withdrawBtn')?.addEventListener('click', async () => {
+            try { await (await bc().withdrawBond(bondId)).wait(); log('withdrawn'); renderDetail(bondId); }
+            catch (e) { log(e.message, 'err'); }
+        });
+
+        $('refundsBtn')?.addEventListener('click', async () => {
+            try {
+                const n = parseInt($('refundCount').value || '10', 10);
+                await (await bc().claimRefunds(bondId, n)).wait();
+                log(`drained up to ${n} refunds`);
+                renderDetail(bondId);
+            } catch (e) { log(e.message, 'err'); }
+        });
+
+        document.querySelectorAll('button[data-act="concede"]').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                try {
+                    const i = parseInt(btn.dataset.i, 10);
+                    const content = $(`conc-${i}`).value || '';
+                    await (await bc().concede(bondId, i, content)).wait();
+                    log(`conceded challenge ${i}`);
+                    renderDetail(bondId);
+                } catch (e) { log(e.message, 'err'); }
+            });
+        });
+    }
+
+    async function renderCreate() {
+        const c = chain();
+        const view = $('view');
+        view.innerHTML = `<h2>Create bond on ${c?.name || 'chain'}</h2>
+            <div class="card">
+                <label>Token (ERC-20)</label><input id="cb-token" value="${c?.approvedToken || ''}">
+                <label>Bond amount (whole units)</label><input id="cb-bond" value="10">
+                <label>Challenge amount</label><input id="cb-ch" value="3">
+                <label>Judge fee (max, ≤ challenge)</label><input id="cb-fee" value="0.5">
+                <label>Judge contract</label><input id="cb-judge">
+                <label>Acceptance delay (seconds)</label><input id="cb-ad" value="${7 * 24 * 3600}">
+                <label>Ruling buffer (seconds)</label><input id="cb-rb" value="${7 * 24 * 3600}">
+                <label>Max challenges</label><input id="cb-max" value="10">
+                <label>Judge profile id (from JudgeProfileRegistryV6)</label><input id="cb-jpid" value="0">
+                <label>Claim content (IPFS URI or inline text)</label><textarea id="cb-claim"></textarea>
+                <button class="primary" id="cb-go">Create bond</button>
+                <p><small>Remember to approve the bond contract for at least <code>bondAmount</code> first.</small></p>
+            </div>`;
+        $('cb-go').addEventListener('click', async () => {
+            try {
+                if (!signer) throw new Error('Connect a wallet first');
+                const tx = await bondContract(true).createBond(
+                    $('cb-token').value,
+                    ethers.parseEther($('cb-bond').value || '0'),
+                    ethers.parseEther($('cb-ch').value || '0'),
+                    ethers.parseEther($('cb-fee').value || '0'),
+                    $('cb-judge').value,
+                    parseInt($('cb-ad').value || '0', 10),
+                    parseInt($('cb-rb').value || '0', 10),
+                    parseInt($('cb-max').value || '0', 10),
+                    parseInt($('cb-jpid').value || '0', 10),
+                    $('cb-claim').value || ''
+                );
+                const r = await tx.wait();
+                log(`created bond, tx ${r.hash}`);
+                location.hash = '#list';
+                render();
+            } catch (e) { log(e.message, 'err'); }
+        });
+    }
+
+    async function renderProfiles() {
+        $('view').innerHTML = `<h2>Profile registries</h2>
+            <div class="card">
+                <h3>Judge profile</h3>
+                <label>Judge contract address</label><input id="jp-addr">
+                <label>Profile content (criteria, links, etc.)</label><textarea id="jp-content"></textarea>
+                <button id="jp-go">Register</button>
+            </div>
+            <div class="card">
+                <h3>Poster profile</h3>
+                <label>Profile content</label><textarea id="pp-content"></textarea>
+                <button id="pp-go">Register</button>
+            </div>
+            <div class="card">
+                <h3>Challenger profile</h3>
+                <label>Profile content</label><textarea id="cp-content"></textarea>
+                <button id="cp-go">Register</button>
+            </div>`;
+        $('jp-go').addEventListener('click', async () => {
+            try {
+                if (!signer) throw new Error('Connect a wallet first');
+                const reg = registryContract('judge', true);
+                const tx = await reg.registerProfile($('jp-addr').value, $('jp-content').value);
+                const r = await tx.wait();
+                const log_ = r.logs.find(l => { try { return reg.interface.parseLog(l).name === 'ProfileRegistered'; } catch { return false; } });
+                const parsed = log_ ? reg.interface.parseLog(log_) : null;
+                log(`Registered judge profile entryId=${parsed?.args?.entryId}`);
+            } catch (e) { log(e.message, 'err'); }
+        });
+        $('pp-go').addEventListener('click', async () => {
+            try {
+                if (!signer) throw new Error('Connect a wallet first');
+                const reg = registryContract('poster', true);
+                const r = await (await reg.registerProfile($('pp-content').value)).wait();
+                log(`Registered poster profile, tx ${r.hash}`);
+            } catch (e) { log(e.message, 'err'); }
+        });
+        $('cp-go').addEventListener('click', async () => {
+            try {
+                if (!signer) throw new Error('Connect a wallet first');
+                const reg = registryContract('challenger', true);
+                const r = await (await reg.registerProfile($('cp-content').value)).wait();
+                log(`Registered challenger profile, tx ${r.hash}`);
+            } catch (e) { log(e.message, 'err'); }
+        });
+    }
+
+    function renderAbout() {
+        const c = chain();
+        $('view').innerHTML = `<h2>About</h2>
+            <div class="card">
+                <p>This is the v0.6 UI for SimpleBond. v0.6 introduces evolving claims,
+                   per-challenge concession, judge out-of-scope refunds, close/open toggle,
+                   and append-only profile registries. See <code>SPEC_V06.md</code>.</p>
+                <h3>This chain</h3>
+                <div class="grid">
+                    <div>name</div><div>${c?.name || '—'}</div>
+                    <div>id</div><div>${activeChainId}</div>
+                    <div>bond contract</div><div>${c?.bondContract ? `<a href="${explorerLink(c.bondContract)}" target="_blank">${c.bondContract}</a>` : '—'}</div>
+                    <div>judgeProfileRegistry</div><div>${c?.judgeProfileRegistry || '—'}</div>
+                    <div>posterProfileRegistry</div><div>${c?.posterProfileRegistry || '—'}</div>
+                    <div>challengerProfileRegistry</div><div>${c?.challengerProfileRegistry || '—'}</div>
+                    <div>officialDirectory</div><div>${c?.officialDirectory || '—'}</div>
+                    <div>approvedToken</div><div>${c?.approvedToken || '—'}</div>
+                </div>
+            </div>`;
+    }
+
+    // --- Router ---
+    function render() {
+        const hash = location.hash || '#list';
+        document.querySelectorAll('nav a').forEach(a => a.classList.remove('active'));
+        if (hash.startsWith('#detail-')) {
+            const id = hash.slice('#detail-'.length);
+            renderDetail(id);
+        } else if (hash === '#create') {
+            document.querySelector('nav a[data-view="create"]').classList.add('active');
+            renderCreate();
+        } else if (hash === '#profiles') {
+            document.querySelector('nav a[data-view="profiles"]').classList.add('active');
+            renderProfiles();
+        } else if (hash === '#about') {
+            document.querySelector('nav a[data-view="about"]').classList.add('active');
+            renderAbout();
+        } else {
+            document.querySelector('nav a[data-view="list"]').classList.add('active');
+            renderList();
+        }
+    }
+    document.querySelectorAll('nav a').forEach(a => {
+        a.addEventListener('click', (e) => {
+            e.preventDefault();
+            const v = e.target.dataset.view;
+            location.hash = v === 'list' ? '#list' : '#' + v;
+            render();
+        });
+    });
+    window.addEventListener('hashchange', render);
+
+    buildChainSelect();
+    render();
+})();
+</script>
+</body>
+</html>
