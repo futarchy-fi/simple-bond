@@ -92,6 +92,14 @@ contract SimpleBondV6 {
         string content
     );
 
+    event ClaimConceded(
+        uint256 indexed bondId,
+        uint256 challengeIndex,
+        address indexed poster,
+        bytes32 contentHash,
+        string content
+    );
+
     /// @notice Create a new v0.6 bond, escrow the poster's bondAmount, and emit BondCreated.
     /// @dev `judgeProfileId` is stored at creation but not yet validated against a registry.
     ///      Registry wiring is added in a follow-up task. Callers may pass 0 in unit tests.
@@ -176,6 +184,18 @@ contract SimpleBondV6 {
         return challenges[bondId][index];
     }
 
+    function concessionDeadline(uint256 bondId, uint256 i) public view returns (uint256) {
+        return challenges[bondId][i].timestamp + bonds[bondId].acceptanceDelay;
+    }
+
+    function rulingWindowStart(uint256 bondId, uint256 i) public view returns (uint256) {
+        return challenges[bondId][i].timestamp + bonds[bondId].acceptanceDelay;
+    }
+
+    function rulingDeadline(uint256 bondId, uint256 i) public view returns (uint256) {
+        return rulingWindowStart(bondId, i) + bonds[bondId].rulingBuffer;
+    }
+
     /// @notice File a new challenge against the current claim version.
     /// @param expectedVersion Caller's pin to the claim version they intend to challenge; reverts on mismatch.
     function challenge(
@@ -217,6 +237,26 @@ contract SimpleBondV6 {
             metadataHash,
             content
         );
+    }
+
+    /// @notice Poster concedes a specific challenge. Money-neutral for the poster.
+    /// @dev Refunds challenger immediately, marks status Conceded, decrements pendingCount.
+    function concede(uint256 bondId, uint256 i, string calldata content) external {
+        Bond storage b = bonds[bondId];
+        require(b.poster == msg.sender, "Not poster");
+        require(!b.settled, "Bond settled");
+        Challenge storage c = challenges[bondId][i];
+        require(c.status == ChallengeStatus.Pending, "Not pending");
+        require(block.timestamp <= concessionDeadline(bondId, i), "Concession window closed");
+
+        bytes32 contentHash = keccak256(bytes(content));
+        c.status = ChallengeStatus.Conceded;
+        c.rulingMetadataHash = contentHash;
+        b.pendingCount -= 1;
+
+        IERC20(b.token).safeTransfer(c.challenger, b.challengeAmount);
+
+        emit ClaimConceded(bondId, i, msg.sender, contentHash, content);
     }
 
     /// @notice Replace the bond's claim text. Allowed only when no challenges are pending.
