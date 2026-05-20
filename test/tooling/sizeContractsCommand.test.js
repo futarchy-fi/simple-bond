@@ -13,6 +13,7 @@ const EXPECTED_CONTRACTS = [
   "TestToken",
   "MockSUSDS",
   "TestAcceptJudgeV6",
+  "TestForwardingJudgeV6",
   "ManualJudge",
   "JudgeProfileRegistry",
   "JudgeRegistry",

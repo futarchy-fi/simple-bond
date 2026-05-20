@@ -21,6 +21,13 @@ async function deployAcceptJudge() {
     return j;
 }
 
+async function deployForwardingJudge() {
+    const F = await ethers.getContractFactory("TestForwardingJudgeV6");
+    const j = await F.deploy();
+    await j.waitForDeployment();
+    return j;
+}
+
 const DEFAULT_BOND_PARAMS = {
     bondAmount: ethers.parseEther("10"),
     challengeAmount: ethers.parseEther("3"),
@@ -41,6 +48,7 @@ module.exports = {
     deployMockSUSDS,
     deployBond,
     deployAcceptJudge,
+    deployForwardingJudge,
     fundAndApprove,
     DEFAULT_BOND_PARAMS,
 };

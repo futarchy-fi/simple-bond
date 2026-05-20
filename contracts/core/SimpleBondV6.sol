@@ -100,6 +100,49 @@ contract SimpleBondV6 {
         string content
     );
 
+    event RuledForPoster(
+        uint256 indexed bondId,
+        uint256 challengeIndex,
+        address indexed challenger,
+        uint256 feeCharged,
+        bytes32 contentHash,
+        string content
+    );
+
+    event RuledForChallenger(
+        uint256 indexed bondId,
+        uint256 challengeIndex,
+        address indexed challenger,
+        uint256 feeCharged,
+        bytes32 contentHash,
+        string content
+    );
+
+    event ChallengeRejected(
+        uint256 indexed bondId,
+        uint256 challengeIndex,
+        address indexed challenger,
+        bytes32 contentHash,
+        string content
+    );
+
+    event BondRejectedByJudge(
+        uint256 indexed bondId,
+        address indexed judge,
+        bytes32 contentHash,
+        string content
+    );
+
+    event BondClosed(uint256 indexed bondId);
+    event BondOpened(uint256 indexed bondId);
+    event BondWithdrawn(uint256 indexed bondId);
+    event BondTimedOut(uint256 indexed bondId, uint256 challengeIndex);
+    event ChallengeRefunded(
+        uint256 indexed bondId,
+        uint256 challengeIndex,
+        address indexed challenger
+    );
+
     /// @notice Create a new v0.6 bond, escrow the poster's bondAmount, and emit BondCreated.
     /// @dev `judgeProfileId` is stored at creation but not yet validated against a registry.
     ///      Registry wiring is added in a follow-up task. Callers may pass 0 in unit tests.
@@ -237,6 +280,38 @@ contract SimpleBondV6 {
             metadataHash,
             content
         );
+    }
+
+    /// @notice Judge contract: rule for the poster on challenge `i`. Bond continues.
+    function ruleForPoster(
+        uint256 bondId,
+        uint256 i,
+        uint256 feeCharged,
+        string calldata content
+    ) external {
+        Bond storage b = bonds[bondId];
+        require(msg.sender == b.judge, "Only judge");
+        require(!b.settled, "Bond settled");
+        Challenge storage c = challenges[bondId][i];
+        require(c.status == ChallengeStatus.Pending, "Not pending");
+        require(block.timestamp >= rulingWindowStart(bondId, i), "Ruling window not open");
+        require(block.timestamp <= rulingDeadline(bondId, i), "Ruling window closed");
+        require(feeCharged <= b.judgeFee, "Fee > judgeFee");
+
+        bytes32 contentHash = keccak256(bytes(content));
+        c.status = ChallengeStatus.Lost;
+        c.rulingMetadataHash = contentHash;
+        b.pendingCount -= 1;
+
+        if (feeCharged > 0) {
+            IERC20(b.token).safeTransfer(b.judge, feeCharged);
+        }
+        uint256 toPoster = b.challengeAmount - feeCharged;
+        if (toPoster > 0) {
+            IERC20(b.token).safeTransfer(b.poster, toPoster);
+        }
+
+        emit RuledForPoster(bondId, i, c.challenger, feeCharged, contentHash, content);
     }
 
     /// @notice Poster concedes a specific challenge. Money-neutral for the poster.
