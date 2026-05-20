@@ -2,32 +2,19 @@ const { expect } = require("chai");
 const { ethers } = require("hardhat");
 const {
     deployMockSUSDS,
-    deployBond,
-    deployAcceptJudge,
+    deployBondHarness,
+    createDefaultBond,
     fundAndApprove,
-    DEFAULT_BOND_PARAMS,
 } = require("../../helpers/v6/fixtures");
 
 async function setup() {
     const [poster, other] = await ethers.getSigners();
     const token = await deployMockSUSDS();
-    const bond = await deployBond();
-    const judge = await deployAcceptJudge();
+    const { bond, judge, judgeProfileId } = await deployBondHarness();
     await fundAndApprove(token, bond, poster, ethers.parseEther("1000"));
-    const tx = await bond.connect(poster).createBond(
-        await token.getAddress(),
-        DEFAULT_BOND_PARAMS.bondAmount,
-        DEFAULT_BOND_PARAMS.challengeAmount,
-        DEFAULT_BOND_PARAMS.judgeFee,
-        await judge.getAddress(),
-        DEFAULT_BOND_PARAMS.acceptanceDelay,
-        DEFAULT_BOND_PARAMS.rulingBuffer,
-        DEFAULT_BOND_PARAMS.maxChallenges,
-        DEFAULT_BOND_PARAMS.judgeProfileId,
-        DEFAULT_BOND_PARAMS.claimContent
-    );
+    const tx = await createDefaultBond(bond, poster, token, judge, judgeProfileId);
     await tx.wait();
-    return { poster, other, token, bond, judge };
+    return { poster, other, token, bond, judge, judgeProfileId };
 }
 
 describe("SimpleBondV6.modifyClaim", () => {

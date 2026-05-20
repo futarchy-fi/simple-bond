@@ -3,8 +3,8 @@ const { ethers } = require("hardhat");
 const { time } = require("@nomicfoundation/hardhat-network-helpers");
 const {
     deployMockSUSDS,
-    deployBond,
-    deployForwardingJudge,
+    deployBondHarness,
+    createDefaultBond,
     fundAndApprove,
     DEFAULT_BOND_PARAMS,
 } = require("../../helpers/v6/fixtures");
@@ -15,29 +15,24 @@ async function setupBond(overrides = {}, signerCount = 4) {
     const challengers = signers.slice(1, signerCount);
 
     const token = await deployMockSUSDS();
-    const bond = await deployBond();
-    const judge = await deployForwardingJudge();
+    const { bond, judge, judgeProfileId } = await deployBondHarness({ withForwardingJudge: true });
 
     await fundAndApprove(token, bond, poster, ethers.parseEther("1000"));
     for (const c of challengers) {
         await fundAndApprove(token, bond, c, ethers.parseEther("1000"));
     }
 
-    const p = { ...DEFAULT_BOND_PARAMS, ...overrides };
-    await bond.connect(poster).createBond(
-        await token.getAddress(),
-        p.bondAmount,
-        p.challengeAmount,
-        p.judgeFee,
-        await judge.getAddress(),
-        p.acceptanceDelay,
-        p.rulingBuffer,
-        p.maxChallenges,
-        p.judgeProfileId,
-        p.claimContent
-    );
+    await createDefaultBond(bond, poster, token, judge, judgeProfileId, overrides);
 
-    return { poster, challengers, token, bond, judge, params: p };
+    return {
+        poster,
+        challengers,
+        token,
+        bond,
+        judge,
+        judgeProfileId,
+        params: { ...DEFAULT_BOND_PARAMS, ...overrides },
+    };
 }
 
 async function forward(judge, bond, fn, args) {

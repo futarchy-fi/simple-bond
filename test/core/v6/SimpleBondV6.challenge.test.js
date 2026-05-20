@@ -2,8 +2,8 @@ const { expect } = require("chai");
 const { ethers } = require("hardhat");
 const {
     deployMockSUSDS,
-    deployBond,
-    deployAcceptJudge,
+    deployBondHarness,
+    createDefaultBond,
     fundAndApprove,
     DEFAULT_BOND_PARAMS,
 } = require("../../helpers/v6/fixtures");
@@ -11,28 +11,24 @@ const {
 async function setupWithBond(overrides = {}) {
     const [poster, challenger1, challenger2] = await ethers.getSigners();
     const token = await deployMockSUSDS();
-    const bond = await deployBond();
-    const judge = await deployAcceptJudge();
+    const { bond, judge, judgeProfileId } = await deployBondHarness();
 
     await fundAndApprove(token, bond, poster, ethers.parseEther("1000"));
     await fundAndApprove(token, bond, challenger1, ethers.parseEther("1000"));
     await fundAndApprove(token, bond, challenger2, ethers.parseEther("1000"));
 
-    const p = { ...DEFAULT_BOND_PARAMS, ...overrides };
-    await bond.connect(poster).createBond(
-        await token.getAddress(),
-        p.bondAmount,
-        p.challengeAmount,
-        p.judgeFee,
-        await judge.getAddress(),
-        p.acceptanceDelay,
-        p.rulingBuffer,
-        p.maxChallenges,
-        p.judgeProfileId,
-        p.claimContent
-    );
+    await createDefaultBond(bond, poster, token, judge, judgeProfileId, overrides);
 
-    return { poster, challenger1, challenger2, token, bond, judge, params: p };
+    return {
+        poster,
+        challenger1,
+        challenger2,
+        token,
+        bond,
+        judge,
+        judgeProfileId,
+        params: { ...DEFAULT_BOND_PARAMS, ...overrides },
+    };
 }
 
 describe("SimpleBondV6.challenge", () => {

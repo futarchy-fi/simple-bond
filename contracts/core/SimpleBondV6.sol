@@ -5,6 +5,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 import "../interfaces/IBondJudgeV6.sol";
+import "../profiles/JudgeProfileRegistryV6.sol";
 
 /// @title SimpleBondV6
 /// @notice v0.6 bond core. Adds versioned claims, per-challenge concession, per-challenge timing,
@@ -53,10 +54,17 @@ contract SimpleBondV6 {
         bytes32 rulingMetadataHash;
     }
 
+    JudgeProfileRegistryV6 public immutable judgeProfileRegistry;
+
     uint256 public nextBondId;
     mapping(uint256 => Bond) public bonds;
     mapping(uint256 => Challenge[]) public challenges;
     mapping(uint256 => uint256) public refundCursor;
+
+    constructor(address judgeProfileRegistry_) {
+        require(judgeProfileRegistry_ != address(0), "Zero registry");
+        judgeProfileRegistry = JudgeProfileRegistryV6(judgeProfileRegistry_);
+    }
 
     event BondCreated(
         uint256 indexed bondId,
@@ -168,6 +176,9 @@ contract SimpleBondV6 {
         require(acceptanceDelay <= MAX_ACCEPTANCE_DELAY, "Acceptance delay too long");
         require(rulingBuffer > 0, "Zero ruling buffer");
         require(rulingBuffer <= MAX_RULING_BUFFER, "Ruling buffer too long");
+
+        (, address profileJudge, , ) = judgeProfileRegistry.getProfile(judgeProfileId);
+        require(profileJudge == judge, "Profile judge mismatch");
 
         IBondJudgeV6(judge).validateBond(
             token,
