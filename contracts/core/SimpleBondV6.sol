@@ -38,6 +38,7 @@ contract SimpleBondV6 {
         bytes32 claimHash;
         uint256 claimVersion;
         uint256 judgeProfileId;
+        uint256 pendingCount;
         bool settled;
         bool closed;
     }
@@ -70,6 +71,15 @@ contract SimpleBondV6 {
         uint256 maxChallenges,
         bytes32 claimHash,
         string claimContent
+    );
+
+    event ClaimModified(
+        uint256 indexed bondId,
+        uint256 oldVersion,
+        uint256 newVersion,
+        bytes32 oldHash,
+        bytes32 newHash,
+        string newContent
     );
 
     /// @notice Create a new v0.6 bond, escrow the poster's bondAmount, and emit BondCreated.
@@ -124,6 +134,7 @@ contract SimpleBondV6 {
             claimHash: claimHash,
             claimVersion: 1,
             judgeProfileId: judgeProfileId,
+            pendingCount: 0,
             settled: false,
             closed: false
         });
@@ -145,5 +156,23 @@ contract SimpleBondV6 {
             claimHash,
             claimContent
         );
+    }
+
+    /// @notice Replace the bond's claim text. Allowed only when no challenges are pending.
+    /// @dev Bumps `claimVersion`. Future challenges must pin to the new version.
+    function modifyClaim(uint256 bondId, string calldata newContent) external {
+        Bond storage b = bonds[bondId];
+        require(b.poster == msg.sender, "Not poster");
+        require(!b.settled, "Bond settled");
+        require(b.pendingCount == 0, "Pending challenges");
+
+        bytes32 oldHash = b.claimHash;
+        uint256 oldVersion = b.claimVersion;
+        bytes32 newHash = keccak256(bytes(newContent));
+
+        b.claimHash = newHash;
+        b.claimVersion = oldVersion + 1;
+
+        emit ClaimModified(bondId, oldVersion, oldVersion + 1, oldHash, newHash, newContent);
     }
 }
