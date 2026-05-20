@@ -56,6 +56,7 @@ contract SimpleBondV6 {
     uint256 public nextBondId;
     mapping(uint256 => Bond) public bonds;
     mapping(uint256 => Challenge[]) public challenges;
+    mapping(uint256 => uint256) public refundCursor;
 
     event BondCreated(
         uint256 indexed bondId,
@@ -312,6 +313,137 @@ contract SimpleBondV6 {
         }
 
         emit RuledForPoster(bondId, i, c.challenger, feeCharged, contentHash, content);
+    }
+
+    /// @notice Judge contract: rule for the challenger on challenge `i`. Settles the bond.
+    function ruleForChallenger(
+        uint256 bondId,
+        uint256 i,
+        uint256 feeCharged,
+        string calldata content
+    ) external {
+        Bond storage b = bonds[bondId];
+        require(msg.sender == b.judge, "Only judge");
+        require(!b.settled, "Bond settled");
+        Challenge storage c = challenges[bondId][i];
+        require(c.status == ChallengeStatus.Pending, "Not pending");
+        require(block.timestamp >= rulingWindowStart(bondId, i), "Ruling window not open");
+        require(block.timestamp <= rulingDeadline(bondId, i), "Ruling window closed");
+        require(feeCharged <= b.judgeFee, "Fee > judgeFee");
+
+        bytes32 contentHash = keccak256(bytes(content));
+        c.status = ChallengeStatus.Won;
+        c.rulingMetadataHash = contentHash;
+        b.pendingCount -= 1;
+        b.settled = true;
+
+        if (feeCharged > 0) {
+            IERC20(b.token).safeTransfer(b.judge, feeCharged);
+        }
+        IERC20(b.token).safeTransfer(c.challenger, b.bondAmount + b.challengeAmount - feeCharged);
+
+        emit RuledForChallenger(bondId, i, c.challenger, feeCharged, contentHash, content);
+    }
+
+    /// @notice Judge contract: mark a single challenge out-of-scope and refund it. Bond continues.
+    function rejectChallenge(uint256 bondId, uint256 i, string calldata content) external {
+        Bond storage b = bonds[bondId];
+        require(msg.sender == b.judge, "Only judge");
+        require(!b.settled, "Bond settled");
+        Challenge storage c = challenges[bondId][i];
+        require(c.status == ChallengeStatus.Pending, "Not pending");
+
+        bytes32 contentHash = keccak256(bytes(content));
+        c.status = ChallengeStatus.RejectedByJudge;
+        c.rulingMetadataHash = contentHash;
+        b.pendingCount -= 1;
+
+        IERC20(b.token).safeTransfer(c.challenger, b.challengeAmount);
+
+        emit ChallengeRejected(bondId, i, c.challenger, contentHash, content);
+    }
+
+    /// @notice Judge contract: void the entire bond. Poster refunded; all pending challengers refundable.
+    function rejectBond(uint256 bondId, string calldata content) external {
+        Bond storage b = bonds[bondId];
+        require(msg.sender == b.judge, "Only judge");
+        require(!b.settled, "Bond settled");
+
+        bytes32 contentHash = keccak256(bytes(content));
+        b.settled = true;
+
+        IERC20(b.token).safeTransfer(b.poster, b.bondAmount);
+
+        emit BondRejectedByJudge(bondId, msg.sender, contentHash, content);
+    }
+
+    /// @notice Poster closes the bond, blocking new challenges. Pending challenges continue.
+    function closeBond(uint256 bondId) external {
+        Bond storage b = bonds[bondId];
+        require(b.poster == msg.sender, "Not poster");
+        require(!b.settled, "Bond settled");
+        require(!b.closed, "Already closed");
+        b.closed = true;
+        emit BondClosed(bondId);
+    }
+
+    /// @notice Poster re-opens a closed bond.
+    function openBond(uint256 bondId) external {
+        Bond storage b = bonds[bondId];
+        require(b.poster == msg.sender, "Not poster");
+        require(!b.settled, "Bond settled");
+        require(b.closed, "Already open");
+        b.closed = false;
+        emit BondOpened(bondId);
+    }
+
+    /// @notice Poster withdraws bondAmount when closed and no pending challenges remain.
+    function withdrawBond(uint256 bondId) external {
+        Bond storage b = bonds[bondId];
+        require(b.poster == msg.sender, "Not poster");
+        require(!b.settled, "Bond settled");
+        require(b.closed, "Must close first");
+        require(b.pendingCount == 0, "Pending challenges");
+        b.settled = true;
+        IERC20(b.token).safeTransfer(b.poster, b.bondAmount);
+        emit BondWithdrawn(bondId);
+    }
+
+    /// @notice Any caller: time out a pending challenge whose ruling deadline has passed.
+    /// @dev Settles the bond and refunds the poster; remaining pending challengers
+    ///      become refundable via `claimRefunds`.
+    function claimTimeout(uint256 bondId, uint256 i) external {
+        Bond storage b = bonds[bondId];
+        require(!b.settled, "Bond settled");
+        Challenge storage c = challenges[bondId][i];
+        require(c.status == ChallengeStatus.Pending, "Not pending");
+        require(block.timestamp > rulingDeadline(bondId, i), "Ruling window still open");
+
+        b.settled = true;
+        IERC20(b.token).safeTransfer(b.poster, b.bondAmount);
+
+        emit BondTimedOut(bondId, i);
+    }
+
+    /// @notice Drain refunds for challenges left pending at settlement, in bounded batches.
+    function claimRefunds(uint256 bondId, uint256 maxCount) external {
+        Bond storage b = bonds[bondId];
+        require(b.settled, "Bond not settled");
+
+        uint256 start = refundCursor[bondId];
+        uint256 end = challenges[bondId].length;
+        uint256 stop = start + maxCount;
+        if (stop > end) stop = end;
+
+        for (uint256 i = start; i < stop; i++) {
+            Challenge storage c = challenges[bondId][i];
+            if (c.status == ChallengeStatus.Pending) {
+                c.status = ChallengeStatus.Refunded;
+                IERC20(b.token).safeTransfer(c.challenger, b.challengeAmount);
+                emit ChallengeRefunded(bondId, i, c.challenger);
+            }
+        }
+        refundCursor[bondId] = stop;
     }
 
     /// @notice Poster concedes a specific challenge. Money-neutral for the poster.
