@@ -31,6 +31,26 @@ async function main() {
         throw new Error("APPROVED_TOKEN env required (canonical bond token address)");
     }
 
+    // Pre-flight checks (only on real networks).
+    if (network !== "hardhat" && network !== "localhost") {
+        const bal = await hre.ethers.provider.getBalance(deployer.address);
+        const minBalance = chainId === 1 ? hre.ethers.parseEther("0.02") : hre.ethers.parseEther("0.05");
+        console.log(`Deployer balance:                ${hre.ethers.formatEther(bal)} ETH`);
+        if (bal < minBalance) {
+            throw new Error(`Insufficient deployer balance. Need at least ${hre.ethers.formatEther(minBalance)} ETH; have ${hre.ethers.formatEther(bal)}.`);
+        }
+
+        const code = await hre.ethers.provider.getCode(approvedToken);
+        if (code === "0x" || code.length < 4) {
+            throw new Error(`APPROVED_TOKEN ${approvedToken} has no bytecode on chain ${chainId}. Pass the right token address for this network.`);
+        }
+        if (chainId === 1 && approvedToken.toLowerCase() !== "0xa3931d71877c0e7a3148cb7eb4463524fec27fbd") {
+            console.log(`WARNING: mainnet APPROVED_TOKEN is not sUSDS (expected 0xa3931d71877C0E7a3148CB7Eb4463524FEc27fbD)`);
+        }
+        console.log(`APPROVED_TOKEN contract verified at ${approvedToken}`);
+        console.log(``);
+    }
+
     const out = {};
 
     out.judgeProfileRegistry = await deploySimple("JudgeProfileRegistryV6", []);
