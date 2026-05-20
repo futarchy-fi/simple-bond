@@ -24,7 +24,7 @@ export function parseToken(token) {
   return { action, address, chainId: parseInt(chainIdStr, 10) };
 }
 
-const CHAIN_NAMES = { 100: 'Gnosis', 137: 'Polygon' };
+const CHAIN_NAMES = { 1: 'Ethereum', 100: 'Gnosis', 137: 'Polygon', 11155111: 'Sepolia' };
 const FRONTEND_LABEL = FRONTEND_BASE_URL.replace(/^https?:\/\//, '');
 
 function layout(content) {

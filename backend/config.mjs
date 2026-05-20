@@ -31,23 +31,52 @@ export const FRONTEND_BASE_URL = trimTrailingSlash(process.env.SIMPLE_BOND_FRONT
 export const DB_PATH = resolve(__dirname, '..', 'data', 'bond-notify.db');
 
 export const POLL_INTERVAL_MS = 30_000;
-export const CONFIRMATION_BLOCKS = { 100: 12 };
+export const CONFIRMATION_BLOCKS = { 100: 12, 1: 12, 11155111: 6 };
 export const BLOCK_CHUNK = 10_000;
 export const TIMESTAMP_WINDOW_SEC = 300; // 5 minutes
 export const RATE_LIMIT_MAX = 3; // per IP per hour
 
-export const CHAINS = {
+// CHAINS is assembled at import time. Gnosis v0.5 stays hardcoded for now
+// (will be removed in Phase 11). Mainnet v0.6 and Sepolia v0.6 enter the map
+// only when the corresponding env vars are set, so the watcher can run
+// safely before the v0.6 deployment.
+const _CHAINS = {
   100: {
     name: 'Gnosis',
     rpc: 'https://rpc.gnosischain.com',
     contract: '0x7dF485C013f8671B656d585f1d1411640B1D2776',
     startBlock: 45569363,
     explorer: 'https://gnosisscan.io',
+    bondVersion: 5,
   },
 };
 
+if (process.env.MAINNET_V6_CONTRACT) {
+  _CHAINS[1] = {
+    name: 'Ethereum',
+    rpc: process.env.MAINNET_RPC || 'https://eth.llamarpc.com',
+    contract: process.env.MAINNET_V6_CONTRACT,
+    startBlock: parseInt(process.env.MAINNET_V6_START_BLOCK || '0', 10),
+    explorer: 'https://etherscan.io',
+    bondVersion: 6,
+  };
+}
+
+if (process.env.SEPOLIA_V6_CONTRACT) {
+  _CHAINS[11155111] = {
+    name: 'Sepolia',
+    rpc: process.env.SEPOLIA_RPC || 'https://ethereum-sepolia-rpc.publicnode.com',
+    contract: process.env.SEPOLIA_V6_CONTRACT,
+    startBlock: parseInt(process.env.SEPOLIA_V6_START_BLOCK || '0', 10),
+    explorer: 'https://sepolia.etherscan.io',
+    bondVersion: 6,
+  };
+}
+
+export const CHAINS = _CHAINS;
+
 // SimpleBondV5 ABI subset — only events + view functions the email watcher needs.
-export const CONTRACT_ABI = [
+export const V5_CONTRACT_ABI = [
   "event BondCreated(uint256 indexed bondId, address indexed poster, address indexed judge, address token, uint256 bondAmount, uint256 challengeAmount, uint256 judgeFee, uint256 deadline, uint256 acceptanceDelay, uint256 rulingBuffer, string metadata)",
   "event Challenged(uint256 indexed bondId, uint256 challengeIndex, address indexed challenger, string metadata)",
   "event ClaimConceded(uint256 indexed bondId, address indexed poster, string metadata)",
@@ -62,15 +91,51 @@ export const CONTRACT_ABI = [
   "function getChallenge(uint256 bondId, uint256 index) view returns (address challenger, uint8 status, string metadata)",
 ];
 
-// Events we watch and who gets notified
+// SimpleBondV6 ABI subset — v0.6 events. Field shapes differ from v0.5
+// (BondCreated drops `deadline`, adds judgeProfileId/maxChallenges/claimHash;
+// rulings carry content + contentHash; new events for ClaimModified,
+// ChallengeRejected, BondClosed, BondOpened.)
+export const V6_CONTRACT_ABI = [
+  "event BondCreated(uint256 indexed bondId, address indexed poster, address indexed judge, uint256 judgeProfileId, address token, uint256 bondAmount, uint256 challengeAmount, uint256 judgeFee, uint256 acceptanceDelay, uint256 rulingBuffer, uint256 maxChallenges, bytes32 claimHash, string claimContent)",
+  "event ClaimModified(uint256 indexed bondId, uint256 oldVersion, uint256 newVersion, bytes32 oldHash, bytes32 newHash, string newContent)",
+  "event Challenged(uint256 indexed bondId, uint256 challengeIndex, address indexed challenger, uint256 expectedVersion, bytes32 claimHashAtChallenge, bytes32 metadataHash, string content)",
+  "event ClaimConceded(uint256 indexed bondId, uint256 challengeIndex, address indexed poster, bytes32 contentHash, string content)",
+  "event RuledForPoster(uint256 indexed bondId, uint256 challengeIndex, address indexed challenger, uint256 feeCharged, bytes32 contentHash, string content)",
+  "event RuledForChallenger(uint256 indexed bondId, uint256 challengeIndex, address indexed challenger, uint256 feeCharged, bytes32 contentHash, string content)",
+  "event ChallengeRejected(uint256 indexed bondId, uint256 challengeIndex, address indexed challenger, bytes32 contentHash, string content)",
+  "event BondRejectedByJudge(uint256 indexed bondId, address indexed judge, bytes32 contentHash, string content)",
+  "event BondClosed(uint256 indexed bondId)",
+  "event BondOpened(uint256 indexed bondId)",
+  "event BondWithdrawn(uint256 indexed bondId)",
+  "event BondTimedOut(uint256 indexed bondId, uint256 challengeIndex)",
+  "event ChallengeRefunded(uint256 indexed bondId, uint256 challengeIndex, address indexed challenger)",
+];
+
+/// Returns the ABI to use for a given chain id.
+export function abiForChain(chainId) {
+  const v = (CHAINS[chainId] || {}).bondVersion || 5;
+  return v === 6 ? V6_CONTRACT_ABI : V5_CONTRACT_ABI;
+}
+
+// Back-compat: the existing watcher imports `CONTRACT_ABI`. Keep that export
+// pointing at v5 so the Gnosis path is unchanged; the watcher should switch to
+// `abiForChain(chainId)` per chain in a follow-up.
+export const CONTRACT_ABI = V5_CONTRACT_ABI;
+
+// Events we watch and who gets notified. v0.5 and v0.6 share event names where
+// possible; v0.6 also emits ClaimModified, ChallengeRejected, BondClosed, BondOpened.
 export const EVENT_RECIPIENTS = {
   BondCreated:        ['judge'],
   Challenged:         ['poster', 'judge'],
   ClaimConceded:      ['challengers', 'judge'],
+  ClaimModified:      ['judge'],
   RuledForChallenger: ['poster', 'challenger'],
   RuledForPoster:     ['poster', 'challenger'],
+  ChallengeRejected:  ['challenger', 'poster'],
   ChallengeRefunded:  ['challenger'],
   BondWithdrawn:      ['poster'],
   BondTimedOut:       ['poster', 'challengers'],
   BondRejectedByJudge:['poster', 'challengers'],
+  BondClosed:         ['judge'],
+  BondOpened:         ['judge'],
 };
