@@ -82,6 +82,16 @@ contract SimpleBondV6 {
         string newContent
     );
 
+    event Challenged(
+        uint256 indexed bondId,
+        uint256 challengeIndex,
+        address indexed challenger,
+        uint256 expectedVersion,
+        bytes32 claimHashAtChallenge,
+        bytes32 metadataHash,
+        string content
+    );
+
     /// @notice Create a new v0.6 bond, escrow the poster's bondAmount, and emit BondCreated.
     /// @dev `judgeProfileId` is stored at creation but not yet validated against a registry.
     ///      Registry wiring is added in a follow-up task. Callers may pass 0 in unit tests.
@@ -155,6 +165,57 @@ contract SimpleBondV6 {
             maxChallenges,
             claimHash,
             claimContent
+        );
+    }
+
+    function getChallengeCount(uint256 bondId) external view returns (uint256) {
+        return challenges[bondId].length;
+    }
+
+    function getChallenge(uint256 bondId, uint256 index) external view returns (Challenge memory) {
+        return challenges[bondId][index];
+    }
+
+    /// @notice File a new challenge against the current claim version.
+    /// @param expectedVersion Caller's pin to the claim version they intend to challenge; reverts on mismatch.
+    function challenge(
+        uint256 bondId,
+        uint256 expectedVersion,
+        string calldata content
+    ) external returns (uint256 challengeIndex) {
+        Bond storage b = bonds[bondId];
+        require(b.poster != address(0), "Unknown bond");
+        require(!b.settled, "Bond settled");
+        require(!b.closed, "Bond closed");
+        require(b.claimVersion == expectedVersion, "Stale claim version");
+        require(challenges[bondId].length < b.maxChallenges, "Max challenges reached");
+
+        bytes32 metadataHash = keccak256(bytes(content));
+
+        challengeIndex = challenges[bondId].length;
+        challenges[bondId].push(
+            Challenge({
+                challenger: msg.sender,
+                status: ChallengeStatus.Pending,
+                timestamp: block.timestamp,
+                challengeAtVersion: expectedVersion,
+                claimHashAtChallenge: b.claimHash,
+                metadataHash: metadataHash,
+                rulingMetadataHash: bytes32(0)
+            })
+        );
+        b.pendingCount += 1;
+
+        IERC20(b.token).safeTransferFrom(msg.sender, address(this), b.challengeAmount);
+
+        emit Challenged(
+            bondId,
+            challengeIndex,
+            msg.sender,
+            expectedVersion,
+            b.claimHash,
+            metadataHash,
+            content
         );
     }
 
