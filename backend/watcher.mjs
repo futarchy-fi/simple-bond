@@ -1,5 +1,5 @@
 import { ethers } from 'ethers';
-import { CHAINS, CONTRACT_ABI, CONFIRMATION_BLOCKS, BLOCK_CHUNK, POLL_INTERVAL_MS, EVENT_RECIPIENTS } from './config.mjs';
+import { CHAINS, abiForChain, CONFIRMATION_BLOCKS, BLOCK_CHUNK, POLL_INTERVAL_MS, EVENT_RECIPIENTS } from './config.mjs';
 import db from './db.mjs';
 import { sendEmail } from './mailer.mjs';
 import { eventEmail } from './templates.mjs';
@@ -21,9 +21,9 @@ async function resolveRecipients(contract, eventName, parsedLog, bondId) {
 
   for (const role of roles) {
     if (role === 'poster') {
-      addresses.add(bond.poster.toLowerCase());
+      if (bond.poster) addresses.add(bond.poster.toLowerCase());
     } else if (role === 'judge') {
-      addresses.add(bond.judge.toLowerCase());
+      if (bond.judge) addresses.add(bond.judge.toLowerCase());
     } else if (role === 'challenger') {
       // Single challenger from event args
       const challenger = parsedLog.args.challenger;
@@ -34,7 +34,7 @@ async function resolveRecipients(contract, eventName, parsedLog, bondId) {
         const count = await contract.getChallengeCount(bondId);
         for (let i = 0; i < Number(count); i++) {
           const ch = await contract.getChallenge(bondId, i);
-          addresses.add(ch.challenger.toLowerCase());
+          if (ch.challenger) addresses.add(ch.challenger.toLowerCase());
         }
       } catch (err) {
         console.error(`[watcher] Failed to read challenges for bond ${bondId}:`, err.message);
@@ -65,12 +65,20 @@ async function processLogs(contract, chainId, logs, iface) {
     const recipients = await resolveRecipients(contract, eventName, parsed, bondId);
     if (recipients.length === 0) continue;
 
-    // Get bond metadata for email
+    // Get bond metadata for email. v0.5 bonds expose a `metadata` string;
+    // v0.6 bonds expose `claimHash` (bytes32) with raw content emitted only in
+    // events. Fall back to the event content/contentHash when available.
     let metadata = '';
     try {
       const bond = await contract.bonds(bondId);
-      metadata = bond.metadata || '';
-    } catch {}
+      if (bond.metadata) metadata = bond.metadata;
+      else if (parsed.args.content) metadata = parsed.args.content;
+      else if (parsed.args.claimContent) metadata = parsed.args.claimContent;
+      else if (bond.claimHash) metadata = bond.claimHash;
+    } catch {
+      if (parsed.args.content) metadata = parsed.args.content;
+      else if (parsed.args.claimContent) metadata = parsed.args.claimContent;
+    }
 
     // Look up verified subscriptions for these addresses
     const subs = db.getVerifiedSubscriptions(chainId, recipients);
@@ -138,18 +146,19 @@ async function pollChain(chainId, provider, contract, iface) {
  * Start the event watcher for all configured chains.
  */
 export function startWatcher() {
-  const iface = new ethers.Interface(CONTRACT_ABI);
   const chainEntries = Object.entries(CHAINS).map(([id, cfg]) => {
     const chainId = parseInt(id, 10);
+    const abi = abiForChain(chainId);
     const provider = new ethers.JsonRpcProvider(cfg.rpc);
-    const contract = new ethers.Contract(cfg.contract, CONTRACT_ABI, provider);
-    return { chainId, provider, contract };
+    const contract = new ethers.Contract(cfg.contract, abi, provider);
+    const iface = new ethers.Interface(abi);
+    return { chainId, provider, contract, iface };
   });
 
   console.log(`[watcher] Starting event watcher for chains: ${chainEntries.map(c => c.chainId).join(', ')}`);
 
   async function tick() {
-    for (const { chainId, provider, contract } of chainEntries) {
+    for (const { chainId, provider, contract, iface } of chainEntries) {
       await pollChain(chainId, provider, contract, iface);
     }
   }

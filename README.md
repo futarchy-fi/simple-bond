@@ -5,11 +5,14 @@ A truth-machine bond contract. Make a claim, back it with money, and let the wor
 
 ## Repository Status
 
-The repository now contains both legacy deployed lines and the current `v0.5` core audit target.
+`v0.6` is being prepared on branch [`spec/v06`](https://github.com/futarchy-fi/simple-bond/tree/spec/v06): Ethereum mainnet, sUSDS, evolving claims, per-challenge concession, judge out-of-scope refunds, close/open, append-only profile registries. See `SPEC_V06.md`, `PLAN_V06.md`, `RELEASE_V06.md`, `CHANGELOG.md`. Code-complete with 608 tests passing; awaiting mainnet deploy.
+
+The live mainline still hosts the deployed `v0.5` audit target.
 
 - current core line: `contracts/core/SimpleBondV5.sol`
 - current minimal judge wrapper: `contracts/judges/ManualJudge.sol`
 - current `v0.5` audit docs: `AUDIT_SCOPE.md` and `SPEC.md`
+- next-release docs (on `spec/v06`): `SPEC_V06.md`, `AUDIT_SCOPE_V06.md`
 - legacy contract lines and the current Kleros adapter: `contracts/legacy/`
 
 ## Repository Layout

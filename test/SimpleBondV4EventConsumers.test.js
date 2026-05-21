@@ -3,7 +3,10 @@ const { ethers } = require("hardhat");
 const { readFileSync } = require("fs");
 const { resolve } = require("path");
 
-const FRONTEND_PATH = resolve(__dirname, "..", "frontend", "index.html");
+// frontend/index.html is the v0.6 UI as of the v0.6 cutover; the v0.5 UI
+// (the V4 event consumer this suite checks for) is archived under
+// frontend/legacy/v5-index.html.
+const FRONTEND_PATH = resolve(__dirname, "..", "frontend", "legacy", "v5-index.html");
 const BACKEND_CONFIG_PATH = resolve(__dirname, "..", "backend", "config.mjs");
 
 const DETAILED_BOND_CREATED_SIGNATURE =

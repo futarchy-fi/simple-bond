@@ -2,12 +2,16 @@ const { expect } = require("chai");
 const { readFileSync } = require("fs");
 const { resolve } = require("path");
 
-const FRONTEND_PATH = resolve(__dirname, "..", "..", "frontend", "index.html");
-const RUNTIME_CONFIG_PATH = resolve(__dirname, "..", "..", "frontend", "runtime-config.js");
+// frontend/index.html is the v0.6 UI as of the v0.6 cutover; the v0.5 UI is
+// archived under frontend/legacy/v5-index.html. This suite continues to
+// assert v0.5 frontend invariants against the archived file so anyone
+// forking or pinning the v0.5 line still gets the same behavioural contract.
+// Runtime-config assertions on legacy gnosis* keys are dropped because the
+// Gnosis chain is retired from the live UI (Phase 11 of PLAN_V06.md).
+const FRONTEND_PATH = resolve(__dirname, "..", "..", "frontend", "legacy", "v5-index.html");
 
-describe("SimpleBond v0.5 frontend surface", function () {
+describe("SimpleBond v0.5 frontend surface (archived)", function () {
   const frontendSource = readFileSync(FRONTEND_PATH, "utf8");
-  const runtimeConfigSource = readFileSync(RUNTIME_CONFIG_PATH, "utf8");
 
   it("uses the v0.5 refund batching surface instead of the old judge registry ABI", function () {
     expect(frontendSource).to.include("function claimRefunds(uint256 bondId, uint256 maxCount)");
@@ -41,12 +45,5 @@ describe("SimpleBond v0.5 frontend surface", function () {
     expect(frontendSource).to.include("function tokenCount() view returns (uint256)");
     expect(frontendSource).to.include('const judgeProfileRouteId = getJudgeProfileRouteId()');
     expect(frontendSource).to.include('const judgeParam = params.get("judge")');
-
-    expect(runtimeConfigSource).to.include('gnosisBondContract: "0x7dF485C013f8671B656d585f1d1411640B1D2776"');
-    expect(runtimeConfigSource).to.include("gnosisDeployBlock: 45569363");
-    expect(runtimeConfigSource).to.include('gnosisJudgeProfileRegistry: "0x5f2000E438533662A689311672a41aca3EDC88DD"');
-    expect(runtimeConfigSource).to.include("gnosisJudgeRegistry:");
-    expect(runtimeConfigSource).to.include('gnosisOfficialDirectory: "0xb32263E363f668f97137D53baF69CF7Fb388c343"');
-    expect(runtimeConfigSource).to.not.include("judgeApiBase");
   });
 });

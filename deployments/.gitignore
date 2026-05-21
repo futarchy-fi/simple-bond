@@ -1,0 +1,2 @@
+# Local hardhat artifacts only — real deployments (sepolia.json, mainnet.json) are committed.
+chain*.json

@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width">
+    <title>SimpleBond v0.6 — smoke test</title>
+    <style>
+        body { font-family: monospace; max-width: 900px; margin: 30px auto; padding: 0 20px; color: #222; }
+        h1 { font-size: 18px; }
+        label { display: block; margin: 12px 0 4px; font-weight: bold; }
+        select, input, button { font: inherit; padding: 6px 8px; }
+        input { width: 380px; }
+        pre { background: #f4f4f4; padding: 10px; overflow-x: auto; max-height: 360px; }
+        .row { display: flex; gap: 8px; align-items: center; }
+        .ok { color: #060; } .err { color: #b00; }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/ethers@6.16.0/dist/ethers.umd.min.js"></script>
+    <script src="../runtime-config.js"></script>
+    <script src="./abi.js"></script>
+</head>
+<body>
+    <h1>SimpleBond v0.6 — smoke test</h1>
+    <p>Minimal page to verify v0.6 contracts deploy correctly and the runtime
+       config + ABI shape work end-to-end. Use this against Sepolia (or local
+       hardhat fork) before promoting the full UI in <code>frontend/index.html</code>
+       to v0.6.</p>
+
+    <div class="row">
+        <label for="chain">Chain:</label>
+        <select id="chain"></select>
+        <button id="connect">Connect wallet</button>
+        <span id="account"></span>
+    </div>
+
+    <label>Contract address (auto-loaded from runtime-config):</label>
+    <input id="contract" readonly>
+
+    <div class="row">
+        <button id="readNext">Read nextBondId</button>
+        <button id="readBond">Read bond #</button>
+        <input id="bondId" type="number" min="0" value="0" style="width: 80px">
+    </div>
+
+    <label>Output:</label>
+    <pre id="out">(no output yet)</pre>
+
+<script>
+const cfg = window.SIMPLE_BOND_CONFIG || {};
+const chains = cfg.chains || {};
+const select = document.getElementById('chain');
+const contractInput = document.getElementById('contract');
+const out = document.getElementById('out');
+
+function log(msg, isErr) {
+    const line = (typeof msg === 'string') ? msg : JSON.stringify(msg, null, 2);
+    out.textContent = (isErr ? '[ERR] ' : '') + line + '\n' + out.textContent;
+    out.className = isErr ? 'err' : 'ok';
+}
+
+function populateChainSelect() {
+    const ids = Object.keys(chains);
+    if (ids.length === 0) {
+        log('No chains in SIMPLE_BOND_CONFIG.chains — populate runtime-config.js', true);
+        return;
+    }
+    for (const id of ids) {
+        const c = chains[id];
+        if (c.bondVersion !== 6) continue; // v0.6 smoke only
+        const opt = document.createElement('option');
+        opt.value = id;
+        opt.textContent = `${id} — ${c.name}`;
+        select.appendChild(opt);
+    }
+    if (select.options.length === 0) {
+        log('No v0.6 chains found in runtime-config.chains', true);
+    } else {
+        onChainChange();
+    }
+}
+
+function onChainChange() {
+    const id = select.value;
+    const c = chains[id];
+    contractInput.value = c && c.bondContract ? c.bondContract : '(missing)';
+}
+select.addEventListener('change', onChainChange);
+
+let provider, signer, account, bondContract;
+
+async function connect() {
+    if (!window.ethereum) { log('No window.ethereum — install MetaMask', true); return; }
+    provider = new ethers.BrowserProvider(window.ethereum);
+    await provider.send('eth_requestAccounts', []);
+    signer = await provider.getSigner();
+    account = await signer.getAddress();
+    document.getElementById('account').textContent = account;
+    const id = select.value;
+    const c = chains[id];
+    // Try to switch network
+    try {
+        await window.ethereum.request({
+            method: 'wallet_switchEthereumChain',
+            params: [{ chainId: '0x' + Number(id).toString(16) }],
+        });
+    } catch (e) {
+        log(`switchEthereumChain: ${e.message}`, true);
+    }
+    bondContract = new ethers.Contract(c.bondContract, window.SIMPLE_BOND_V6_ABI, signer);
+    log(`Connected ${account} on chain ${id}`);
+}
+
+document.getElementById('connect').addEventListener('click', () => connect().catch(e => log(e.message, true)));
+
+document.getElementById('readNext').addEventListener('click', async () => {
+    try {
+        const id = select.value;
+        const c = chains[id];
+        const rpc = c.rpc || (window.ethereum ? null : 'no rpc');
+        const p = window.ethereum ? provider : new ethers.JsonRpcProvider(rpc);
+        const ct = new ethers.Contract(c.bondContract, window.SIMPLE_BOND_V6_ABI, p);
+        const n = await ct.nextBondId();
+        log(`nextBondId = ${n.toString()}`);
+    } catch (e) { log(e.message, true); }
+});
+
+document.getElementById('readBond').addEventListener('click', async () => {
+    try {
+        const id = select.value;
+        const c = chains[id];
+        const p = window.ethereum ? provider : new ethers.JsonRpcProvider(c.rpc);
+        const ct = new ethers.Contract(c.bondContract, window.SIMPLE_BOND_V6_ABI, p);
+        const bondId = document.getElementById('bondId').value;
+        const b = await ct.bonds(bondId);
+        log({
+            poster: b.poster, judge: b.judge, token: b.token,
+            bondAmount: b.bondAmount.toString(),
+            challengeAmount: b.challengeAmount.toString(),
+            judgeFee: b.judgeFee.toString(),
+            claimVersion: b.claimVersion.toString(),
+            claimHash: b.claimHash,
+            judgeProfileId: b.judgeProfileId.toString(),
+            pendingCount: b.pendingCount.toString(),
+            settled: b.settled, closed: b.closed,
+        });
+    } catch (e) { log(e.message, true); }
+});
+
+populateChainSelect();
+</script>
+</body>
+</html>
