@@ -6,3 +6,5 @@ data/
 
 # deploy secrets (per-host, never committed)
 deploy/bond-notify.env
+test-results/
+playwright-report/

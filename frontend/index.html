@@ -1,552 +1,2421 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>SimpleBond v0.6</title>
-    <style>
-        body { font-family: Georgia, serif; max-width: 960px; margin: 30px auto; padding: 0 20px; color: #222; }
-        h1, h2, h3 { font-family: Georgia, serif; }
-        header { display: flex; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid #ddd; flex-wrap: wrap; }
-        nav { display: flex; gap: 10px; }
-        nav a { text-decoration: none; color: #036; padding: 4px 8px; border-radius: 4px; }
-        nav a.active { background: #eef; }
-        label { display: block; margin: 10px 0 4px; font-weight: bold; font-size: 14px; }
-        input, select, textarea, button { font: inherit; padding: 6px 8px; }
-        input, textarea, select { width: 100%; box-sizing: border-box; }
-        textarea { min-height: 80px; }
-        button { cursor: pointer; padding: 8px 14px; }
-        button.primary { background: #036; color: #fff; border: none; border-radius: 4px; }
-        button.warn { background: #b00; color: #fff; border: none; border-radius: 4px; }
-        .card { border: 1px solid #ddd; border-radius: 6px; padding: 14px; margin: 10px 0; }
-        .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-        .grid { display: grid; grid-template-columns: 180px 1fr; gap: 6px 12px; font-size: 14px; }
-        .grid div:nth-child(odd) { color: #666; }
-        .status { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; }
-        .status-Pending { background: #ffc; }
-        .status-Won { background: #cfc; }
-        .status-Lost { background: #fcc; }
-        .status-Conceded { background: #ddf; }
-        .status-RejectedByJudge { background: #eed; }
-        .status-Refunded { background: #ddd; }
-        pre { background: #f4f4f4; padding: 8px; overflow-x: auto; font-size: 12px; max-height: 300px; }
-        #log { font-size: 12px; }
-        .err { color: #b00; }
-        .ok { color: #060; }
-        small { color: #666; }
-    </style>
-    <script src="https://cdn.jsdelivr.net/npm/ethers@6.16.0/dist/ethers.umd.min.js"></script>
-    <script src="./runtime-config.js"></script>
-    <script src="./v6/abi.js"></script>
-    <script src="./v6/manualJudgeV6.bytecode.js"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SimpleBond v0.6</title>
+<script src="https://cdn.jsdelivr.net/npm/ethers@6.16.0/dist/ethers.umd.min.js"></script>
+<script src="./runtime-config.js"></script>
+<script src="./v6/abi.js"></script>
+<script src="./v6/manualJudgeV6.bytecode.js"></script>
+<style>
+  :root {
+    --bg: #ffffff;
+    --surface: #fafafa;
+    --surface-2: #f3f4f6;
+    --border: #e5e7eb;
+    --text: #111827;
+    --muted: #6b7280;
+    --accent: #4f46e5;
+    --accent-hover: #6366f1;
+    --green: #059669;
+    --red: #dc2626;
+    --orange: #d97706;
+    --blue: #2563eb;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    line-height: 1.5;
+  }
+  h1, h2, h3, h4 { font-family: Georgia, serif; font-weight: 600; }
+  code, pre, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+  .container { max-width: 960px; margin: 0 auto; padding: 30px; }
+
+  header {
+    display: flex; align-items: center; gap: 12px;
+    padding: 14px 0; border-bottom: 1px solid var(--border); margin-bottom: 24px;
+    flex-wrap: wrap;
+  }
+  header h1 { font-size: 24px; flex: 0 0 auto; }
+  header h1 small { color: var(--muted); font-weight: 400; font-family: system-ui, sans-serif; font-size: 13px; margin-left: 6px; }
+  header .header-spacer { flex: 1; }
+  .header-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .chain-select {
+    background: var(--bg); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 28px 6px 10px; font-size: 13px; cursor: pointer;
+    outline: none; appearance: none; -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%236b7280'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 10px center;
+  }
+  .chain-select:hover, .chain-select:focus { border-color: var(--accent); }
+  .wallet-info { font-size: 13px; }
+  .wallet-info .address {
+    font-family: ui-monospace, monospace;
+    color: var(--text); background: var(--surface-2);
+    padding: 4px 10px; border-radius: 6px; cursor: pointer;
+    border: 1px solid var(--border);
+  }
+  .wallet-info .address:hover { border-color: var(--accent); }
+  .notify-bell { display: none; }
+
+  button {
+    background: var(--accent); color: #fff; border: none; padding: 10px 16px;
+    border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500;
+    font-family: inherit;
+    transition: background 0.15s;
+  }
+  button:hover { background: var(--accent-hover); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  button.secondary {
+    background: #fff; color: var(--text); border: 1px solid var(--border);
+  }
+  button.secondary:hover { border-color: var(--accent); color: var(--accent); background: #fff; }
+  button.danger { background: var(--red); }
+  button.danger:hover { background: #ef4444; }
+  button.success { background: var(--green); }
+  button.success:hover { background: #10b981; }
+  button.ghost { background: transparent; color: var(--accent); padding: 4px 8px; font-size: 13px; }
+  button.ghost:hover { background: var(--surface-2); }
+
+  input, select, textarea {
+    width: 100%; padding: 10px 12px; background: #fff;
+    border: 1px solid var(--border); border-radius: 6px;
+    color: var(--text); font-size: 14px; outline: none;
+    font-family: inherit;
+  }
+  input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+  input::placeholder, textarea::placeholder { color: var(--muted); }
+  textarea { resize: vertical; min-height: 60px; }
+  label { display: block; font-size: 13px; color: var(--text); margin-bottom: 4px; font-weight: 500; }
+
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 16px; margin-bottom: 16px;
+  }
+  .card h2 { font-size: 18px; margin-bottom: 12px; }
+  .card h3 { font-size: 15px; margin-bottom: 10px; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .row > * { flex: 0 1 auto; }
+  .form-group { margin-bottom: 12px; }
+  .btn-row { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .hidden { display: none !important; }
+
+  /* Nav tabs */
+  nav.tabs { display: flex; gap: 0; margin-bottom: 24px; border-bottom: 1px solid var(--border); }
+  nav.tabs .tab {
+    flex: 0 0 auto; padding: 10px 18px; cursor: pointer;
+    border-bottom: 2px solid transparent; color: var(--muted);
+    font-size: 14px; font-weight: 500; background: transparent;
+    border-top: none; border-left: none; border-right: none;
+    border-radius: 0; margin-bottom: -1px;
+  }
+  nav.tabs .tab:hover { color: var(--text); background: transparent; }
+  nav.tabs .tab.active { border-bottom-color: var(--accent); color: var(--accent); }
+
+  /* Status badges */
+  .status-badge {
+    display: inline-block; padding: 3px 10px; border-radius: 12px;
+    font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;
+    border: 1px solid transparent;
+  }
+  .status-active, .status-open { background: #ecfdf5; color: #047857; border-color: #a7f3d0; }
+  .status-closed { background: #f3f4f6; color: #4b5563; border-color: #d1d5db; }
+  .status-settled { background: #eef2ff; color: #4338ca; border-color: #c7d2fe; }
+  .status-disputed { background: #fef3c7; color: #92400e; border-color: #fde68a; }
+  .status-pending { background: #fef3c7; color: #92400e; border-color: #fde68a; }
+  .status-won { background: #ecfdf5; color: #047857; border-color: #a7f3d0; }
+  .status-lost { background: #fee2e2; color: #b91c1c; border-color: #fecaca; }
+  .status-conceded { background: #fff7ed; color: #c2410c; border-color: #fed7aa; }
+  .status-rejectedbyjudge { background: #f5f3ff; color: #6d28d9; border-color: #ddd6fe; }
+  .status-refunded { background: #f3f4f6; color: #4b5563; border-color: #d1d5db; }
+  .status-timedout { background: #fef3c7; color: #92400e; border-color: #fde68a; }
+  .status-expired { background: #fef3c7; color: #92400e; border-color: #fde68a; }
+
+  /* Message styles */
+  .msg { padding: 10px 14px; border-radius: 6px; margin-top: 10px; font-size: 13px; }
+  .msg-error { background: #fef2f2; color: var(--red); border: 1px solid #fecaca; }
+  .msg-success { background: #f0fdf4; color: var(--green); border: 1px solid #bbf7d0; }
+  .msg-info { background: #eff6ff; color: var(--blue); border: 1px solid #bfdbfe; }
+  .msg-warn { background: #fffbeb; color: var(--orange); border: 1px solid #fde68a; }
+  .err { color: var(--red); }
+  .ok { color: var(--green); }
+
+  /* Spinner */
+  .spinner {
+    display: inline-block; width: 14px; height: 14px;
+    border: 2px solid rgba(79,70,229,0.25); border-top-color: var(--accent);
+    border-radius: 50%; animation: spin 0.6s linear infinite;
+    margin-right: 6px; vertical-align: middle;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading { color: var(--muted); padding: 20px; text-align: center; }
+
+  /* Network banner */
+  .network-banner {
+    background: #fffbeb; border: 1px solid #fde68a; color: #92400e;
+    padding: 10px 14px; border-radius: 6px; margin-bottom: 16px;
+    display: flex; align-items: center; justify-content: space-between;
+    flex-wrap: wrap; gap: 8px;
+  }
+  .network-banner button {
+    background: var(--orange); color: #fff; padding: 6px 12px; font-size: 13px;
+  }
+
+  /* TX Stepper */
+  .tx-stepper {
+    display: flex; flex-direction: column; gap: 0; margin: 12px 0;
+    background: #fff; border-radius: 8px; padding: 16px;
+    border: 1px solid var(--border);
+  }
+  .tx-step {
+    display: flex; align-items: center; gap: 12px; padding: 8px 0;
+    position: relative; color: var(--muted); font-size: 13px;
+  }
+  .tx-step:not(:last-child)::after {
+    content: ''; position: absolute; left: 13px; top: 36px;
+    width: 2px; height: calc(100% - 18px); background: var(--border);
+  }
+  .tx-step .step-num {
+    width: 28px; height: 28px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--surface); border: 2px solid var(--border);
+    font-size: 12px; font-weight: 600; color: var(--muted);
+    flex-shrink: 0; z-index: 1;
+  }
+  .tx-step.tx-step-active { color: var(--text); }
+  .tx-step.tx-step-active .step-num {
+    border-color: var(--accent); color: var(--accent); background: #fff;
+  }
+  .tx-step.tx-step-active .step-num .spinner {
+    width: 12px; height: 12px; margin: 0;
+  }
+  .tx-step.tx-step-done { color: var(--green); }
+  .tx-step.tx-step-done .step-num {
+    background: var(--green); border-color: var(--green); color: #fff;
+  }
+  .tx-step.tx-step-done::after { background: var(--green); }
+  .tx-step .step-label { flex: 1; }
+
+  /* Success card */
+  .success-card {
+    background: #f0fdf4; border: 1px solid #bbf7d0;
+    border-radius: 8px; padding: 18px; text-align: center; margin-top: 12px;
+  }
+  .success-card .sc-label { font-size: 13px; color: var(--green); }
+  .success-card .sc-id { font-size: 26px; font-weight: 700; color: var(--green); margin-top: 4px; }
+  .success-card .sc-actions { margin-top: 12px; display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+
+  /* Bond detail grid */
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  @media (max-width: 640px) {
+    .grid-2, .grid-3 { grid-template-columns: 1fr; }
+    nav.tabs { overflow-x: auto; }
+  }
+  .bond-field .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+  .bond-field .value { font-size: 14px; word-break: break-all; margin-top: 2px; }
+  .bond-field .value.mono { font-family: ui-monospace, monospace; font-size: 13px; }
+  .bond-field a { color: var(--accent); text-decoration: none; }
+  .bond-field a:hover { text-decoration: underline; }
+
+  /* Browse / list cards */
+  .bond-list-item {
+    background: #fff; border: 1px solid var(--border); border-radius: 8px;
+    padding: 14px; margin-bottom: 10px; cursor: pointer;
+    transition: border-color 0.15s, transform 0.15s;
+  }
+  .bond-list-item:hover { border-color: var(--accent); transform: translateY(-1px); }
+  .bond-list-item .bli-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+  .bond-list-item .bli-id { font-weight: 600; font-size: 15px; }
+  .bond-list-item .bli-claim {
+    font-size: 14px; color: var(--text); margin: 4px 0;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .bond-list-item .bli-meta {
+    font-size: 12px; color: var(--muted); display: flex; gap: 14px;
+    flex-wrap: wrap; margin-top: 6px;
+  }
+  .bond-list-item .bli-meta .stat-val { color: var(--text); font-weight: 500; }
+
+  /* Belief thresholds card */
+  .belief-card {
+    background: #fff; border: 1px solid var(--border); border-radius: 8px;
+    padding: 14px; margin-top: 12px;
+  }
+  .belief-card h3 { font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; font-family: system-ui, sans-serif; }
+  .belief-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .belief-item { padding: 12px; border-radius: 6px; text-align: center; border: 1px solid var(--border); }
+  .belief-challenger { background: #eff6ff; border-color: #bfdbfe; }
+  .belief-poster { background: #fff7ed; border-color: #fed7aa; }
+  .belief-item .belief-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); }
+  .belief-item .belief-value { font-size: 22px; font-weight: 700; margin-top: 4px; font-family: Georgia, serif; }
+  .belief-challenger .belief-value { color: var(--blue); }
+  .belief-poster .belief-value { color: var(--orange); }
+  .belief-item .belief-desc { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+  /* Risk/reward card */
+  .risk-reward-card {
+    background: #fff; border: 1px solid var(--border); border-radius: 8px;
+    padding: 16px; margin-top: 12px;
+  }
+  .risk-reward-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+  .reward-item, .risk-item { padding: 12px; border-radius: 6px; text-align: center; border: 1px solid var(--border); }
+  .reward-item { background: #ecfdf5; border-color: #a7f3d0; }
+  .risk-item { background: #fee2e2; border-color: #fecaca; }
+  .reward-item .rr-label, .risk-item .rr-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .reward-item .rr-label { color: var(--green); }
+  .risk-item .rr-label { color: var(--red); }
+  .reward-item .rr-value, .risk-item .rr-value { font-size: 20px; font-weight: 700; margin-top: 4px; font-family: Georgia, serif; }
+  .reward-item .rr-value { color: var(--green); }
+  .risk-item .rr-value { color: var(--red); }
+  .rr-note { font-size: 12px; color: var(--muted); margin-bottom: 12px; }
+
+  /* Challenge card */
+  .challenge-item {
+    background: #fff; border: 1px solid var(--border); border-radius: 8px;
+    padding: 14px; margin-bottom: 10px;
+  }
+  .challenge-item .ci-head { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+  .challenge-item .ci-idx { font-family: ui-monospace, monospace; color: var(--muted); font-weight: 600; }
+  .challenge-item .ci-grid { display: grid; grid-template-columns: 160px 1fr; gap: 4px 12px; font-size: 13px; margin-top: 6px; }
+  .challenge-item .ci-grid > div:nth-child(odd) { color: var(--muted); }
+  .challenge-item .ci-actions { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+
+  /* Wizard */
+  .wizard {
+    border: 1px solid var(--border); border-radius: 8px;
+    background: #fff; padding: 18px;
+  }
+  .wizard-top { margin-bottom: 16px; }
+  .wizard-step-count { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+  .wizard-progress { width: 100%; height: 6px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+  .wizard-progress-bar { height: 100%; background: var(--accent); width: 20%; transition: width 0.2s ease; }
+  .wizard-stage { min-height: 240px; }
+  .wizard-stage-header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .wizard-stage-num {
+    width: 26px; height: 26px; border-radius: 50%;
+    background: #eef2ff; color: var(--accent);
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 700;
+  }
+  .wizard-stage-title { font-size: 16px; font-weight: 600; font-family: Georgia, serif; }
+  .wizard-stage-hint { color: var(--muted); font-size: 13px; margin-bottom: 12px; }
+  .wizard-nav { display: flex; justify-content: space-between; gap: 10px; margin-top: 16px; }
+  .wizard-nav .nav-spacer { flex: 1; }
+
+  .preset-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
+  .preset {
+    background: #fff; border: 1px solid var(--border); color: var(--muted);
+    padding: 6px 12px; border-radius: 6px; font-size: 12px;
+    cursor: pointer; flex: 1; min-width: 60px;
+  }
+  .preset:hover { border-color: var(--accent); color: var(--text); }
+  .preset.active { border-color: var(--accent); color: var(--accent); background: #eef2ff; }
+
+  /* Summary */
+  .summary-card {
+    padding: 14px; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--surface);
+  }
+  .summary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; }
+  .summary-item.full { grid-column: 1 / -1; }
+  .summary-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px; }
+  .summary-value { font-size: 14px; color: var(--text); word-break: break-word; }
+  .advanced-panel { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+
+  /* Judge onboarding */
+  .judge-onboarding {
+    background: #fff; padding: 16px; border-radius: 8px;
+    border: 1px solid var(--border); margin-bottom: 16px;
+  }
+  .judge-onboarding h3 { margin-bottom: 4px; }
+  .judge-onboarding .status { color: var(--muted); font-size: 13px; margin-top: 6px; }
+  .judge-onboarding .address-row { font-size: 13px; margin-top: 8px; }
+  .judge-onboarding .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+
+  .judge-item {
+    background: #fff; border: 1px solid var(--border); border-radius: 8px;
+    padding: 14px; margin-bottom: 10px;
+  }
+  .judge-item .ji-head { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; margin-bottom: 6px; }
+  .judge-item .ji-id { font-weight: 600; }
+  .judge-item .ji-content {
+    white-space: pre-wrap; font-size: 13px; color: var(--text); margin: 6px 0;
+    background: var(--surface); padding: 10px; border-radius: 6px; border: 1px solid var(--border);
+  }
+  .judge-item .ji-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+
+  /* My bonds sections */
+  .my-section { margin-bottom: 24px; }
+  .my-section h3 { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .my-section .count {
+    font-size: 12px; background: var(--surface-2); padding: 2px 8px;
+    border-radius: 10px; color: var(--muted); font-family: system-ui;
+  }
+  .role-hint { font-size: 12px; color: var(--accent); margin-top: 4px; }
+
+  /* Filter bar */
+  .filter-bar {
+    display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px;
+    padding: 10px; border: 1px solid var(--border); border-radius: 6px; background: #fff;
+  }
+  .filter-bar input, .filter-bar select { flex: 1; min-width: 120px; max-width: 260px; }
+  .filter-bar button { flex: 0 0 auto; }
+
+  /* Log */
+  #log {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 6px; padding: 10px; max-height: 200px; overflow-y: auto;
+    font-family: ui-monospace, monospace; font-size: 12px; white-space: pre-wrap;
+  }
+  #logCard { margin-top: 30px; }
+
+  /* Judge profile page */
+  .jp-header { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; margin-bottom: 16px; flex-wrap: wrap; }
+  .jp-title { font-size: 24px; }
+  .jp-subtitle { color: var(--muted); font-size: 13px; margin-top: 4px; }
+  .jp-content { white-space: pre-wrap; line-height: 1.5; font-size: 14px; background: #fff; padding: 14px; border-radius: 6px; border: 1px solid var(--border); }
+
+  /* Empty state */
+  .empty-state { text-align: center; padding: 30px 16px; color: var(--muted); }
+  .empty-state a { color: var(--accent); }
+
+  footer {
+    text-align: center; padding: 20px 0; color: var(--muted); font-size: 12px;
+    border-top: 1px solid var(--border); margin-top: 24px;
+  }
+  footer a { color: var(--accent); text-decoration: none; }
+  footer a:hover { text-decoration: underline; }
+</style>
 </head>
 <body>
-    <header>
-        <h1 style="margin: 0; flex: 1;">SimpleBond <small>v0.6</small></h1>
-        <select id="chainSelect"></select>
-        <button id="connectBtn" class="primary">Connect</button>
-        <span id="account"></span>
-    </header>
+<div class="container">
+  <header>
+    <h1>SimpleBond <small>v0.6</small></h1>
+    <div class="header-spacer"></div>
+    <div class="header-right">
+      <select id="chainSelect" class="chain-select"></select>
+      <div id="notifyBell" class="notify-bell hidden"></div>
+      <div id="walletInfo" class="wallet-info hidden">
+        <span class="address mono" id="walletAddr" title="Click to disconnect"></span>
+      </div>
+      <button id="connectBtn">Connect wallet</button>
+    </div>
+  </header>
 
-    <nav>
-        <a href="#" data-view="list">Bonds</a>
-        <a href="#" data-view="create">Create bond</a>
-        <a href="#" data-view="profiles">Profiles</a>
-        <a href="#" data-view="about">About</a>
-    </nav>
+  <div id="networkBanner" class="network-banner hidden">
+    <span id="networkBannerText"></span>
+    <button id="networkSwitchBtn">Switch network</button>
+  </div>
 
-    <main id="view"></main>
+  <nav class="tabs" id="tabs">
+    <button class="tab" data-route="create">Create</button>
+    <button class="tab" data-route="browse">Browse</button>
+    <button class="tab" data-route="judges">Judges</button>
+    <button class="tab" data-route="my">My Bonds</button>
+    <button class="tab" data-route="view">View</button>
+  </nav>
 
-    <section class="card">
-        <h3>Log</h3>
-        <pre id="log">(no output)</pre>
-    </section>
+  <main id="view"></main>
+
+  <section class="card" id="logCard">
+    <h3>Log</h3>
+    <pre id="log">(no output)</pre>
+  </section>
+
+  <footer>
+    <a href="https://github.com/futarchy-fi/simple-bond" target="_blank" rel="noopener">GitHub</a>
+    &nbsp;&middot;&nbsp; <span id="footerChain">—</span>
+    &nbsp;&middot;&nbsp; <a href="https://github.com/futarchy-fi/simple-bond/blob/main/SPEC_V06.md" target="_blank" rel="noopener">Spec</a>
+  </footer>
+</div>
 
 <script>
 (function () {
-    const $ = (id) => document.getElementById(id);
-    const cfg = window.SIMPLE_BOND_CONFIG || {};
-    const chains = cfg.chains || {};
-    let activeChainId = String(cfg.defaultChainId || Object.keys(chains)[0]);
-    let provider = null;
-    let signer = null;
-    let account = null;
+  // ─── Globals & helpers ─────────────────────────────────────────────────
+  const $ = (id) => document.getElementById(id);
+  const cfg = window.SIMPLE_BOND_CONFIG || {};
+  const chains = cfg.chains || {};
 
-    const STATUS_NAMES = ["Pending", "Won", "Lost", "Conceded", "RejectedByJudge", "Refunded"];
+  let activeChainId = String(cfg.defaultChainId || Object.keys(chains)[0] || '');
+  let provider = null;        // EIP-1193 BrowserProvider (only when wallet connected)
+  let signer = null;
+  let account = null;
+  let walletChainId = null;   // current chain id reported by the wallet
 
-    function log(msg, level) {
-        const line = (typeof msg === 'string') ? msg : JSON.stringify(msg, null, 2);
-        const cls = level === 'err' ? 'err' : 'ok';
-        const el = $('log');
-        const ts = new Date().toLocaleTimeString();
-        el.innerHTML = `<span class="${cls}">[${ts}] ${line}</span>\n` + el.innerHTML;
+  // optimistic / read caches
+  const allowanceCache = {};  // `${token}:${spender}` -> bigint
+  const tokenMetaCache = {};  // address -> { decimals, symbol }
+  const judgeProfileEntryCache = {}; // `${chainId}:${entryId}` -> entry
+  let createPrefill = {};     // { judgeProfileId? }
+
+  // Browse auto-refresh handle
+  let browseRefreshTimer = null;
+
+  const STATUS_NAMES = ["Pending", "Won", "Lost", "Conceded", "RejectedByJudge", "Refunded"];
+  const STATUS_CLASSES = ["pending", "won", "lost", "conceded", "rejectedbyjudge", "refunded"];
+
+  function log(msg, level) {
+    const line = (typeof msg === 'string') ? msg : JSON.stringify(msg, null, 2);
+    const cls = level === 'err' ? 'err' : (level === 'info' ? '' : 'ok');
+    const el = $('log');
+    const ts = new Date().toLocaleTimeString();
+    const prefix = el.textContent === '(no output)' ? '' : el.innerHTML;
+    el.innerHTML = `<span class="${cls}">[${ts}] ${escapeHtml(line)}</span>\n` + prefix;
+  }
+
+  function chain() { return chains[activeChainId]; }
+  function explorerAddr(addr) {
+    const c = chain();
+    return c && c.explorer ? `${c.explorer}/address/${addr}` : '#';
+  }
+  function explorerTx(hash) {
+    const c = chain();
+    return c && c.explorer ? `${c.explorer}/tx/${hash}` : '#';
+  }
+  function short(a) { if (!a) return ''; return a.slice(0, 6) + '…' + a.slice(-4); }
+  function escapeHtml(s) {
+    if (s == null) return '';
+    return String(s).replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+  }
+  function addressLink(addr, label) {
+    if (!addr) return '<span class="mono">—</span>';
+    const txt = label || short(addr);
+    return `<a class="mono" href="${explorerAddr(addr)}" target="_blank" rel="noopener" title="${addr}">${escapeHtml(txt)}</a>`;
+  }
+  function fmtUnits(amount, decimals) {
+    try { return parseFloat(ethers.formatUnits(amount, decimals || 18)).toLocaleString(undefined, { maximumFractionDigits: 4 }); }
+    catch { return String(amount); }
+  }
+  function fmtSeconds(seconds) {
+    const s = Number(seconds);
+    if (!s) return '0';
+    if (s >= 86400) return (s / 86400).toFixed(s % 86400 === 0 ? 0 : 1) + 'd';
+    if (s >= 3600) return (s / 3600).toFixed(s % 3600 === 0 ? 0 : 1) + 'h';
+    if (s >= 60) return (s / 60).toFixed(s % 60 === 0 ? 0 : 1) + 'm';
+    return s + 's';
+  }
+  function fmtTime(unix) {
+    const n = Number(unix);
+    if (!n) return '—';
+    return new Date(n * 1000).toLocaleString();
+  }
+  function fmtCountdown(unix) {
+    const n = Number(unix);
+    const diff = n - Math.floor(Date.now() / 1000);
+    if (diff <= 0) return 'expired';
+    const days = Math.floor(diff / 86400);
+    const hours = Math.floor((diff % 86400) / 3600);
+    if (days > 30) return `${Math.floor(days / 30)} months`;
+    if (days > 0) return `${days}d ${hours}h`;
+    const mins = Math.floor((diff % 3600) / 60);
+    return `${hours}h ${mins}m`;
+  }
+
+  // ─── Defensive helpers (ported from v0.5) ─────────────────────────────
+  async function waitForTx(tx, retries = 5) {
+    for (let i = 0; i < retries; i++) {
+      try {
+        const receipt = await tx.wait();
+        if (receipt) return receipt;
+      } catch (err) {
+        if (i === retries - 1) throw err;
+        await new Promise(r => setTimeout(r, 3000 * (i + 1)));
+      }
     }
+    throw new Error('Transaction never confirmed');
+  }
+  function withTimeout(promise, ms, fallback) {
+    return Promise.race([promise, new Promise(r => setTimeout(() => r(fallback), ms))]);
+  }
+  function isUserRejection(err) {
+    if (!err) return false;
+    if (err.code === 4001 || err.code === 'ACTION_REJECTED') return true;
+    const msg = String(err.reason || err.shortMessage || err.message || '').toLowerCase();
+    return /user rejected|user denied|action_rejected|user cancelled/.test(msg);
+  }
+  function friendlyError(err) {
+    if (isUserRejection(err)) return 'Transaction cancelled.';
+    return err?.reason || err?.shortMessage || err?.message || String(err);
+  }
+  async function tokenMeta(addr) {
+    const k = addr.toLowerCase();
+    if (tokenMetaCache[k]) return tokenMetaCache[k];
+    const erc20 = new ethers.Contract(addr, [
+      'function decimals() view returns (uint8)',
+      'function symbol() view returns (string)',
+    ], readProvider());
+    let decimals = 18, symbol = '???';
+    try { decimals = Number(await erc20.decimals()); } catch (_) {}
+    try { symbol = await erc20.symbol(); } catch (_) {}
+    tokenMetaCache[k] = { decimals, symbol };
+    return tokenMetaCache[k];
+  }
 
-    function chain() { return chains[activeChainId]; }
-    function explorerLink(address) {
-        const c = chain();
-        return c && c.explorer ? `${c.explorer}/address/${address}` : '#';
+  // ─── Contract factories ────────────────────────────────────────────────
+  function readProvider() {
+    const c = chain();
+    if (!c || !c.rpc) throw new Error(`Missing rpc in runtime-config.chains[${activeChainId}]`);
+    return new ethers.JsonRpcProvider(c.rpc);
+  }
+  function bondReadContract() {
+    const c = chain();
+    if (!c || !c.bondContract) throw new Error(`Missing bondContract in runtime-config.chains[${activeChainId}]`);
+    return new ethers.Contract(c.bondContract, window.SIMPLE_BOND_V6_ABI, readProvider());
+  }
+  function bondWriteContract() {
+    const c = chain();
+    if (!signer) throw new Error('Connect a wallet first');
+    return new ethers.Contract(c.bondContract, window.SIMPLE_BOND_V6_ABI, signer);
+  }
+  function judgeRegRead() {
+    const c = chain();
+    if (!c || !c.judgeProfileRegistry) throw new Error('Missing judgeProfileRegistry in runtime-config');
+    return new ethers.Contract(c.judgeProfileRegistry, window.SIMPLE_BOND_V6_JUDGE_REGISTRY_ABI, readProvider());
+  }
+  function judgeRegWrite() {
+    const c = chain();
+    if (!signer) throw new Error('Connect a wallet first');
+    return new ethers.Contract(c.judgeProfileRegistry, window.SIMPLE_BOND_V6_JUDGE_REGISTRY_ABI, signer);
+  }
+  function manualJudgeContract(addr, withSigner) {
+    return new ethers.Contract(addr, window.SIMPLE_BOND_V6_MANUAL_JUDGE_ABI, withSigner ? signer : readProvider());
+  }
+  function erc20Contract(addr, withSigner) {
+    return new ethers.Contract(addr, [
+      'function balanceOf(address) view returns (uint256)',
+      'function decimals() view returns (uint8)',
+      'function symbol() view returns (string)',
+      'function allowance(address,address) view returns (uint256)',
+      'function approve(address,uint256) returns (bool)',
+    ], withSigner ? signer : readProvider());
+  }
+
+  // ─── My judge contract (localStorage) ──────────────────────────────────
+  function myJudgeKey() {
+    return `myJudgeContract:${activeChainId}:${(account || '').toLowerCase()}`;
+  }
+  function getMyJudgeContract() {
+    try { return localStorage.getItem(myJudgeKey()) || null; } catch (_) { return null; }
+  }
+  function setMyJudgeContract(addr) {
+    try { localStorage.setItem(myJudgeKey(), addr); } catch (_) {}
+  }
+
+  // ─── Header / Chain selector / Wallet ──────────────────────────────────
+  function buildChainSelect() {
+    const sel = $('chainSelect');
+    sel.innerHTML = '';
+    const ids = Object.keys(chains);
+    if (ids.length === 0) {
+      const opt = document.createElement('option');
+      opt.textContent = 'No v0.6 chain configured';
+      opt.disabled = true;
+      sel.appendChild(opt);
+      return;
     }
-
-    function buildChainSelect() {
-        const sel = $('chainSelect');
-        sel.innerHTML = '';
-        for (const id of Object.keys(chains)) {
-            const c = chains[id];
-            if (c.bondVersion !== 6) continue;
-            const opt = document.createElement('option');
-            opt.value = id;
-            opt.textContent = `${c.name} (${id})`;
-            if (id === activeChainId) opt.selected = true;
-            sel.appendChild(opt);
-        }
-        if (sel.options.length === 0) {
-            const opt = document.createElement('option');
-            opt.textContent = 'No v0.6 chain configured';
-            opt.disabled = true;
-            sel.appendChild(opt);
-        }
+    for (const id of ids) {
+      const c = chains[id];
+      if (c.bondVersion && c.bondVersion !== 6) continue;
+      const opt = document.createElement('option');
+      opt.value = id;
+      const testnet = String(id) === '11155111' ? ' (testnet)' : '';
+      opt.textContent = `${c.name}${testnet}`;
+      if (id === activeChainId) opt.selected = true;
+      sel.appendChild(opt);
     }
+    $('footerChain').textContent = chain() ? chain().name : '—';
+  }
 
-    $('chainSelect').addEventListener('change', (e) => {
-        activeChainId = e.target.value;
-        log(`Switched to chain ${activeChainId} (${chain().name})`);
-        render();
-    });
+  function refreshNetworkBanner() {
+    const banner = $('networkBanner');
+    if (!signer || walletChainId == null) { banner.classList.add('hidden'); return; }
+    if (String(walletChainId) === String(activeChainId)) { banner.classList.add('hidden'); return; }
+    const c = chain();
+    $('networkBannerText').textContent = `Wallet is on chain ${walletChainId}, switch to ${c?.name || activeChainId} to send transactions.`;
+    banner.classList.remove('hidden');
+  }
 
-    async function connect() {
-        if (!window.ethereum) { log('No window.ethereum — install MetaMask', 'err'); return; }
-        provider = new ethers.BrowserProvider(window.ethereum);
-        await provider.send('eth_requestAccounts', []);
-        signer = await provider.getSigner();
-        account = await signer.getAddress();
-        $('account').textContent = account.slice(0, 6) + '…' + account.slice(-4);
-        try {
-            await window.ethereum.request({
-                method: 'wallet_switchEthereumChain',
-                params: [{ chainId: '0x' + Number(activeChainId).toString(16) }],
-            });
-        } catch (e) { log(`switchChain: ${e.message}`, 'err'); }
-        log(`Connected ${account}`);
-        render();
+  async function refreshWalletChainId() {
+    if (!provider) return;
+    try {
+      const net = await provider.getNetwork();
+      walletChainId = Number(net.chainId);
+    } catch (_) { walletChainId = null; }
+    refreshNetworkBanner();
+  }
+
+  async function connectWallet() {
+    if (!window.ethereum) {
+      alert('No wallet detected. Install MetaMask, Rabby, or another EIP-1193 wallet to continue.');
+      return;
     }
-    $('connectBtn').addEventListener('click', () => connect().catch(e => log(e.message, 'err')));
-
-    // Always use the chain's own RPC for reads; the wallet might be on a
-    // different chain than the dropdown selection, which would silently return
-    // 0x and break decoding.
-    function readProvider() {
-        const c = chain();
-        if (!c || !c.rpc) throw new Error(`Missing rpc in runtime-config.chains[${activeChainId}]`);
-        return new ethers.JsonRpcProvider(c.rpc);
+    try {
+      const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+      if (!accounts || accounts.length === 0) return;
+      provider = new ethers.BrowserProvider(window.ethereum);
+      signer = await provider.getSigner();
+      account = ethers.getAddress(accounts[0] || await signer.getAddress());
+      $('walletAddr').textContent = short(account);
+      $('walletInfo').classList.remove('hidden');
+      $('connectBtn').classList.add('hidden');
+      // Try to switch wallet chain to match dropdown
+      try {
+        await window.ethereum.request({
+          method: 'wallet_switchEthereumChain',
+          params: [{ chainId: '0x' + Number(activeChainId).toString(16) }],
+        });
+      } catch (e) {
+        // ignore — banner will prompt user
+      }
+      await refreshWalletChainId();
+      log(`Connected ${account}`);
+      attachWalletListeners();
+      render();
+    } catch (err) {
+      if (!isUserRejection(err)) log(`Connect failed: ${friendlyError(err)}`, 'err');
     }
-    function bondContract(withSigner = false) {
-        const c = chain();
-        if (!c || !c.bondContract) throw new Error(`Missing bondContract in runtime-config.chains[${activeChainId}]`);
-        if (withSigner) {
-            if (!signer) throw new Error('Connect a wallet first');
-            return new ethers.Contract(c.bondContract, window.SIMPLE_BOND_V6_ABI, signer);
-        }
-        return new ethers.Contract(c.bondContract, window.SIMPLE_BOND_V6_ABI, readProvider());
-    }
-    function registryContract(kind, withSigner = false) {
-        const c = chain();
-        const map = {
-            judge: { addr: c.judgeProfileRegistry, abi: window.SIMPLE_BOND_V6_JUDGE_REGISTRY_ABI },
-            poster: { addr: c.posterProfileRegistry, abi: window.SIMPLE_BOND_V6_REGISTRY_ABI },
-            challenger: { addr: c.challengerProfileRegistry, abi: window.SIMPLE_BOND_V6_REGISTRY_ABI },
-        };
-        const entry = map[kind];
-        if (!entry || !entry.addr) throw new Error(`Missing ${kind}ProfileRegistry address in runtime-config`);
-        return new ethers.Contract(entry.addr, entry.abi, withSigner ? signer : readProvider());
-    }
-
-    // --- Views ---
-
-    async function renderList() {
-        const view = $('view');
-        view.innerHTML = '<h2>Bonds</h2><div id="bonds">loading…</div>';
-        try {
-            const bc = bondContract();
-            const next = Number(await bc.nextBondId());
-            if (next === 0) {
-                $('bonds').innerHTML = '<p>No bonds yet on this chain.</p>';
-                return;
-            }
-            let html = '';
-            for (let i = next - 1; i >= 0 && i >= Math.max(0, next - 50); i--) {
-                const b = await bc.bonds(i);
-                const status = b.settled ? 'settled' : (b.closed ? 'closed' : 'open');
-                html += `<div class="card">
-                    <h3><a href="#" data-detail="${i}">Bond #${i}</a> — <small>${status}</small></h3>
-                    <div class="grid">
-                        <div>poster</div><div>${b.poster}</div>
-                        <div>judge</div><div>${b.judge}</div>
-                        <div>claim hash</div><div><code>${b.claimHash}</code></div>
-                        <div>claim version</div><div>${b.claimVersion}</div>
-                        <div>bond / challenge / fee</div><div>${ethers.formatEther(b.bondAmount)} / ${ethers.formatEther(b.challengeAmount)} / ${ethers.formatEther(b.judgeFee)}</div>
-                        <div>pending count</div><div>${b.pendingCount}</div>
-                    </div>
-                </div>`;
-            }
-            $('bonds').innerHTML = html;
-            $('bonds').querySelectorAll('a[data-detail]').forEach(a => {
-                a.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    location.hash = `#detail-${e.target.dataset.detail}`;
-                    render();
-                });
-            });
-        } catch (e) { $('bonds').innerHTML = `<p class="err">${e.message}</p>`; }
-    }
-
-    async function renderDetail(bondId) {
-        const view = $('view');
-        view.innerHTML = `<h2>Bond #${bondId}</h2><div id="detail">loading…</div>`;
-        try {
-            const bc = bondContract();
-            const b = await bc.bonds(bondId);
-            const count = Number(await bc.getChallengeCount(bondId));
-            let challengesHtml = '';
-            for (let i = 0; i < count; i++) {
-                const ch = await bc.getChallenge(bondId, i);
-                const statusName = STATUS_NAMES[Number(ch.status)] || 'Unknown';
-                let timing = '';
-                if (statusName === 'Pending') {
-                    const cd = Number(await bc.concessionDeadline(bondId, i));
-                    const rd = Number(await bc.rulingDeadline(bondId, i));
-                    timing = `<small>concede until ${new Date(cd * 1000).toLocaleString()} · rule until ${new Date(rd * 1000).toLocaleString()}</small><br>`;
-                }
-                const posterCanConcede = signer && account && account.toLowerCase() === b.poster.toLowerCase() && statusName === 'Pending';
-                challengesHtml += `<div class="card">
-                    <h3>Challenge ${i} <span class="status status-${statusName}">${statusName}</span></h3>
-                    <div class="grid">
-                        <div>challenger</div><div>${ch.challenger}</div>
-                        <div>at version</div><div>${ch.challengeAtVersion}</div>
-                        <div>metadata hash</div><div><code>${ch.metadataHash}</code></div>
-                        <div>timestamp</div><div>${new Date(Number(ch.timestamp) * 1000).toLocaleString()}</div>
-                    </div>
-                    ${timing}
-                    ${posterCanConcede ? `<div class="row">
-                        <textarea id="conc-${i}" placeholder="concession reasoning"></textarea>
-                        <button data-act="concede" data-i="${i}">Concede this challenge</button>
-                    </div>` : ''}
-                </div>`;
-            }
-            const isPoster = signer && account && account.toLowerCase() === b.poster.toLowerCase();
-            view.innerHTML = `<h2>Bond #${bondId} — ${b.settled ? 'settled' : (b.closed ? 'closed' : 'open')}</h2>
-                <div class="card">
-                    <div class="grid">
-                        <div>poster</div><div>${b.poster}</div>
-                        <div>judge</div><div>${b.judge}</div>
-                        <div>token</div><div>${b.token}</div>
-                        <div>bond amount</div><div>${ethers.formatEther(b.bondAmount)}</div>
-                        <div>challenge amount</div><div>${ethers.formatEther(b.challengeAmount)}</div>
-                        <div>judge fee (max)</div><div>${ethers.formatEther(b.judgeFee)}</div>
-                        <div>acceptance delay</div><div>${b.acceptanceDelay} s</div>
-                        <div>ruling buffer</div><div>${b.rulingBuffer} s</div>
-                        <div>max challenges</div><div>${b.maxChallenges}</div>
-                        <div>claim version</div><div>${b.claimVersion}</div>
-                        <div>claim hash</div><div><code>${b.claimHash}</code></div>
-                        <div>judgeProfileId</div><div>${b.judgeProfileId}</div>
-                        <div>pending count</div><div>${b.pendingCount}</div>
-                    </div>
-                </div>
-
-                ${signer ? `<div class="card">
-                    <h3>Actions</h3>
-                    <div class="row">
-                        <input id="approveAmt" placeholder="approve token amount (whole units)">
-                        <button id="approveBtn">Approve token</button>
-                    </div>
-                    <div class="row">
-                        <input id="chContent" placeholder="reason for challenge">
-                        <button id="challengeBtn">Challenge (v${b.claimVersion})</button>
-                    </div>
-                    ${isPoster ? `
-                    <div class="row">
-                        <input id="modText" placeholder="new claim text (requires no pending)">
-                        <button id="modBtn">Modify claim</button>
-                    </div>
-                    <div class="row">
-                        ${b.closed ? '<button id="openBtn">Open bond</button>' : '<button id="closeBtn">Close bond</button>'}
-                        <button id="withdrawBtn" class="warn">Withdraw (requires closed + 0 pending)</button>
-                    </div>` : ''}
-                    <div class="row">
-                        <input id="refundCount" type="number" value="10" min="1" style="width:80px">
-                        <button id="refundsBtn">Drain refunds (max N)</button>
-                    </div>
-                </div>` : '<p><em>Connect a wallet to interact.</em></p>'}
-
-                <h3>Challenges (${count})</h3>
-                <div id="challenges">${challengesHtml || '<p>None yet.</p>'}</div>
-                `;
-
-            wireDetailActions(bondId);
-        } catch (e) { $('detail').innerHTML = `<p class="err">${e.message}</p>`; }
-    }
-
-    function wireDetailActions(bondId) {
-        const bc = () => bondContract(true);
-        const c = chain();
-        const tokenAddr = (window.__cachedBondTokens || {})[bondId];
-
-        $('approveBtn')?.addEventListener('click', async () => {
-            try {
-                const amt = ethers.parseEther($('approveAmt').value || '0');
-                const bondData = await bondContract().bonds(bondId);
-                const t = new ethers.Contract(bondData.token, ["function approve(address,uint256) returns (bool)"], signer);
-                const tx = await t.approve(c.bondContract, amt);
-                await tx.wait();
-                log(`approved ${amt.toString()} to ${c.bondContract}`);
-            } catch (e) { log(e.message, 'err'); }
-        });
-
-        $('challengeBtn')?.addEventListener('click', async () => {
-            try {
-                const b = await bondContract().bonds(bondId);
-                const tx = await bc().challenge(bondId, b.claimVersion, $('chContent').value || '');
-                await tx.wait();
-                log(`challenge filed`);
-                renderDetail(bondId);
-            } catch (e) { log(e.message, 'err'); }
-        });
-
-        $('modBtn')?.addEventListener('click', async () => {
-            try {
-                const tx = await bc().modifyClaim(bondId, $('modText').value || '');
-                await tx.wait();
-                log(`claim modified`);
-                renderDetail(bondId);
-            } catch (e) { log(e.message, 'err'); }
-        });
-
-        $('closeBtn')?.addEventListener('click', async () => {
-            try { await (await bc().closeBond(bondId)).wait(); log('closed'); renderDetail(bondId); }
-            catch (e) { log(e.message, 'err'); }
-        });
-
-        $('openBtn')?.addEventListener('click', async () => {
-            try { await (await bc().openBond(bondId)).wait(); log('opened'); renderDetail(bondId); }
-            catch (e) { log(e.message, 'err'); }
-        });
-
-        $('withdrawBtn')?.addEventListener('click', async () => {
-            try { await (await bc().withdrawBond(bondId)).wait(); log('withdrawn'); renderDetail(bondId); }
-            catch (e) { log(e.message, 'err'); }
-        });
-
-        $('refundsBtn')?.addEventListener('click', async () => {
-            try {
-                const n = parseInt($('refundCount').value || '10', 10);
-                await (await bc().claimRefunds(bondId, n)).wait();
-                log(`drained up to ${n} refunds`);
-                renderDetail(bondId);
-            } catch (e) { log(e.message, 'err'); }
-        });
-
-        document.querySelectorAll('button[data-act="concede"]').forEach(btn => {
-            btn.addEventListener('click', async () => {
-                try {
-                    const i = parseInt(btn.dataset.i, 10);
-                    const content = $(`conc-${i}`).value || '';
-                    await (await bc().concede(bondId, i, content)).wait();
-                    log(`conceded challenge ${i}`);
-                    renderDetail(bondId);
-                } catch (e) { log(e.message, 'err'); }
-            });
-        });
-    }
-
-    async function renderCreate() {
-        const c = chain();
-        const view = $('view');
-        view.innerHTML = `<h2>Create bond on ${c?.name || 'chain'}</h2>
-            <div class="card">
-                <label>Token (ERC-20)</label><input id="cb-token" value="${c?.approvedToken || ''}">
-                <label>Bond amount (whole units)</label><input id="cb-bond" value="10">
-                <label>Challenge amount</label><input id="cb-ch" value="3">
-                <label>Judge fee (max, ≤ challenge)</label><input id="cb-fee" value="0.5">
-                <label>Judge contract</label><input id="cb-judge">
-                <label>Acceptance delay (seconds)</label><input id="cb-ad" value="${7 * 24 * 3600}">
-                <label>Ruling buffer (seconds)</label><input id="cb-rb" value="${7 * 24 * 3600}">
-                <label>Max challenges</label><input id="cb-max" value="10">
-                <label>Judge profile id (from JudgeProfileRegistryV6)</label><input id="cb-jpid" value="0">
-                <label>Claim content (IPFS URI or inline text)</label><textarea id="cb-claim"></textarea>
-                <button class="primary" id="cb-go">Create bond</button>
-                <p><small>Remember to approve the bond contract for at least <code>bondAmount</code> first.</small></p>
-            </div>`;
-        $('cb-go').addEventListener('click', async () => {
-            try {
-                if (!signer) throw new Error('Connect a wallet first');
-                const tx = await bondContract(true).createBond(
-                    $('cb-token').value,
-                    ethers.parseEther($('cb-bond').value || '0'),
-                    ethers.parseEther($('cb-ch').value || '0'),
-                    ethers.parseEther($('cb-fee').value || '0'),
-                    $('cb-judge').value,
-                    parseInt($('cb-ad').value || '0', 10),
-                    parseInt($('cb-rb').value || '0', 10),
-                    parseInt($('cb-max').value || '0', 10),
-                    parseInt($('cb-jpid').value || '0', 10),
-                    $('cb-claim').value || ''
-                );
-                const r = await tx.wait();
-                log(`created bond, tx ${r.hash}`);
-                location.hash = '#list';
-                render();
-            } catch (e) { log(e.message, 'err'); }
-        });
-    }
-
-    async function renderProfiles() {
-        const c = chain();
-        const canonicalJudge = c && c.manualJudgeV6 ? c.manualJudgeV6 : '';
-        $('view').innerHTML = `<h2>Profile registries</h2>
-
-            <div class="card">
-                <h3>Judge profile</h3>
-                <p><small>A judge profile is a public statement of how you (or some judge contract you trust) will rule on disputes. A bond pins the profile id at creation, so judges can't quietly change their stated criteria later. Two ways to fill the address field below:</small></p>
-                <ul style="font-size: 13px; color: #555;">
-                  <li><strong>Use the canonical ManualJudgeV6</strong> at <code>${canonicalJudge}</code> — its operator is the deployer (0x693E…b43d). Fine for testing; rulings go through them.</li>
-                  <li><strong>Deploy your own ManualJudgeV6</strong> with the button below — you become the proposed operator, accept the role in one click, and the form pre-fills with the new address.</li>
-                </ul>
-                <div class="row" style="margin: 8px 0;">
-                  <button id="jp-deploy-new">Deploy a fresh ManualJudgeV6 (I'll be operator)</button>
-                  <button id="jp-use-canonical">Use canonical ManualJudgeV6</button>
-                </div>
-                <label>Judge contract address</label><input id="jp-addr" placeholder="0x… (must point to a deployed v0.6 judge contract)">
-                <label>Profile content (criteria, links, etc.)</label><textarea id="jp-content" placeholder="e.g. 'I judge claims using rule X. Reach me via Y. Bond test ${new Date().toISOString().slice(0,10)}.'"></textarea>
-                <button id="jp-go" class="primary">Register judge profile</button>
-            </div>
-
-            <div class="card">
-                <h3>Poster profile</h3>
-                <p><small>Optional self-description for posters. Bonds do not snapshot this — the registry's current entry is what observers see.</small></p>
-                <label>Profile content</label><textarea id="pp-content"></textarea>
-                <button id="pp-go">Register poster profile</button>
-            </div>
-
-            <div class="card">
-                <h3>Challenger profile</h3>
-                <p><small>Optional self-description for challengers.</small></p>
-                <label>Profile content</label><textarea id="cp-content"></textarea>
-                <button id="cp-go">Register challenger profile</button>
-            </div>`;
-
-        $('jp-use-canonical').addEventListener('click', () => {
-            $('jp-addr').value = canonicalJudge;
-            log(`Pre-filled canonical ManualJudgeV6: ${canonicalJudge}`);
-        });
-
-        $('jp-deploy-new').addEventListener('click', async () => {
-            try {
-                if (!signer) throw new Error('Connect a wallet first');
-                if (!window.SIMPLE_BOND_V6_MANUAL_JUDGE_BYTECODE) throw new Error('Missing manualJudgeV6.bytecode.js');
-                log(`Deploying a fresh ManualJudgeV6 (proposed operator: ${account})…`);
-                // ManualJudgeV6 constructor: address _proposedOperator
-                const factory = new ethers.ContractFactory(
-                    ["constructor(address)"],
-                    window.SIMPLE_BOND_V6_MANUAL_JUDGE_BYTECODE,
-                    signer
-                );
-                const judge = await factory.deploy(account);
-                await judge.waitForDeployment();
-                const addr = await judge.getAddress();
-                log(`Deployed at ${addr}. Activating…`);
-                const judgeAbi = window.SIMPLE_BOND_V6_MANUAL_JUDGE_ABI;
-                const activated = new ethers.Contract(addr, judgeAbi, signer);
-                const tx = await activated.acceptOperatorRole();
-                await tx.wait();
-                log(`Activated. You are now the operator of ${addr}.`);
-                $('jp-addr').value = addr;
-            } catch (e) { log(e.message, 'err'); }
-        });
-
-        $('jp-go').addEventListener('click', async () => {
-            try {
-                if (!signer) throw new Error('Connect a wallet first');
-                if (!$('jp-addr').value) throw new Error('Judge contract address required — use the canonical button or deploy your own.');
-                const reg = registryContract('judge', true);
-                const tx = await reg.registerProfile($('jp-addr').value, $('jp-content').value);
-                const r = await tx.wait();
-                const log_ = r.logs.find(l => { try { return reg.interface.parseLog(l).name === 'ProfileRegistered'; } catch { return false; } });
-                const parsed = log_ ? reg.interface.parseLog(log_) : null;
-                log(`Registered judge profile entryId=${parsed?.args?.entryId}. Save this id — you'll use it as judgeProfileId when creating a bond.`);
-            } catch (e) { log(e.message, 'err'); }
-        });
-        $('pp-go').addEventListener('click', async () => {
-            try {
-                if (!signer) throw new Error('Connect a wallet first');
-                const reg = registryContract('poster', true);
-                const r = await (await reg.registerProfile($('pp-content').value)).wait();
-                log(`Registered poster profile, tx ${r.hash}`);
-            } catch (e) { log(e.message, 'err'); }
-        });
-        $('cp-go').addEventListener('click', async () => {
-            try {
-                if (!signer) throw new Error('Connect a wallet first');
-                const reg = registryContract('challenger', true);
-                const r = await (await reg.registerProfile($('cp-content').value)).wait();
-                log(`Registered challenger profile, tx ${r.hash}`);
-            } catch (e) { log(e.message, 'err'); }
-        });
-    }
-
-    function renderAbout() {
-        const c = chain();
-        $('view').innerHTML = `<h2>About</h2>
-            <div class="card">
-                <p>This is the v0.6 UI for SimpleBond. v0.6 introduces evolving claims,
-                   per-challenge concession, judge out-of-scope refunds, close/open toggle,
-                   and append-only profile registries. See <code>SPEC_V06.md</code>.</p>
-                <h3>This chain</h3>
-                <div class="grid">
-                    <div>name</div><div>${c?.name || '—'}</div>
-                    <div>id</div><div>${activeChainId}</div>
-                    <div>bond contract</div><div>${c?.bondContract ? `<a href="${explorerLink(c.bondContract)}" target="_blank">${c.bondContract}</a>` : '—'}</div>
-                    <div>judgeProfileRegistry</div><div>${c?.judgeProfileRegistry || '—'}</div>
-                    <div>posterProfileRegistry</div><div>${c?.posterProfileRegistry || '—'}</div>
-                    <div>challengerProfileRegistry</div><div>${c?.challengerProfileRegistry || '—'}</div>
-                    <div>officialDirectory</div><div>${c?.officialDirectory || '—'}</div>
-                    <div>approvedToken</div><div>${c?.approvedToken || '—'}</div>
-                </div>
-            </div>`;
-    }
-
-    // --- Router ---
-    function render() {
-        const hash = location.hash || '#list';
-        document.querySelectorAll('nav a').forEach(a => a.classList.remove('active'));
-        if (hash.startsWith('#detail-')) {
-            const id = hash.slice('#detail-'.length);
-            renderDetail(id);
-        } else if (hash === '#create') {
-            document.querySelector('nav a[data-view="create"]').classList.add('active');
-            renderCreate();
-        } else if (hash === '#profiles') {
-            document.querySelector('nav a[data-view="profiles"]').classList.add('active');
-            renderProfiles();
-        } else if (hash === '#about') {
-            document.querySelector('nav a[data-view="about"]').classList.add('active');
-            renderAbout();
-        } else {
-            document.querySelector('nav a[data-view="list"]').classList.add('active');
-            renderList();
-        }
-    }
-    document.querySelectorAll('nav a').forEach(a => {
-        a.addEventListener('click', (e) => {
-            e.preventDefault();
-            const v = e.target.dataset.view;
-            location.hash = v === 'list' ? '#list' : '#' + v;
-            render();
-        });
-    });
-    window.addEventListener('hashchange', render);
-
-    buildChainSelect();
+  }
+  function disconnectWallet() {
+    provider = null;
+    signer = null;
+    account = null;
+    walletChainId = null;
+    $('walletInfo').classList.add('hidden');
+    $('connectBtn').classList.remove('hidden');
+    refreshNetworkBanner();
+    log('Disconnected');
     render();
+  }
+
+  let _accountsHandler = null, _chainHandler = null;
+  function attachWalletListeners() {
+    if (!window.ethereum || typeof window.ethereum.on !== 'function') return;
+    if (_accountsHandler) { try { window.ethereum.removeListener('accountsChanged', _accountsHandler); } catch (_) {} }
+    if (_chainHandler) { try { window.ethereum.removeListener('chainChanged', _chainHandler); } catch (_) {} }
+    _accountsHandler = (accounts) => {
+      if (!accounts || accounts.length === 0) { disconnectWallet(); return; }
+      account = ethers.getAddress(accounts[0]);
+      $('walletAddr').textContent = short(account);
+      render();
+    };
+    _chainHandler = (hexChainId) => {
+      walletChainId = parseInt(hexChainId, 16);
+      refreshNetworkBanner();
+    };
+    window.ethereum.on('accountsChanged', _accountsHandler);
+    window.ethereum.on('chainChanged', _chainHandler);
+  }
+
+  async function switchWalletNetwork() {
+    if (!window.ethereum) return;
+    try {
+      await window.ethereum.request({
+        method: 'wallet_switchEthereumChain',
+        params: [{ chainId: '0x' + Number(activeChainId).toString(16) }],
+      });
+      await refreshWalletChainId();
+      log(`Switched wallet to ${chain().name}`);
+    } catch (err) {
+      log(`Switch failed: ${friendlyError(err)}`, 'err');
+    }
+  }
+
+  $('chainSelect').addEventListener('change', (e) => {
+    activeChainId = e.target.value;
+    $('footerChain').textContent = chain() ? chain().name : '—';
+    refreshNetworkBanner();
+    log(`Switched view to ${chain() ? chain().name : 'unknown chain'}`);
+    render();
+  });
+  $('connectBtn').addEventListener('click', () => connectWallet());
+  $('walletAddr').addEventListener('click', () => {
+    if (confirm('Disconnect wallet from this page?')) disconnectWallet();
+  });
+  $('networkSwitchBtn').addEventListener('click', () => switchWalletNetwork());
+
+  document.querySelectorAll('nav.tabs .tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      navigate('#' + btn.dataset.route);
+    });
+  });
+
+  // ─── TX stepper ────────────────────────────────────────────────────────
+  function renderTxStepper(container, labels) {
+    container.innerHTML = `<div class="tx-stepper">${labels.map((l, i) => `
+      <div class="tx-step" data-step="${i}">
+        <div class="step-num">${i + 1}</div>
+        <div class="step-label">${escapeHtml(l)}</div>
+      </div>`).join('')}</div>`;
+  }
+  function updateStep(container, idx, status) {
+    const step = container.querySelector(`.tx-step[data-step="${idx}"]`);
+    if (!step) return;
+    step.classList.remove('tx-step-active', 'tx-step-done');
+    const numEl = step.querySelector('.step-num');
+    if (status === 'active') {
+      step.classList.add('tx-step-active');
+      numEl.innerHTML = '<span class="spinner"></span>';
+    } else if (status === 'done') {
+      step.classList.add('tx-step-done');
+      numEl.innerHTML = '✓';
+    } else {
+      numEl.textContent = String(idx + 1);
+    }
+  }
+
+  // ─── Approval helper with cache ────────────────────────────────────────
+  async function ensureApproval(tokenAddr, amount, spender) {
+    const key = `${tokenAddr.toLowerCase()}:${spender.toLowerCase()}`;
+    let cached = allowanceCache[key];
+    if (cached == null) {
+      try { cached = await erc20Contract(tokenAddr).allowance(account, spender); } catch (_) { cached = 0n; }
+      allowanceCache[key] = cached;
+    }
+    if (cached >= amount) return;
+    const tx = await erc20Contract(tokenAddr, true).approve(spender, amount);
+    await waitForTx(tx);
+    allowanceCache[key] = amount;
+  }
+
+  // ─── Belief / risk computation ─────────────────────────────────────────
+  function beliefThresholds(bondAmount, challengeAmount, judgeFee) {
+    const net = bondAmount + challengeAmount - judgeFee;
+    if (net <= 0n) return null;
+    const challengerPct = (Number(challengeAmount) * 100 / Number(net));
+    const posterPct = ((1 - Number(bondAmount) / Number(net)) * 100);
+    return { challengerPct, posterPct };
+  }
+
+  // ─── Routing ───────────────────────────────────────────────────────────
+  function navigate(hash) {
+    if (location.hash === hash) render();
+    else location.hash = hash;
+  }
+  window.addEventListener('hashchange', render);
+
+  function parseRoute() {
+    let h = location.hash || '#browse';
+    // Strip leading '#'
+    if (h.startsWith('#')) h = h.slice(1);
+    if (!h) h = 'browse';
+    // Routes: create | browse | judges | my | view/<id> | judge/<id> | judge?addr=0x...
+    if (h.startsWith('view/')) return { route: 'view', bondId: h.slice('view/'.length) };
+    if (h.startsWith('judge/')) return { route: 'judge', entryId: h.slice('judge/'.length) };
+    if (h.startsWith('judge?')) {
+      const params = new URLSearchParams(h.slice('judge?'.length));
+      return { route: 'judge', addr: params.get('addr') };
+    }
+    if (h.startsWith('create?')) {
+      const params = new URLSearchParams(h.slice('create?'.length));
+      return { route: 'create', prefill: { judgeProfileId: params.get('judgeProfileId') } };
+    }
+    return { route: h };
+  }
+
+  function setActiveTab(route) {
+    document.querySelectorAll('nav.tabs .tab').forEach(t => {
+      t.classList.toggle('active', t.dataset.route === route);
+    });
+  }
+
+  // Stop the browse auto-refresh whenever we leave the browse tab
+  function stopBrowseRefresh() {
+    if (browseRefreshTimer) { clearInterval(browseRefreshTimer); browseRefreshTimer = null; }
+  }
+
+  function render() {
+    stopBrowseRefresh();
+    const r = parseRoute();
+    const tabRoute = ['create', 'browse', 'judges', 'my', 'view'].includes(r.route) ? r.route : (r.route === 'judge' ? '' : r.route);
+    setActiveTab(tabRoute);
+    refreshNetworkBanner();
+    const view = $('view');
+    if (r.route === 'create') {
+      if (r.prefill) createPrefill = r.prefill;
+      renderCreate();
+    } else if (r.route === 'browse') {
+      renderBrowse();
+    } else if (r.route === 'judges') {
+      renderJudges();
+    } else if (r.route === 'my') {
+      renderMyBonds();
+    } else if (r.route === 'view') {
+      renderBondDetail(r.bondId);
+    } else if (r.route === 'judge') {
+      renderJudgeProfile(r);
+    } else {
+      view.innerHTML = `<div class="empty-state"><p>Unknown route. <a href="#browse">Browse bonds</a></p></div>`;
+    }
+  }
+
+  // ─── BROWSE ────────────────────────────────────────────────────────────
+  let browseState = { filter: 'all', search: '' };
+
+  function renderBrowse() {
+    const c = chain();
+    const view = $('view');
+    view.innerHTML = `
+      <h2 style="margin-bottom:12px;">Bonds on ${escapeHtml(c?.name || '—')}</h2>
+      <div class="filter-bar">
+        <select id="browseFilter">
+          <option value="all">All</option>
+          <option value="open">Open</option>
+          <option value="disputed">Disputed</option>
+          <option value="closed">Closed</option>
+          <option value="settled">Settled</option>
+        </select>
+        <input id="browseSearch" placeholder="Filter by claim text or address…">
+        <button class="secondary" id="browseRefresh">Refresh</button>
+      </div>
+      <div id="browseBonds"><div class="loading"><span class="spinner"></span>Loading bonds…</div></div>`;
+    $('browseFilter').value = browseState.filter;
+    $('browseSearch').value = browseState.search;
+    $('browseFilter').addEventListener('change', (e) => { browseState.filter = e.target.value; renderBrowseList(); });
+    $('browseSearch').addEventListener('input', (e) => { browseState.search = e.target.value; renderBrowseList(); });
+    $('browseRefresh').addEventListener('click', () => loadBrowseData().then(renderBrowseList));
+    loadBrowseData().then(renderBrowseList);
+    browseRefreshTimer = setInterval(() => {
+      loadBrowseData().then(renderBrowseList).catch(() => {});
+    }, 30000);
+  }
+
+  // Cache: bond data + claim content (keyed by chainId+bondId)
+  const bondListCache = {};
+  function bondListKey() { return `chain:${activeChainId}`; }
+
+  async function loadBrowseData() {
+    try {
+      const bc = bondReadContract();
+      const nextId = Number(await withTimeout(bc.nextBondId(), 10000, 0n));
+      const rows = [];
+      const start = Math.max(0, nextId - 50);
+      for (let i = nextId - 1; i >= start; i--) {
+        try {
+          const b = await bc.bonds(i);
+          const pendingCount = Number(b.pendingCount);
+          let status = 'open';
+          if (b.settled) status = 'settled';
+          else if (b.closed) status = 'closed';
+          else if (pendingCount > 0) status = 'disputed';
+          rows.push({
+            bondId: i,
+            poster: b.poster,
+            judge: b.judge,
+            token: b.token,
+            bondAmount: b.bondAmount,
+            challengeAmount: b.challengeAmount,
+            claimHash: b.claimHash,
+            claimVersion: Number(b.claimVersion),
+            judgeProfileId: Number(b.judgeProfileId),
+            pendingCount,
+            status,
+            settled: b.settled,
+            closed: b.closed,
+          });
+        } catch (_) { /* skip per-bond fail */ }
+      }
+      bondListCache[bondListKey()] = { rows, fetchedAt: Date.now() };
+      // Best-effort: fetch claim previews via event logs (one batch)
+      try {
+        const c = chain();
+        const fromBlock = c?.deployBlock || 0;
+        const logs = await withTimeout(bc.queryFilter(bc.filters.BondCreated(), fromBlock), 8000, []);
+        const map = {};
+        for (const ev of logs) {
+          const bondId = Number(ev.args.bondId);
+          map[bondId] = String(ev.args.claimContent || '');
+        }
+        // Also pick up ClaimModified — use latest version content
+        try {
+          const modLogs = await withTimeout(bc.queryFilter(bc.filters.ClaimModified(), fromBlock), 8000, []);
+          for (const ev of modLogs) {
+            const bondId = Number(ev.args.bondId);
+            const newVersion = Number(ev.args.newVersion);
+            if (!map[`v${bondId}`] || map[`v${bondId}`] < newVersion) {
+              map[bondId] = String(ev.args.newContent || '');
+              map[`v${bondId}`] = newVersion;
+            }
+          }
+        } catch (_) {}
+        for (const row of rows) {
+          row.claimPreview = map[row.bondId] || '';
+        }
+      } catch (_) {}
+      return rows;
+    } catch (err) {
+      bondListCache[bondListKey()] = { rows: [], error: friendlyError(err) };
+      return [];
+    }
+  }
+
+  function renderBrowseList() {
+    const c = chain();
+    const data = bondListCache[bondListKey()];
+    const container = $('browseBonds');
+    if (!container) return; // browse tab not active
+    if (!data) return;
+    if (data.error) { container.innerHTML = `<div class="msg msg-error">${escapeHtml(data.error)}</div>`; return; }
+    const rows = data.rows || [];
+    let visible = rows;
+    if (browseState.filter !== 'all') {
+      visible = visible.filter(r => {
+        if (browseState.filter === 'open') return r.status === 'open' || r.status === 'disputed';
+        return r.status === browseState.filter;
+      });
+    }
+    if (browseState.search) {
+      const q = browseState.search.toLowerCase();
+      visible = visible.filter(r =>
+        (r.claimPreview || '').toLowerCase().includes(q) ||
+        r.poster.toLowerCase().includes(q) ||
+        r.judge.toLowerCase().includes(q) ||
+        String(r.bondId) === q
+      );
+    }
+    if (visible.length === 0) {
+      container.innerHTML = `<div class="empty-state">
+        No bonds${rows.length ? ' match your filter' : ` yet on ${escapeHtml(c?.name || 'this chain')}`}.
+        ${rows.length ? '' : ' Be the first → <a href="#create">Create bond</a>'}
+      </div>`;
+      return;
+    }
+    container.innerHTML = visible.map(r => browseRowHtml(r)).join('');
+    container.querySelectorAll('.bond-list-item').forEach(item => {
+      const bondId = item.dataset.bondid;
+      item.addEventListener('click', (e) => {
+        // Only navigate if not clicking an inner link
+        if (e.target.tagName === 'A') return;
+        navigate('#view/' + bondId);
+      });
+    });
+  }
+
+  function browseRowHtml(r) {
+    const claim = r.claimPreview ? escapeHtml(r.claimPreview).split('\n')[0].slice(0, 220) : `<span class="mono">${r.claimHash.slice(0, 18)}…</span>`;
+    return `<div class="bond-list-item" data-bondid="${r.bondId}">
+      <div class="bli-head">
+        <span class="bli-id">Bond #${r.bondId}</span>
+        <span class="status-badge status-${r.status}">${r.status}</span>
+        ${r.pendingCount > 0 ? `<span class="status-badge status-pending">${r.pendingCount} pending</span>` : ''}
+        <span style="font-size:12px;color:var(--muted);">claim v${r.claimVersion}</span>
+      </div>
+      <div class="bli-claim">${claim || '<em>No claim preview</em>'}</div>
+      <div class="bli-meta">
+        <span>poster ${addressLink(r.poster)}</span>
+        <span>judge profile <a href="#judge/${r.judgeProfileId}">#${r.judgeProfileId}</a></span>
+        <span>bond <span class="stat-val">${fmtUnits(r.bondAmount, 18)}</span></span>
+        <span>challenge <span class="stat-val">${fmtUnits(r.challengeAmount, 18)}</span></span>
+      </div>
+    </div>`;
+  }
+
+  // ─── JUDGES ────────────────────────────────────────────────────────────
+  let judgeState = { entries: null, controlled: null };
+
+  function renderJudges() {
+    const c = chain();
+    const canonicalJudge = c && c.manualJudgeV6 ? c.manualJudgeV6 : '';
+    $('view').innerHTML = `
+      <h2 style="margin-bottom:12px;">Judges on ${escapeHtml(c?.name || '—')}</h2>
+
+      <div class="judge-onboarding" id="judgeOnboardingCard">
+        <h3 id="onboardTitle">Become a judge</h3>
+        <div id="onboardHint" class="hint" style="margin-top:4px;"></div>
+        <div id="onboardStatus" class="status"></div>
+        <div id="onboardAddress" class="address-row hidden"></div>
+        <div class="actions" id="onboardActions"></div>
+        <div id="judgeMsg"></div>
+      </div>
+
+      <div class="card">
+        <h3>Quick-deploy options</h3>
+        <p class="hint" style="margin-bottom:10px;">Two ways to get a judge contract address before registering a profile:</p>
+        <div class="row" style="margin: 8px 0;">
+          <button id="jp-deploy-new">Deploy a fresh ManualJudgeV6 (I'll be operator)</button>
+          <button class="secondary" id="jp-use-canonical">Use canonical ManualJudgeV6</button>
+        </div>
+        <div class="hint">
+          <strong>Canonical</strong>: <span class="mono">${escapeHtml(canonicalJudge || '—')}</span> — operated by the deploy key.
+          Fine for testing. Rulings go through that operator.<br>
+          <strong>Deploy your own</strong>: you become the proposed operator, accept the role in one click, and the form fills with the new address.
+        </div>
+      </div>
+
+      <div class="card" id="profileEditorCard">
+        <h3>Register a judge profile</h3>
+        <p class="hint" style="margin-bottom:10px;">A profile pins your judging criteria for any bond that snapshots this profile id. Profile entries are append-only — updating creates a new entry id.</p>
+        <div class="form-group">
+          <label for="jp-addr">Judge contract address</label>
+          <input id="jp-addr" placeholder="0x… (must be a deployed v0.6 judge contract)">
+        </div>
+        <div class="form-group">
+          <label for="jp-content">Profile content (criteria, links, contact info)</label>
+          <textarea id="jp-content" rows="5" placeholder="Explain how you (or this judge contract) decide claim disputes. Links, contact info, and example rulings welcome."></textarea>
+        </div>
+        <button id="jp-go">Register judge profile</button>
+      </div>
+
+      <h3 style="margin: 16px 0 8px;">Registered profiles</h3>
+      <div id="judgesList"><div class="loading"><span class="spinner"></span>Loading profiles…</div></div>
+    `;
+
+    $('jp-use-canonical').addEventListener('click', () => {
+      $('jp-addr').value = canonicalJudge;
+      log(`Pre-filled canonical ManualJudgeV6: ${canonicalJudge}`);
+    });
+    $('jp-deploy-new').addEventListener('click', () => deployFreshJudge());
+    $('jp-go').addEventListener('click', () => registerJudgeProfile());
+
+    refreshOnboarding();
+    loadJudgeEntries();
+  }
+
+  async function refreshOnboarding() {
+    const titleEl = $('onboardTitle');
+    const hintEl = $('onboardHint');
+    const statusEl = $('onboardStatus');
+    const addrRow = $('onboardAddress');
+    const actions = $('onboardActions');
+    if (!titleEl || !actions) return; // judges tab not active
+
+    actions.innerHTML = '';
+    addrRow.classList.add('hidden');
+    addrRow.innerHTML = '';
+
+    if (!signer) {
+      titleEl.textContent = 'Become a judge';
+      hintEl.textContent = 'Connect a wallet to deploy your own judge contract or register a profile pointing at the canonical one.';
+      statusEl.textContent = '';
+      const b = document.createElement('button');
+      b.textContent = 'Connect wallet';
+      b.addEventListener('click', () => connectWallet());
+      actions.appendChild(b);
+      return;
+    }
+
+    const myJudge = getMyJudgeContract();
+    if (!myJudge) {
+      titleEl.textContent = 'Become a judge';
+      hintEl.textContent = 'You can deploy your own ManualJudgeV6, then register a profile that points to it.';
+      statusEl.textContent = 'Step 1: Deploy your judge contract (you will be the proposed operator).';
+      const b1 = document.createElement('button');
+      b1.textContent = 'Deploy my judge contract';
+      b1.addEventListener('click', () => deployFreshJudge());
+      const b2 = document.createElement('button');
+      b2.className = 'secondary';
+      b2.textContent = 'Use canonical ManualJudgeV6';
+      b2.addEventListener('click', () => {
+        const c = chain();
+        $('jp-addr').value = c?.manualJudgeV6 || '';
+        $('jp-addr').focus();
+      });
+      actions.appendChild(b1);
+      actions.appendChild(b2);
+      return;
+    }
+
+    titleEl.textContent = 'Your judge';
+    hintEl.textContent = `You control a ManualJudgeV6 deployed via this page.`;
+    addrRow.innerHTML = `Judge contract: ${addressLink(myJudge)} <button class="ghost" id="copyJudgeBtn">Copy</button>`;
+    addrRow.classList.remove('hidden');
+
+    // Check active status of judge
+    try {
+      const judge = manualJudgeContract(myJudge, false);
+      const [isActive, operator] = await Promise.all([
+        judge.active().catch(() => null),
+        judge.operator().catch(() => null),
+      ]);
+      if (isActive === false) {
+        statusEl.textContent = 'Step 2: Activate by accepting the operator role.';
+        const b = document.createElement('button');
+        b.textContent = 'Activate judge (acceptOperatorRole)';
+        b.addEventListener('click', () => acceptOperatorRole(myJudge));
+        actions.appendChild(b);
+      } else if (operator && operator.toLowerCase() !== account.toLowerCase()) {
+        statusEl.textContent = `Active. Operator is ${short(operator)} (not your current wallet).`;
+      } else {
+        statusEl.textContent = 'Active. Register a profile so this judge is visible to posters.';
+      }
+    } catch (err) {
+      statusEl.textContent = `Could not read judge state: ${friendlyError(err)}`;
+    }
+
+    const b = document.createElement('button');
+    b.className = 'secondary';
+    b.textContent = 'Register profile for this judge';
+    b.addEventListener('click', () => {
+      $('jp-addr').value = myJudge;
+      $('jp-content').focus();
+      $('jp-content').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+    actions.appendChild(b);
+
+    const forget = document.createElement('button');
+    forget.className = 'ghost';
+    forget.textContent = 'Forget this judge';
+    forget.addEventListener('click', () => {
+      if (confirm('Remove this judge from your local My-Judge cache? (The contract remains deployed.)')) {
+        try { localStorage.removeItem(myJudgeKey()); } catch (_) {}
+        refreshOnboarding();
+      }
+    });
+    actions.appendChild(forget);
+
+    setTimeout(() => {
+      $('copyJudgeBtn')?.addEventListener('click', async () => {
+        try { await navigator.clipboard.writeText(myJudge); log(`Copied ${myJudge}`); }
+        catch (_) { prompt('Copy:', myJudge); }
+      });
+    });
+  }
+
+  async function deployFreshJudge() {
+    const msg = $('judgeMsg');
+    try {
+      if (!signer) { await connectWallet(); if (!signer) return; }
+      if (!window.SIMPLE_BOND_V6_MANUAL_JUDGE_BYTECODE) throw new Error('Missing manualJudgeV6.bytecode.js');
+      msg && (msg.innerHTML = `<div class="msg msg-info"><span class="spinner"></span>Deploying ManualJudgeV6 with you as proposed operator…</div>`);
+      log(`Deploying ManualJudgeV6 (proposed operator: ${account})…`);
+      const factory = new ethers.ContractFactory(
+        ['constructor(address)'],
+        window.SIMPLE_BOND_V6_MANUAL_JUDGE_BYTECODE,
+        signer
+      );
+      const judge = await factory.deploy(account);
+      await judge.waitForDeployment();
+      const addr = await judge.getAddress();
+      log(`Deployed at ${addr}. Activating…`);
+      msg && (msg.innerHTML = `<div class="msg msg-info"><span class="spinner"></span>Deployed at ${short(addr)}. Sending acceptOperatorRole…</div>`);
+      const judgeC = manualJudgeContract(addr, true);
+      const tx = await judgeC.acceptOperatorRole();
+      await waitForTx(tx);
+      log(`Activated. You are operator of ${addr}.`);
+      setMyJudgeContract(addr);
+      $('jp-addr').value = addr;
+      msg && (msg.innerHTML = `<div class="msg msg-success">Judge deployed and activated at ${addressLink(addr)}. Register a profile next.</div>`);
+      refreshOnboarding();
+    } catch (err) {
+      log(`Deploy failed: ${friendlyError(err)}`, 'err');
+      msg && (msg.innerHTML = `<div class="msg msg-error">${escapeHtml(friendlyError(err))}</div>`);
+    }
+  }
+
+  async function acceptOperatorRole(judgeAddr) {
+    const msg = $('judgeMsg');
+    try {
+      msg && (msg.innerHTML = `<div class="msg msg-info"><span class="spinner"></span>Sending acceptOperatorRole…</div>`);
+      const j = manualJudgeContract(judgeAddr, true);
+      const tx = await j.acceptOperatorRole();
+      await waitForTx(tx);
+      log(`Activated judge ${judgeAddr}`);
+      msg && (msg.innerHTML = `<div class="msg msg-success">Judge activated.</div>`);
+      refreshOnboarding();
+    } catch (err) {
+      log(`Activate failed: ${friendlyError(err)}`, 'err');
+      msg && (msg.innerHTML = `<div class="msg msg-error">${escapeHtml(friendlyError(err))}</div>`);
+    }
+  }
+
+  async function registerJudgeProfile() {
+    const msg = $('judgeMsg');
+    try {
+      if (!signer) { await connectWallet(); if (!signer) return; }
+      const addr = $('jp-addr').value.trim();
+      const content = $('jp-content').value;
+      if (!addr) throw new Error('Judge contract address required.');
+      if (!ethers.isAddress(addr)) throw new Error('Not a valid address.');
+      // Best-effort: confirm it's a contract
+      try {
+        const code = await readProvider().getCode(addr);
+        if (!code || code === '0x') throw new Error('Judge must be a deployed contract, not an EOA.');
+      } catch (_) {}
+      msg && (msg.innerHTML = `<div class="msg msg-info"><span class="spinner"></span>Registering profile…</div>`);
+      const reg = judgeRegWrite();
+      const tx = await reg.registerProfile(ethers.getAddress(addr), content);
+      const r = await waitForTx(tx);
+      let entryId = null;
+      const iface = new ethers.Interface(window.SIMPLE_BOND_V6_JUDGE_REGISTRY_ABI);
+      for (const lg of r.logs) {
+        try {
+          const parsed = iface.parseLog({ topics: lg.topics, data: lg.data });
+          if (parsed.name === 'ProfileRegistered') { entryId = Number(parsed.args.entryId); break; }
+        } catch (_) {}
+      }
+      log(`Registered judge profile entryId=${entryId ?? '?'}. Save it — you'll use it as judgeProfileId when creating a bond.`);
+      msg && (msg.innerHTML = `<div class="msg msg-success">Registered profile <strong>#${entryId ?? '?'}</strong>. <a href="#judge/${entryId ?? ''}">View profile</a></div>`);
+      // optimistic refresh
+      judgeState.entries = null;
+      loadJudgeEntries();
+    } catch (err) {
+      log(`Register failed: ${friendlyError(err)}`, 'err');
+      msg && (msg.innerHTML = `<div class="msg msg-error">${escapeHtml(friendlyError(err))}</div>`);
+    }
+  }
+
+  async function loadJudgeEntries() {
+    const c = chain();
+    if (!c?.judgeProfileRegistry) {
+      $('judgesList').innerHTML = `<div class="empty-state">Judge registry not configured on ${escapeHtml(c?.name || 'this chain')}.</div>`;
+      return;
+    }
+    try {
+      const reg = judgeRegRead();
+      const count = Number(await reg.entryCount());
+      if (count === 0) {
+        $('judgesList').innerHTML = `<div class="empty-state">No judge profiles registered yet on ${escapeHtml(c?.name || 'this chain')}.</div>`;
+        return;
+      }
+      // Fetch latest 50 entries, descending
+      const start = Math.max(0, count - 50);
+      const entries = [];
+      for (let i = count - 1; i >= start; i--) {
+        try {
+          const [owner, judgeContract, contentHash, content] = await reg.getProfile(i);
+          entries.push({ entryId: i, owner, judgeContract, contentHash, content });
+          judgeProfileEntryCache[`${activeChainId}:${i}`] = { entryId: i, owner, judgeContract, contentHash, content };
+        } catch (_) {}
+      }
+      judgeState.entries = entries;
+      $('judgesList').innerHTML = entries.map(e => judgeEntryHtml(e)).join('');
+    } catch (err) {
+      $('judgesList').innerHTML = `<div class="msg msg-error">${escapeHtml(friendlyError(err))}</div>`;
+    }
+  }
+
+  function judgeEntryHtml(e) {
+    return `<div class="judge-item">
+      <div class="ji-head">
+        <span class="ji-id">Profile #${e.entryId}</span>
+        <span style="font-size:12px;color:var(--muted);">judge ${addressLink(e.judgeContract)}</span>
+        <span style="font-size:12px;color:var(--muted);">owner ${addressLink(e.owner)}</span>
+      </div>
+      <div class="ji-content">${escapeHtml(e.content || '(no content)')}</div>
+      <div class="ji-actions">
+        <a href="#judge/${e.entryId}">View profile</a>
+        <a href="#create?judgeProfileId=${e.entryId}">Use this judge in a new bond</a>
+      </div>
+    </div>`;
+  }
+
+  // ─── CREATE WIZARD ─────────────────────────────────────────────────────
+  // State persisted only while the create tab is visible.
+  const createState = {
+    step: 0,
+    claim: '',
+    bondAmount: '10',
+    challengeAmount: '3',
+    judgeFee: '0.5',
+    judgeProfileId: '',
+    judgeAddr: '',
+    acceptanceDelay: 7 * 86400,
+    rulingBuffer: 7 * 86400,
+    maxChallenges: 10,
+    token: '',  // override
+    advancedOpen: false,
+  };
+
+  function resetCreateState() {
+    const c = chain();
+    createState.step = 0;
+    createState.claim = '';
+    createState.bondAmount = '10';
+    createState.challengeAmount = '3';
+    createState.judgeFee = '0.5';
+    createState.judgeProfileId = '';
+    createState.judgeAddr = '';
+    createState.acceptanceDelay = 7 * 86400;
+    createState.rulingBuffer = 7 * 86400;
+    createState.maxChallenges = 10;
+    createState.token = c?.approvedToken || '';
+    createState.advancedOpen = false;
+  }
+
+  function renderCreate() {
+    const c = chain();
+    if (!createState.token) createState.token = c?.approvedToken || '';
+    if (createPrefill && createPrefill.judgeProfileId) {
+      createState.judgeProfileId = createPrefill.judgeProfileId;
+      createPrefill = {};
+    }
+    $('view').innerHTML = `
+      <h2 style="margin-bottom:12px;">Create a bond on ${escapeHtml(c?.name || '—')}</h2>
+      <div id="createWizard"></div>
+      <div id="createMsg"></div>`;
+    renderWizard();
+  }
+
+  function getStageIds() { return ['claim', 'stake', 'judge', 'timing', 'review']; }
+
+  function isStageValid(i) {
+    if (i === 0) return createState.claim.trim().length > 0;
+    if (i === 1) {
+      const b = parseFloat(createState.bondAmount);
+      const cha = parseFloat(createState.challengeAmount);
+      const fee = parseFloat(createState.judgeFee);
+      return b > 0 && cha > 0 && fee >= 0 && fee <= cha;
+    }
+    if (i === 2) {
+      return createState.judgeProfileId !== '' && Number(createState.judgeProfileId) >= 0;
+    }
+    if (i === 3) {
+      return Number(createState.acceptanceDelay) >= 0 && Number(createState.rulingBuffer) >= 0 && Number(createState.maxChallenges) > 0;
+    }
+    return true;
+  }
+
+  function renderWizard() {
+    const c = chain();
+    const stages = getStageIds();
+    const cur = createState.step;
+    const stageEl = $('createWizard');
+    const progress = ((cur + 1) / stages.length) * 100;
+    stageEl.innerHTML = `
+      <div class="wizard">
+        <div class="wizard-top">
+          <div class="wizard-step-count">Step ${cur + 1} of ${stages.length}</div>
+          <div class="wizard-progress"><div class="wizard-progress-bar" style="width:${progress}%"></div></div>
+        </div>
+        <div class="wizard-stage" id="stageBody"></div>
+        <div class="wizard-nav">
+          <button class="secondary" id="wizPrev" ${cur === 0 ? 'style="visibility:hidden"' : ''}>← Back</button>
+          <div class="nav-spacer"></div>
+          ${cur < stages.length - 1
+            ? `<button id="wizNext" ${isStageValid(cur) ? '' : 'disabled'}>Continue</button>`
+            : `<button id="wizCreate">${signer ? 'Create bond' : 'Connect wallet to create'}</button>`}
+        </div>
+        <div id="wizStepper"></div>
+      </div>`;
+    renderStage(cur);
+    $('wizPrev').addEventListener('click', () => { createState.step = Math.max(0, cur - 1); renderWizard(); });
+    if (cur < stages.length - 1) {
+      $('wizNext').addEventListener('click', () => {
+        if (!isStageValid(cur)) return;
+        createState.step = cur + 1;
+        renderWizard();
+      });
+    } else {
+      $('wizCreate').addEventListener('click', () => submitCreate());
+    }
+  }
+
+  function renderStage(i) {
+    const body = $('stageBody');
+    const c = chain();
+    if (i === 0) {
+      body.innerHTML = `
+        <div class="wizard-stage-header">
+          <span class="wizard-stage-num">1</span>
+          <span class="wizard-stage-title">Claim</span>
+        </div>
+        <div class="wizard-stage-hint">What public claim are you willing to stake money on?</div>
+        <div class="form-group">
+          <label for="cb-claim">Claim content (text, URL, or IPFS URI)</label>
+          <textarea id="cb-claim" rows="5" placeholder='e.g. "All statistical claims in my March 2026 blog post are accurate and properly sourced."'>${escapeHtml(createState.claim)}</textarea>
+          <div class="hint">A good claim is specific, verifiable, and bounded in scope. The contract hashes this string into <code>claimHash</code> and emits the raw content in the BondCreated event.</div>
+        </div>`;
+      $('cb-claim').addEventListener('input', (e) => { createState.claim = e.target.value; updateNextBtn(); });
+    } else if (i === 1) {
+      const b = parseFloat(createState.bondAmount) || 0;
+      const cha = parseFloat(createState.challengeAmount) || 0;
+      const fee = parseFloat(createState.judgeFee) || 0;
+      let beliefHtml = '';
+      if (b > 0 && cha > 0) {
+        const net = b + cha - fee;
+        if (net > 0) {
+          const challPct = (cha * 100 / net).toFixed(1);
+          const postPct = ((1 - b / net) * 100).toFixed(1);
+          beliefHtml = `<div class="belief-card">
+            <h3>Implied belief thresholds</h3>
+            <div class="belief-grid">
+              <div class="belief-item belief-challenger">
+                <div class="belief-label">Challenger signals</div>
+                <div class="belief-value">&gt;${challPct}%</div>
+                <div class="belief-desc">chance poster is wrong</div>
+              </div>
+              <div class="belief-item belief-poster">
+                <div class="belief-label">Poster signals</div>
+                <div class="belief-value">&lt;${postPct}%</div>
+                <div class="belief-desc">chance they're wrong</div>
+              </div>
+            </div>
+          </div>`;
+        }
+      }
+      body.innerHTML = `
+        <div class="wizard-stage-header">
+          <span class="wizard-stage-num">2</span>
+          <span class="wizard-stage-title">Stake</span>
+        </div>
+        <div class="wizard-stage-hint">Token is the chain's approved sUSDS. Override in advanced step.</div>
+        <div class="grid-3">
+          <div class="form-group">
+            <label for="cb-bond">Bond amount (sUSDS)</label>
+            <input id="cb-bond" value="${escapeHtml(createState.bondAmount)}">
+          </div>
+          <div class="form-group">
+            <label for="cb-ch">Challenge amount</label>
+            <input id="cb-ch" value="${escapeHtml(createState.challengeAmount)}">
+          </div>
+          <div class="form-group">
+            <label for="cb-fee">Judge fee (max, ≤ challenge)</label>
+            <input id="cb-fee" value="${escapeHtml(createState.judgeFee)}">
+          </div>
+        </div>
+        ${beliefHtml}`;
+      const ev = () => { updateNextBtn(); renderStage(1); };
+      $('cb-bond').addEventListener('input', (e) => { createState.bondAmount = e.target.value; ev(); });
+      $('cb-ch').addEventListener('input', (e) => { createState.challengeAmount = e.target.value; ev(); });
+      $('cb-fee').addEventListener('input', (e) => { createState.judgeFee = e.target.value; ev(); });
+    } else if (i === 2) {
+      body.innerHTML = `
+        <div class="wizard-stage-header">
+          <span class="wizard-stage-num">3</span>
+          <span class="wizard-stage-title">Judge</span>
+        </div>
+        <div class="wizard-stage-hint">Pick the judge profile id (from the JudgeProfileRegistryV6). The bond pins the profile id at creation, so judges can't quietly change criteria.</div>
+        <div class="form-group">
+          <label for="cb-jpid">Judge profile id</label>
+          <input id="cb-jpid" type="number" min="0" value="${escapeHtml(createState.judgeProfileId)}" placeholder="0">
+          <div class="hint"><a href="#judges">Browse registered profiles</a></div>
+        </div>
+        <div id="cb-judgeResolved" class="hint" style="margin-top:8px;"></div>`;
+      $('cb-jpid').addEventListener('input', (e) => { createState.judgeProfileId = e.target.value; resolveJudgeFromProfile(); updateNextBtn(); });
+      resolveJudgeFromProfile();
+    } else if (i === 3) {
+      const presetsHtml = (current, presets, kind) => presets.map(p =>
+        `<button type="button" class="preset ${current === p.sec ? 'active' : ''}" data-${kind}="${p.sec}">${p.label}</button>`
+      ).join('');
+      const acceptPresets = [
+        { label: '1h', sec: 3600 },
+        { label: '1d', sec: 86400 },
+        { label: '7d', sec: 7 * 86400 },
+        { label: '30d', sec: 30 * 86400 },
+      ];
+      const rulingPresets = [
+        { label: '1h', sec: 3600 },
+        { label: '1d', sec: 86400 },
+        { label: '7d', sec: 7 * 86400 },
+        { label: '30d', sec: 30 * 86400 },
+      ];
+      body.innerHTML = `
+        <div class="wizard-stage-header">
+          <span class="wizard-stage-num">4</span>
+          <span class="wizard-stage-title">Timing</span>
+        </div>
+        <div class="wizard-stage-hint">Per-challenge windows. Acceptance delay is poster's concession window; ruling buffer is the judge's window after that.</div>
+        <div class="form-group">
+          <label>Acceptance delay</label>
+          <div class="preset-row" id="acceptPresets">${presetsHtml(createState.acceptanceDelay, acceptPresets, 'sec')}</div>
+          <input id="cb-ad" type="number" min="0" value="${createState.acceptanceDelay}" placeholder="seconds">
+        </div>
+        <div class="form-group">
+          <label>Ruling buffer</label>
+          <div class="preset-row" id="rulingPresets">${presetsHtml(createState.rulingBuffer, rulingPresets, 'sec')}</div>
+          <input id="cb-rb" type="number" min="0" value="${createState.rulingBuffer}" placeholder="seconds">
+        </div>
+        <div class="form-group">
+          <label for="cb-max">Max challenges (total ever filed)</label>
+          <input id="cb-max" type="number" min="1" value="${createState.maxChallenges}">
+        </div>`;
+      $('cb-ad').addEventListener('input', (e) => { createState.acceptanceDelay = Number(e.target.value || 0); updateNextBtn(); renderStage(3); });
+      $('cb-rb').addEventListener('input', (e) => { createState.rulingBuffer = Number(e.target.value || 0); updateNextBtn(); renderStage(3); });
+      $('cb-max').addEventListener('input', (e) => { createState.maxChallenges = Number(e.target.value || 0); updateNextBtn(); });
+      document.querySelectorAll('#acceptPresets .preset').forEach(b => b.addEventListener('click', () => {
+        createState.acceptanceDelay = Number(b.dataset.sec); renderStage(3); updateNextBtn();
+      }));
+      document.querySelectorAll('#rulingPresets .preset').forEach(b => b.addEventListener('click', () => {
+        createState.rulingBuffer = Number(b.dataset.sec); renderStage(3); updateNextBtn();
+      }));
+    } else if (i === 4) {
+      const c = chain();
+      body.innerHTML = `
+        <div class="wizard-stage-header">
+          <span class="wizard-stage-num">5</span>
+          <span class="wizard-stage-title">Review</span>
+        </div>
+        <div class="wizard-stage-hint">Confirm and create. You'll be asked to sign one approval (if needed) and the createBond tx.</div>
+        <div class="summary-card">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+            <strong>Standard terms</strong>
+            <button class="secondary" id="advToggle">${createState.advancedOpen ? 'Hide advanced' : 'Customize'}</button>
+          </div>
+          <div class="summary-grid">
+            <div class="summary-item full">
+              <div class="summary-label">Claim</div>
+              <div class="summary-value" style="white-space:pre-wrap;">${escapeHtml(createState.claim) || '<em>—</em>'}</div>
+            </div>
+            <div class="summary-item">
+              <div class="summary-label">Bond / challenge / fee</div>
+              <div class="summary-value">${escapeHtml(createState.bondAmount)} / ${escapeHtml(createState.challengeAmount)} / ${escapeHtml(createState.judgeFee)} sUSDS</div>
+            </div>
+            <div class="summary-item">
+              <div class="summary-label">Judge profile</div>
+              <div class="summary-value">#${escapeHtml(String(createState.judgeProfileId))} ${createState.judgeAddr ? `→ ${addressLink(createState.judgeAddr)}` : ''}</div>
+            </div>
+            <div class="summary-item">
+              <div class="summary-label">Acceptance delay</div>
+              <div class="summary-value">${fmtSeconds(createState.acceptanceDelay)}</div>
+            </div>
+            <div class="summary-item">
+              <div class="summary-label">Ruling buffer</div>
+              <div class="summary-value">${fmtSeconds(createState.rulingBuffer)}</div>
+            </div>
+            <div class="summary-item">
+              <div class="summary-label">Max challenges</div>
+              <div class="summary-value">${createState.maxChallenges}</div>
+            </div>
+          </div>
+          <div class="advanced-panel${createState.advancedOpen ? '' : ' hidden'}">
+            <div class="form-group">
+              <label for="cb-token">Token override (advanced)</label>
+              <input id="cb-token" value="${escapeHtml(createState.token)}" placeholder="${escapeHtml(c?.approvedToken || '')}">
+              <div class="hint">Defaults to <span class="mono">${escapeHtml(c?.approvedToken || '—')}</span> (chain's approved sUSDS).</div>
+            </div>
+            <div class="form-group">
+              <label for="cb-claim2">Claim content</label>
+              <textarea id="cb-claim2" rows="3">${escapeHtml(createState.claim)}</textarea>
+              <div class="hint">You can paste an <span class="mono">ipfs://…</span> or <span class="mono">https://…</span> URI here for large claims.</div>
+            </div>
+          </div>
+        </div>`;
+      $('advToggle').addEventListener('click', () => { createState.advancedOpen = !createState.advancedOpen; renderStage(4); });
+      if (createState.advancedOpen) {
+        $('cb-token').addEventListener('input', (e) => { createState.token = e.target.value; });
+        $('cb-claim2').addEventListener('input', (e) => { createState.claim = e.target.value; });
+      }
+    }
+  }
+
+  function updateNextBtn() {
+    const stages = getStageIds();
+    if (createState.step < stages.length - 1) {
+      const btn = $('wizNext');
+      if (btn) btn.disabled = !isStageValid(createState.step);
+    }
+  }
+
+  async function resolveJudgeFromProfile() {
+    const idStr = createState.judgeProfileId;
+    const out = $('cb-judgeResolved');
+    if (!out) return;
+    if (idStr === '' || !chain()?.judgeProfileRegistry) { out.innerHTML = ''; return; }
+    out.innerHTML = `<span class="spinner"></span>Resolving profile #${escapeHtml(String(idStr))}…`;
+    try {
+      const cached = judgeProfileEntryCache[`${activeChainId}:${idStr}`];
+      let entry;
+      if (cached) entry = cached;
+      else {
+        const reg = judgeRegRead();
+        const [owner, judgeContract, contentHash, content] = await reg.getProfile(idStr);
+        entry = { entryId: idStr, owner, judgeContract, contentHash, content };
+        judgeProfileEntryCache[`${activeChainId}:${idStr}`] = entry;
+      }
+      createState.judgeAddr = entry.judgeContract;
+      out.innerHTML = `Profile #${entry.entryId} → judge contract ${addressLink(entry.judgeContract)} · <a href="#judge/${entry.entryId}">View profile</a>`;
+    } catch (err) {
+      createState.judgeAddr = '';
+      out.innerHTML = `<span class="err">Profile #${escapeHtml(String(idStr))} not found or unreadable.</span>`;
+    }
+  }
+
+  async function submitCreate() {
+    const msg = $('createMsg');
+    msg.innerHTML = '';
+    const stepperEl = $('wizStepper');
+    try {
+      if (!signer) { await connectWallet(); if (!signer) return; }
+      if (String(walletChainId) !== String(activeChainId)) {
+        throw new Error(`Wallet is on chain ${walletChainId}, switch to ${chain().name} first.`);
+      }
+      if (!isStageValid(0) || !isStageValid(1) || !isStageValid(2) || !isStageValid(3)) {
+        throw new Error('Some required fields are missing.');
+      }
+      const c = chain();
+      const token = ethers.getAddress(createState.token || c.approvedToken);
+      const meta = await tokenMeta(token);
+      const bondAmount = ethers.parseUnits(createState.bondAmount, meta.decimals);
+      const challengeAmount = ethers.parseUnits(createState.challengeAmount, meta.decimals);
+      const judgeFee = ethers.parseUnits(createState.judgeFee, meta.decimals);
+      if (judgeFee > challengeAmount) throw new Error('Judge fee must be ≤ challenge amount.');
+      if (!createState.judgeAddr) {
+        await resolveJudgeFromProfile();
+        if (!createState.judgeAddr) throw new Error(`Judge profile #${createState.judgeProfileId} could not be resolved.`);
+      }
+      const steps = [];
+      // Check approval
+      let allowance = 0n;
+      try { allowance = await erc20Contract(token).allowance(account, c.bondContract); } catch (_) {}
+      allowanceCache[`${token.toLowerCase()}:${c.bondContract.toLowerCase()}`] = allowance;
+      if (allowance < bondAmount) steps.push(`Approve ${meta.symbol}`);
+      steps.push('Create bond');
+      renderTxStepper(stepperEl, steps);
+      let idx = 0;
+      if (allowance < bondAmount) {
+        updateStep(stepperEl, idx, 'active');
+        await ensureApproval(token, bondAmount, c.bondContract);
+        updateStep(stepperEl, idx, 'done');
+        idx++;
+      }
+      updateStep(stepperEl, idx, 'active');
+      const bc = bondWriteContract();
+      const tx = await bc.createBond(
+        token,
+        bondAmount,
+        challengeAmount,
+        judgeFee,
+        ethers.getAddress(createState.judgeAddr),
+        BigInt(createState.acceptanceDelay),
+        BigInt(createState.rulingBuffer),
+        BigInt(createState.maxChallenges),
+        BigInt(createState.judgeProfileId),
+        createState.claim
+      );
+      const receipt = await waitForTx(tx);
+      updateStep(stepperEl, idx, 'done');
+      // Parse BondCreated
+      const iface = new ethers.Interface(window.SIMPLE_BOND_V6_ABI);
+      let bondId = null;
+      for (const lg of receipt.logs) {
+        try {
+          const parsed = iface.parseLog({ topics: lg.topics, data: lg.data });
+          if (parsed.name === 'BondCreated') { bondId = Number(parsed.args.bondId); break; }
+        } catch (_) {}
+      }
+      log(`Created bond #${bondId ?? '?'} (tx ${receipt.hash})`);
+      msg.innerHTML = `<div class="success-card">
+        <div class="sc-label">Bond created!</div>
+        <div class="sc-id">Bond #${bondId ?? '?'}</div>
+        <div class="sc-actions">
+          <button onclick="window.__simpleBondView(${bondId})">View bond</button>
+          <button class="secondary" onclick="window.__simpleBondCopyLink(${bondId})">Copy link</button>
+          <button class="secondary" onclick="window.__simpleBondAnother()">Create another</button>
+        </div>
+        <div style="margin-top:10px;font-size:12px;"><a href="${explorerTx(receipt.hash)}" target="_blank">View tx on explorer</a></div>
+      </div>`;
+      // Invalidate browse cache
+      delete bondListCache[bondListKey()];
+    } catch (err) {
+      log(`Create failed: ${friendlyError(err)}`, 'err');
+      msg.innerHTML = `<div class="msg msg-error">${escapeHtml(friendlyError(err))}</div>`;
+    }
+  }
+  // Expose to onclick handlers in injected HTML
+  window.__simpleBondView = (id) => navigate('#view/' + id);
+  window.__simpleBondAnother = () => { resetCreateState(); render(); };
+  window.__simpleBondCopyLink = async (id) => {
+    const link = location.origin + location.pathname + '#view/' + id;
+    try { await navigator.clipboard.writeText(link); log(`Copied ${link}`); }
+    catch (_) { prompt('Copy:', link); }
+  };
+
+  // ─── MY BONDS ──────────────────────────────────────────────────────────
+  function renderMyBonds() {
+    if (!signer || !account) {
+      $('view').innerHTML = `<h2 style="margin-bottom:12px;">My bonds</h2>
+        <div class="card">
+          <p>Connect a wallet to see bonds where you are the poster, challenger, or judge.</p>
+          <div class="btn-row"><button id="myConnectBtn">Connect wallet</button></div>
+        </div>`;
+      $('myConnectBtn').addEventListener('click', () => connectWallet());
+      return;
+    }
+    const c = chain();
+    $('view').innerHTML = `<h2 style="margin-bottom:12px;">My bonds on ${escapeHtml(c?.name || '—')}</h2>
+      <div class="my-section">
+        <h3>As poster <span class="count" id="myPosterCount">…</span></h3>
+        <div id="myPoster"><div class="loading"><span class="spinner"></span>Loading…</div></div>
+      </div>
+      <div class="my-section">
+        <h3>As challenger <span class="count" id="myChallengerCount">…</span></h3>
+        <div id="myChallenger"><div class="loading"><span class="spinner"></span>Loading…</div></div>
+      </div>
+      <div class="my-section">
+        <h3>As judge <span class="count" id="myJudgeCount">…</span></h3>
+        <div id="myJudge"><div class="loading"><span class="spinner"></span>Loading…</div></div>
+      </div>`;
+    loadMyBonds();
+  }
+
+  async function loadMyBonds() {
+    const c = chain();
+    const fromBlock = c?.deployBlock || 0;
+    const bc = bondReadContract();
+    const myJudge = getMyJudgeContract();
+
+    // Gather all relevant bond ids per role
+    let posterIds = [];
+    let challengerIds = [];
+    let judgeIds = [];
+
+    try {
+      const filter = bc.filters.BondCreated(null, account);
+      const logs = await withTimeout(bc.queryFilter(filter, fromBlock), 12000, []);
+      posterIds = logs.map(l => Number(l.args.bondId));
+    } catch (err) { log(`Poster events failed: ${friendlyError(err)}`, 'err'); }
+
+    try {
+      const filter = bc.filters.Challenged(null, null, account);
+      const logs = await withTimeout(bc.queryFilter(filter, fromBlock), 12000, []);
+      challengerIds = [...new Set(logs.map(l => Number(l.args.bondId)))];
+    } catch (err) { log(`Challenger events failed: ${friendlyError(err)}`, 'err'); }
+
+    if (myJudge) {
+      try {
+        const filter = bc.filters.BondCreated(null, null, myJudge);
+        const logs = await withTimeout(bc.queryFilter(filter, fromBlock), 12000, []);
+        judgeIds = logs.map(l => Number(l.args.bondId));
+      } catch (err) { log(`Judge events failed: ${friendlyError(err)}`, 'err'); }
+    }
+
+    await Promise.all([
+      renderMySection('myPoster', 'myPosterCount', posterIds, 'poster'),
+      renderMySection('myChallenger', 'myChallengerCount', challengerIds, 'challenger'),
+      renderMySection('myJudge', 'myJudgeCount', judgeIds, 'judge'),
+    ]);
+  }
+
+  async function renderMySection(containerId, countId, ids, role) {
+    const el = $(containerId);
+    if (!el) return;
+    $(countId).textContent = String(ids.length);
+    if (ids.length === 0) {
+      let hint = '';
+      if (role === 'poster') hint = 'No bonds created from this wallet yet. <a href="#create">Create one</a>.';
+      else if (role === 'challenger') hint = 'No challenges filed from this wallet yet.';
+      else hint = getMyJudgeContract() ? 'No bonds have your judge contract assigned yet.' : 'Deploy a judge contract in the Judges tab to see bonds you can rule on.';
+      el.innerHTML = `<div class="empty-state">${hint}</div>`;
+      return;
+    }
+    ids.sort((a, b) => b - a);
+    const bc = bondReadContract();
+    const rows = [];
+    for (const id of ids.slice(0, 50)) {
+      try {
+        const b = await bc.bonds(id);
+        let hint = '';
+        if (role === 'poster' && b.pendingCount > 0n) hint = `${b.pendingCount} pending challenge${b.pendingCount > 1n ? 's' : ''} — review action`;
+        else if (role === 'challenger' && !b.settled) hint = 'Challenge active — check ruling window';
+        else if (role === 'judge' && b.pendingCount > 0n) hint = 'Pending challenges to rule';
+        rows.push({ id, b, hint });
+      } catch (_) {}
+    }
+    el.innerHTML = rows.map(r => myRowHtml(r)).join('');
+    el.querySelectorAll('.bond-list-item').forEach(item => {
+      item.addEventListener('click', () => navigate('#view/' + item.dataset.bondid));
+    });
+  }
+
+  function myRowHtml({ id, b, hint }) {
+    let status = 'open';
+    if (b.settled) status = 'settled';
+    else if (b.closed) status = 'closed';
+    else if (b.pendingCount > 0n) status = 'disputed';
+    return `<div class="bond-list-item" data-bondid="${id}">
+      <div class="bli-head">
+        <span class="bli-id">Bond #${id}</span>
+        <span class="status-badge status-${status}">${status}</span>
+        ${b.pendingCount > 0n ? `<span class="status-badge status-pending">${b.pendingCount} pending</span>` : ''}
+      </div>
+      <div class="bli-meta">
+        <span>bond <span class="stat-val">${fmtUnits(b.bondAmount, 18)}</span></span>
+        <span>challenge <span class="stat-val">${fmtUnits(b.challengeAmount, 18)}</span></span>
+        <span>judge ${addressLink(b.judge)}</span>
+      </div>
+      ${hint ? `<div class="role-hint">${escapeHtml(hint)}</div>` : ''}
+    </div>`;
+  }
+
+  // ─── BOND DETAIL ───────────────────────────────────────────────────────
+  async function renderBondDetail(bondIdStr) {
+    const view = $('view');
+    view.innerHTML = `<div class="loading"><span class="spinner"></span>Loading bond #${escapeHtml(bondIdStr)}…</div>`;
+    try {
+      const bondId = parseInt(bondIdStr, 10);
+      if (!Number.isFinite(bondId) || bondId < 0) throw new Error('Invalid bond id');
+      const bc = bondReadContract();
+      const nextId = Number(await bc.nextBondId());
+      if (bondId >= nextId) throw new Error(`Bond #${bondId} does not exist yet (next id is ${nextId}).`);
+      const b = await bc.bonds(bondId);
+      const challengeCount = Number(await bc.getChallengeCount(bondId));
+      let challenges = [];
+      for (let i = 0; i < challengeCount; i++) {
+        try {
+          const ch = await bc.getChallenge(bondId, i);
+          let timing = null;
+          if (Number(ch.status) === 0) {
+            try {
+              const [cd, rs, rd] = await Promise.all([
+                bc.concessionDeadline(bondId, i).catch(() => 0n),
+                bc.rulingWindowStart(bondId, i).catch(() => 0n),
+                bc.rulingDeadline(bondId, i).catch(() => 0n),
+              ]);
+              timing = { concessionDeadline: cd, rulingWindowStart: rs, rulingDeadline: rd };
+            } catch (_) {}
+          }
+          challenges.push({ i, ch, timing });
+        } catch (_) {}
+      }
+      // Fetch latest claim content via events
+      let claimContent = '';
+      let claimContentVersion = null;
+      try {
+        const c = chain();
+        const fromBlock = c?.deployBlock || 0;
+        const createdLogs = await withTimeout(bc.queryFilter(bc.filters.BondCreated(bondId), fromBlock), 8000, []);
+        if (createdLogs.length > 0) {
+          claimContent = String(createdLogs[0].args.claimContent || '');
+          claimContentVersion = 1;
+        }
+        const modLogs = await withTimeout(bc.queryFilter(bc.filters.ClaimModified(bondId), fromBlock), 8000, []);
+        let latest = claimContentVersion;
+        for (const ev of modLogs) {
+          const v = Number(ev.args.newVersion);
+          if (latest == null || v > latest) {
+            latest = v;
+            claimContent = String(ev.args.newContent || '');
+          }
+        }
+        if (latest != null) claimContentVersion = latest;
+      } catch (_) {}
+
+      let tokenSym = '???', tokenDec = 18;
+      try { const m = await tokenMeta(b.token); tokenSym = m.symbol; tokenDec = m.decimals; } catch (_) {}
+
+      const bondAmount = b.bondAmount;
+      const challengeAmount = b.challengeAmount;
+      const judgeFee = b.judgeFee;
+      const beliefs = beliefThresholds(bondAmount, challengeAmount, judgeFee);
+
+      const isPoster = signer && account && account.toLowerCase() === b.poster.toLowerCase();
+      const myJudgeAddr = getMyJudgeContract();
+      const isJudgeOperator = signer && account && myJudgeAddr && myJudgeAddr.toLowerCase() === b.judge.toLowerCase();
+      const isNonPoster = signer && account && account.toLowerCase() !== b.poster.toLowerCase();
+      const bondOpen = !b.settled && !b.closed;
+      const canChallenge = isNonPoster && bondOpen && Number(b.pendingCount) < Number(b.maxChallenges) && Number(b.pendingCount) <= 100;
+      const statusName = b.settled ? 'settled' : (b.closed ? 'closed' : (Number(b.pendingCount) > 0 ? 'disputed' : 'open'));
+
+      view.innerHTML = `
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
+          <h2 style="margin:0;">Bond #${bondId}</h2>
+          <span class="status-badge status-${statusName}">${statusName}</span>
+          <span style="color:var(--muted);font-size:13px;">claim v${b.claimVersion}</span>
+        </div>
+
+        ${beliefs ? `<div class="belief-card">
+          <h3>Implied belief thresholds</h3>
+          <div class="belief-grid">
+            <div class="belief-item belief-challenger">
+              <div class="belief-label">Challenger signals</div>
+              <div class="belief-value">&gt;${beliefs.challengerPct.toFixed(1)}%</div>
+              <div class="belief-desc">chance poster is wrong</div>
+            </div>
+            <div class="belief-item belief-poster">
+              <div class="belief-label">Poster signals</div>
+              <div class="belief-value">&lt;${beliefs.posterPct.toFixed(1)}%</div>
+              <div class="belief-desc">chance they're wrong</div>
+            </div>
+          </div>
+        </div>` : ''}
+
+        ${canChallenge && beliefs ? riskRewardHtml(bondAmount, challengeAmount, judgeFee, beliefs, tokenSym) : ''}
+
+        <div class="card">
+          <h3>Bond details</h3>
+          <div class="grid-2">
+            <div class="bond-field"><div class="label">Poster</div><div class="value">${addressLink(b.poster)}</div></div>
+            <div class="bond-field"><div class="label">Judge contract</div><div class="value">${addressLink(b.judge)}</div></div>
+            <div class="bond-field"><div class="label">Judge profile</div><div class="value"><a href="#judge/${b.judgeProfileId}">#${b.judgeProfileId}</a></div></div>
+            <div class="bond-field"><div class="label">Token</div><div class="value">${addressLink(b.token, tokenSym)}</div></div>
+            <div class="bond-field"><div class="label">Bond amount</div><div class="value">${fmtUnits(bondAmount, tokenDec)} ${escapeHtml(tokenSym)}</div></div>
+            <div class="bond-field"><div class="label">Challenge amount</div><div class="value">${fmtUnits(challengeAmount, tokenDec)} ${escapeHtml(tokenSym)}</div></div>
+            <div class="bond-field"><div class="label">Judge fee (max)</div><div class="value">${fmtUnits(judgeFee, tokenDec)} ${escapeHtml(tokenSym)}</div></div>
+            <div class="bond-field"><div class="label">Acceptance delay</div><div class="value">${fmtSeconds(b.acceptanceDelay)}</div></div>
+            <div class="bond-field"><div class="label">Ruling buffer</div><div class="value">${fmtSeconds(b.rulingBuffer)}</div></div>
+            <div class="bond-field"><div class="label">Max challenges</div><div class="value">${b.maxChallenges}</div></div>
+            <div class="bond-field"><div class="label">Pending count</div><div class="value">${b.pendingCount}</div></div>
+            <div class="bond-field"><div class="label">Claim hash</div><div class="value mono" style="font-size:12px;">${b.claimHash}</div></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Claim content <span style="font-size:12px;color:var(--muted);font-weight:normal;font-family:system-ui;">v${b.claimVersion}</span></h3>
+          ${claimContent
+            ? `<div style="white-space:pre-wrap;background:#fff;padding:12px;border-radius:6px;border:1px solid var(--border);">${escapeHtml(claimContent)}</div>`
+            : `<div class="hint">Claim content not found in events (hash: <code>${b.claimHash}</code>).</div>`}
+          ${isPoster && !b.settled ? `
+            <div style="margin-top:10px;">
+              ${Number(b.pendingCount) === 0 ? `
+                <details>
+                  <summary style="cursor:pointer;font-weight:500;">Modify claim</summary>
+                  <div style="margin-top:8px;">
+                    <textarea id="modText" rows="3" placeholder="New claim content">${escapeHtml(claimContent)}</textarea>
+                    <div class="btn-row"><button id="modBtn">Modify claim (v${Number(b.claimVersion) + 1})</button></div>
+                    <div id="modMsg"></div>
+                  </div>
+                </details>
+              ` : `<div class="hint">Cannot modify claim while ${b.pendingCount} challenge${Number(b.pendingCount) === 1 ? ' is' : 's are'} pending.</div>`}
+            </div>
+          ` : ''}
+        </div>
+
+        ${canChallenge ? `
+        <div class="card">
+          <h3>Challenge this claim</h3>
+          <div class="form-group">
+            <label for="chContent">Your reasoning (stored on-chain via event)</label>
+            <textarea id="chContent" rows="3" placeholder="Explain why you think the poster is wrong."></textarea>
+          </div>
+          <div id="chStepper"></div>
+          <button id="challengeBtn">Challenge bond (pins claim v${b.claimVersion})</button>
+          <div id="challengeMsg"></div>
+        </div>` : ''}
+
+        <div class="card">
+          <h3>Challenges (${challengeCount})</h3>
+          <div id="challengeList">${challenges.length === 0 ? '<div class="hint">No challenges yet.</div>' : challenges.map(c => challengeHtml(bondId, c, b, tokenSym, tokenDec, isPoster, isJudgeOperator)).join('')}</div>
+        </div>
+
+        ${isPoster && !b.settled ? `
+        <div class="card">
+          <h3>Poster controls</h3>
+          <div class="btn-row">
+            ${b.closed ? `<button id="openBtn">Open bond</button>` : `<button id="closeBtn">Close bond</button>`}
+            <button class="danger" id="withdrawBtn" ${b.closed && Number(b.pendingCount) === 0 ? '' : 'disabled title="Withdraw requires closed + 0 pending"'}>Withdraw bond</button>
+          </div>
+          <div id="posterMsg"></div>
+        </div>` : ''}
+
+        ${isJudgeOperator && !b.settled ? `
+        <div class="card">
+          <h3>Judge controls</h3>
+          <p class="hint">As the operator of this bond's judge contract, you can void the entire bond out-of-scope. Use the per-challenge "Reject" buttons above to dismiss individual challenges.</p>
+          <div class="form-group">
+            <label for="voidContent">Reason</label>
+            <textarea id="voidContent" rows="2" placeholder="Why are you voiding this bond?"></textarea>
+          </div>
+          <button class="danger" id="rejectBondBtn">Void bond (rejectBond)</button>
+          <div id="judgeMsg"></div>
+        </div>` : ''}
+
+        ${signer ? `
+        <div class="card">
+          <h3>Refunds</h3>
+          <p class="hint">Conceded challenges, judge-rejected challenges, and (after settlement) all remaining pending challenges become refundable. Anyone can process them in bounded batches.</p>
+          <div class="row">
+            <input id="refundCount" type="number" min="1" max="100" value="10" style="width:90px;">
+            <button class="secondary" id="refundsBtn">Drain refunds (max N)</button>
+          </div>
+          <div id="refundMsg"></div>
+        </div>` : ''}
+      `;
+
+      wireBondDetail(bondId, b);
+    } catch (err) {
+      view.innerHTML = `<div class="msg msg-error">${escapeHtml(friendlyError(err))}</div>
+        <p style="margin-top:10px;"><a href="#browse">← Back to browse</a></p>`;
+    }
+  }
+
+  function riskRewardHtml(bondAmount, challengeAmount, judgeFee, beliefs, tokenSym) {
+    const netProfit = bondAmount - judgeFee;
+    return `<div class="risk-reward-card">
+      <h3>Challenge this bond</h3>
+      <div class="risk-reward-grid">
+        <div class="reward-item">
+          <div class="rr-label">If you win</div>
+          <div class="rr-value">+${fmtUnits(netProfit + challengeAmount, 18)} ${escapeHtml(tokenSym)}</div>
+        </div>
+        <div class="risk-item">
+          <div class="rr-label">Your risk</div>
+          <div class="rr-value">${fmtUnits(challengeAmount, 18)} ${escapeHtml(tokenSym)}</div>
+        </div>
+      </div>
+      <div class="rr-note">By challenging, you signal &gt;${beliefs.challengerPct.toFixed(0)}% belief the poster is wrong. If the judge rules against you, you forfeit your ${fmtUnits(challengeAmount, 18)} ${escapeHtml(tokenSym)} deposit.</div>
+    </div>`;
+  }
+
+  function challengeHtml(bondId, { i, ch, timing }, b, tokenSym, tokenDec, isPoster, isJudgeOperator) {
+    const statusIdx = Number(ch.status);
+    const statusName = STATUS_NAMES[statusIdx] || 'Unknown';
+    const statusClass = STATUS_CLASSES[statusIdx] || 'pending';
+    const now = Math.floor(Date.now() / 1000);
+    let actions = [];
+    if (statusIdx === 0 /* Pending */) {
+      if (signer) {
+        const concessionUntil = timing ? Number(timing.concessionDeadline) : 0;
+        const rulingStart = timing ? Number(timing.rulingWindowStart) : 0;
+        const rulingEnd = timing ? Number(timing.rulingDeadline) : 0;
+        if (isPoster && now <= concessionUntil) {
+          actions.push(`<div class="form-group" style="margin-top:8px;">
+            <label>Concession reasoning (stored on-chain via event)</label>
+            <textarea id="conc-${i}" rows="2" placeholder="Why are you conceding this challenge?"></textarea>
+            <div class="btn-row"><button data-act="concede" data-i="${i}">Concede this challenge</button></div>
+          </div>`);
+        }
+        if (isJudgeOperator && now >= rulingStart && now <= rulingEnd) {
+          actions.push(`<div class="form-group" style="margin-top:8px;">
+            <label>Ruling content (cited evidence, reasoning)</label>
+            <textarea id="rule-${i}" rows="2" placeholder="Why are you ruling this way?"></textarea>
+            <label style="margin-top:6px;">Fee charged (≤ ${fmtUnits(b.judgeFee, tokenDec)} ${escapeHtml(tokenSym)})</label>
+            <input id="fee-${i}" value="${ethers.formatUnits(b.judgeFee, tokenDec)}" style="max-width:160px;">
+            <div class="btn-row">
+              <button class="success" data-act="ruleForPoster" data-i="${i}">Rule for poster</button>
+              <button class="danger" data-act="ruleForChallenger" data-i="${i}">Rule for challenger</button>
+              <button class="secondary" data-act="rejectChallenge" data-i="${i}">Reject as out-of-scope</button>
+            </div>
+          </div>`);
+        } else if (isJudgeOperator) {
+          actions.push(`<div class="form-group" style="margin-top:8px;">
+            <label>Reject reason (out-of-scope dismissal allowed any time)</label>
+            <textarea id="reject-${i}" rows="2" placeholder="Out-of-scope, duplicate, low quality, etc."></textarea>
+            <div class="btn-row"><button class="secondary" data-act="rejectChallenge" data-i="${i}">Reject as out-of-scope</button></div>
+          </div>`);
+        }
+        if (now > rulingEnd && rulingEnd > 0) {
+          actions.push(`<div class="btn-row"><button class="secondary" data-act="claimTimeout" data-i="${i}">Claim timeout (anyone)</button></div>`);
+        }
+      }
+    }
+    let timingHtml = '';
+    if (timing) {
+      timingHtml = `<div class="ci-grid">
+        <div>concession deadline</div><div>${fmtTime(timing.concessionDeadline)} (${fmtCountdown(timing.concessionDeadline)})</div>
+        <div>ruling window start</div><div>${fmtTime(timing.rulingWindowStart)} (${fmtCountdown(timing.rulingWindowStart)})</div>
+        <div>ruling deadline</div><div>${fmtTime(timing.rulingDeadline)} (${fmtCountdown(timing.rulingDeadline)})</div>
+      </div>`;
+    }
+    return `<div class="challenge-item" id="ch-${i}">
+      <div class="ci-head">
+        <span class="ci-idx">#${i}</span>
+        <span class="status-badge status-${statusClass}">${statusName}</span>
+      </div>
+      <div class="ci-grid">
+        <div>challenger</div><div>${addressLink(ch.challenger)}</div>
+        <div>filed at</div><div>${fmtTime(ch.timestamp)}</div>
+        <div>pinned claim version</div><div>${ch.challengeAtVersion}</div>
+        <div>metadata hash</div><div class="mono" style="font-size:12px;">${ch.metadataHash}</div>
+        ${ch.rulingMetadataHash && ch.rulingMetadataHash !== '0x0000000000000000000000000000000000000000000000000000000000000000' ? `<div>ruling hash</div><div class="mono" style="font-size:12px;">${ch.rulingMetadataHash}</div>` : ''}
+      </div>
+      ${timingHtml}
+      ${actions.length > 0 ? `<div class="ci-actions">${actions.join('')}</div>` : ''}
+    </div>`;
+  }
+
+  function wireBondDetail(bondId, b) {
+    // Challenge button
+    $('challengeBtn')?.addEventListener('click', () => doChallenge(bondId, b));
+    // Modify claim
+    $('modBtn')?.addEventListener('click', () => doModifyClaim(bondId));
+    // Poster
+    $('closeBtn')?.addEventListener('click', () => doCloseBond(bondId));
+    $('openBtn')?.addEventListener('click', () => doOpenBond(bondId));
+    $('withdrawBtn')?.addEventListener('click', () => doWithdrawBond(bondId));
+    // Judge void
+    $('rejectBondBtn')?.addEventListener('click', () => doRejectBond(bondId, b));
+    // Refunds
+    $('refundsBtn')?.addEventListener('click', () => doDrainRefunds(bondId));
+    // Per-challenge
+    document.querySelectorAll('.challenge-item button[data-act]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const act = btn.dataset.act;
+        const i = Number(btn.dataset.i);
+        if (act === 'concede') doConcede(bondId, i);
+        else if (act === 'ruleForPoster') doRule('poster', bondId, i, b);
+        else if (act === 'ruleForChallenger') doRule('challenger', bondId, i, b);
+        else if (act === 'rejectChallenge') doRejectChallenge(bondId, i, b);
+        else if (act === 'claimTimeout') doClaimTimeout(bondId, i);
+      });
+    });
+  }
+
+  async function doChallenge(bondId, b) {
+    const btn = $('challengeBtn');
+    const msg = $('challengeMsg');
+    const stepperEl = $('chStepper');
+    msg.innerHTML = '';
+    try {
+      if (!signer) { await connectWallet(); if (!signer) return; }
+      btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Processing…';
+      const c = chain();
+      const content = $('chContent').value;
+      const steps = [];
+      let allowance = 0n;
+      try { allowance = await erc20Contract(b.token).allowance(account, c.bondContract); } catch (_) {}
+      allowanceCache[`${b.token.toLowerCase()}:${c.bondContract.toLowerCase()}`] = allowance;
+      if (allowance < b.challengeAmount) steps.push('Approve token');
+      steps.push('Submit challenge');
+      renderTxStepper(stepperEl, steps);
+      let idx = 0;
+      if (allowance < b.challengeAmount) {
+        updateStep(stepperEl, idx, 'active');
+        await ensureApproval(b.token, b.challengeAmount, c.bondContract);
+        updateStep(stepperEl, idx, 'done');
+        idx++;
+      }
+      updateStep(stepperEl, idx, 'active');
+      const bc = bondWriteContract();
+      const tx = await bc.challenge(bondId, BigInt(b.claimVersion), content);
+      const r = await waitForTx(tx);
+      updateStep(stepperEl, idx, 'done');
+      log(`Challenge filed on bond #${bondId} (tx ${r.hash})`);
+      msg.innerHTML = `<div class="msg msg-success">Challenge filed. <a href="${explorerTx(r.hash)}" target="_blank">View tx</a></div>`;
+      setTimeout(() => renderBondDetail(String(bondId)), 600);
+    } catch (err) {
+      log(`Challenge failed: ${friendlyError(err)}`, 'err');
+      msg.innerHTML = `<div class="msg msg-error">${escapeHtml(friendlyError(err))}</div>`;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = `Challenge bond (pins claim v${b.claimVersion})`;
+    }
+  }
+
+  async function doConcede(bondId, i) {
+    try {
+      if (!signer) { await connectWallet(); if (!signer) return; }
+      const content = $(`conc-${i}`)?.value || '';
+      const bc = bondWriteContract();
+      log(`Conceding challenge ${i} on bond #${bondId}…`);
+      const tx = await bc.concede(bondId, i, content);
+      await waitForTx(tx);
+      log(`Conceded challenge ${i}.`);
+      renderBondDetail(String(bondId));
+    } catch (err) {
+      log(`Concede failed: ${friendlyError(err)}`, 'err');
+      alert(friendlyError(err));
+    }
+  }
+
+  async function doModifyClaim(bondId) {
+    const msg = $('modMsg');
+    const btn = $('modBtn');
+    try {
+      if (!signer) { await connectWallet(); if (!signer) return; }
+      const text = $('modText').value;
+      btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Submitting…';
+      const tx = await bondWriteContract().modifyClaim(bondId, text);
+      await waitForTx(tx);
+      log(`Claim modified on bond #${bondId}`);
+      msg.innerHTML = `<div class="msg msg-success">Claim modified.</div>`;
+      setTimeout(() => renderBondDetail(String(bondId)), 600);
+    } catch (err) {
+      msg.innerHTML = `<div class="msg msg-error">${escapeHtml(friendlyError(err))}</div>`;
+    } finally { btn.disabled = false; btn.textContent = 'Modify claim'; }
+  }
+
+  async function doCloseBond(bondId) {
+    try {
+      if (!signer) { await connectWallet(); if (!signer) return; }
+      const tx = await bondWriteContract().closeBond(bondId);
+      await waitForTx(tx);
+      log(`Bond #${bondId} closed.`);
+      renderBondDetail(String(bondId));
+    } catch (err) { alert(friendlyError(err)); log(`Close failed: ${friendlyError(err)}`, 'err'); }
+  }
+  async function doOpenBond(bondId) {
+    try {
+      if (!signer) { await connectWallet(); if (!signer) return; }
+      const tx = await bondWriteContract().openBond(bondId);
+      await waitForTx(tx);
+      log(`Bond #${bondId} re-opened.`);
+      renderBondDetail(String(bondId));
+    } catch (err) { alert(friendlyError(err)); log(`Open failed: ${friendlyError(err)}`, 'err'); }
+  }
+  async function doWithdrawBond(bondId) {
+    try {
+      if (!signer) { await connectWallet(); if (!signer) return; }
+      if (!confirm('Withdraw the entire bond? This settles the bond permanently.')) return;
+      const tx = await bondWriteContract().withdrawBond(bondId);
+      await waitForTx(tx);
+      log(`Bond #${bondId} withdrawn.`);
+      renderBondDetail(String(bondId));
+    } catch (err) { alert(friendlyError(err)); log(`Withdraw failed: ${friendlyError(err)}`, 'err'); }
+  }
+  async function doClaimTimeout(bondId, i) {
+    try {
+      if (!signer) { await connectWallet(); if (!signer) return; }
+      const tx = await bondWriteContract().claimTimeout(bondId, i);
+      await waitForTx(tx);
+      log(`Timeout claimed for bond #${bondId}, challenge ${i}.`);
+      renderBondDetail(String(bondId));
+    } catch (err) { alert(friendlyError(err)); log(`Timeout failed: ${friendlyError(err)}`, 'err'); }
+  }
+  async function doDrainRefunds(bondId) {
+    const msg = $('refundMsg');
+    try {
+      if (!signer) { await connectWallet(); if (!signer) return; }
+      const n = parseInt($('refundCount').value || '10', 10);
+      msg.innerHTML = `<div class="msg msg-info"><span class="spinner"></span>Draining up to ${n} refunds…</div>`;
+      const tx = await bondWriteContract().claimRefunds(bondId, n);
+      await waitForTx(tx);
+      log(`Drained refunds for bond #${bondId} (max ${n}).`);
+      msg.innerHTML = `<div class="msg msg-success">Refund batch processed.</div>`;
+      setTimeout(() => renderBondDetail(String(bondId)), 600);
+    } catch (err) {
+      msg.innerHTML = `<div class="msg msg-error">${escapeHtml(friendlyError(err))}</div>`;
+      log(`Refunds failed: ${friendlyError(err)}`, 'err');
+    }
+  }
+
+  async function doRule(side, bondId, i, b) {
+    try {
+      if (!signer) { await connectWallet(); if (!signer) return; }
+      const c = chain();
+      const content = $(`rule-${i}`)?.value || '';
+      const feeStr = $(`fee-${i}`)?.value || ethers.formatUnits(b.judgeFee, 18);
+      let fee = ethers.parseUnits(feeStr, 18);
+      if (fee > b.judgeFee) fee = b.judgeFee;
+      const judge = manualJudgeContract(b.judge, true);
+      const fn = side === 'poster' ? 'ruleForPoster' : 'ruleForChallenger';
+      log(`${fn} on bond #${bondId} challenge ${i}…`);
+      const tx = await judge[fn](c.bondContract, bondId, i, fee, content);
+      await waitForTx(tx);
+      log(`${fn} confirmed.`);
+      renderBondDetail(String(bondId));
+    } catch (err) { alert(friendlyError(err)); log(`Rule failed: ${friendlyError(err)}`, 'err'); }
+  }
+  async function doRejectChallenge(bondId, i, b) {
+    try {
+      if (!signer) { await connectWallet(); if (!signer) return; }
+      const c = chain();
+      const content = $(`reject-${i}`)?.value || $(`rule-${i}`)?.value || '';
+      const judge = manualJudgeContract(b.judge, true);
+      log(`rejectChallenge on bond #${bondId} challenge ${i}…`);
+      const tx = await judge.rejectChallenge(c.bondContract, bondId, i, content);
+      await waitForTx(tx);
+      log(`Challenge rejected.`);
+      renderBondDetail(String(bondId));
+    } catch (err) { alert(friendlyError(err)); log(`Reject failed: ${friendlyError(err)}`, 'err'); }
+  }
+  async function doRejectBond(bondId, b) {
+    try {
+      if (!signer) { await connectWallet(); if (!signer) return; }
+      const c = chain();
+      const content = $('voidContent')?.value || '';
+      if (!confirm('Void this bond entirely? The poster is refunded and all pending challenges become refundable.')) return;
+      const judge = manualJudgeContract(b.judge, true);
+      const tx = await judge.rejectBond(c.bondContract, bondId, content);
+      await waitForTx(tx);
+      log(`Bond #${bondId} voided by judge.`);
+      renderBondDetail(String(bondId));
+    } catch (err) { alert(friendlyError(err)); log(`Void failed: ${friendlyError(err)}`, 'err'); }
+  }
+
+  // ─── JUDGE PROFILE PAGE ────────────────────────────────────────────────
+  async function renderJudgeProfile({ entryId, addr }) {
+    const view = $('view');
+    view.innerHTML = `<div class="loading"><span class="spinner"></span>Loading judge profile…</div>`;
+    try {
+      const c = chain();
+      let entry;
+      if (entryId != null && entryId !== '') {
+        const reg = judgeRegRead();
+        const [owner, judgeContract, contentHash, content] = await reg.getProfile(entryId);
+        entry = { entryId, owner, judgeContract, contentHash, content };
+      } else if (addr) {
+        // Search entries for one matching this judge contract
+        const reg = judgeRegRead();
+        const count = Number(await reg.entryCount());
+        let found = null;
+        for (let i = count - 1; i >= 0; i--) {
+          try {
+            const [owner, judgeContract, contentHash, content] = await reg.getProfile(i);
+            if (judgeContract.toLowerCase() === addr.toLowerCase()) {
+              found = { entryId: i, owner, judgeContract, contentHash, content };
+              break;
+            }
+          } catch (_) {}
+        }
+        if (!found) throw new Error(`No profile found for judge ${addr}.`);
+        entry = found;
+      } else {
+        throw new Error('Missing entryId or addr in route.');
+      }
+
+      // Bonds judged by this address
+      let bondsJudged = [];
+      try {
+        const bc = bondReadContract();
+        const fromBlock = c?.deployBlock || 0;
+        const logs = await withTimeout(bc.queryFilter(bc.filters.BondCreated(null, null, entry.judgeContract), fromBlock), 10000, []);
+        bondsJudged = logs.map(l => ({ bondId: Number(l.args.bondId), claim: String(l.args.claimContent || '') }));
+      } catch (_) {}
+
+      view.innerHTML = `
+        <div class="jp-header">
+          <div>
+            <div class="jp-title">Judge profile #${entry.entryId}</div>
+            <div class="jp-subtitle">on ${escapeHtml(c?.name || '—')}</div>
+          </div>
+          <button class="secondary" onclick="history.back()">← Back</button>
+        </div>
+        <div class="card">
+          <div class="grid-2">
+            <div class="bond-field"><div class="label">Judge contract</div><div class="value">${addressLink(entry.judgeContract)}</div></div>
+            <div class="bond-field"><div class="label">Profile owner</div><div class="value">${addressLink(entry.owner)}</div></div>
+            <div class="bond-field"><div class="label">Content hash</div><div class="value mono" style="font-size:12px;">${entry.contentHash}</div></div>
+          </div>
+        </div>
+        <div class="card">
+          <h3>Judging statement</h3>
+          <div class="jp-content">${escapeHtml(entry.content || '(no content)')}</div>
+        </div>
+        <div class="card">
+          <h3>Bonds judged by this contract <span style="font-size:12px;font-weight:normal;color:var(--muted);">(${bondsJudged.length})</span></h3>
+          ${bondsJudged.length === 0
+            ? '<div class="hint">No bonds yet point to this judge contract.</div>'
+            : bondsJudged.slice(0, 20).map(b => `<div class="bond-list-item" data-bondid="${b.bondId}">
+                <div class="bli-head"><span class="bli-id">Bond #${b.bondId}</span></div>
+                <div class="bli-claim">${escapeHtml(b.claim || '').slice(0, 200) || '<em>no preview</em>'}</div>
+              </div>`).join('')}
+          ${bondsJudged.length > 20 ? `<div class="hint">Showing 20 most recent of ${bondsJudged.length}.</div>` : ''}
+        </div>
+        <div class="card">
+          <h3>Use this judge</h3>
+          <p><a href="#create?judgeProfileId=${entry.entryId}">Create a new bond pinned to this profile (#${entry.entryId})</a></p>
+        </div>`;
+      view.querySelectorAll('.bond-list-item').forEach(item => {
+        item.addEventListener('click', () => navigate('#view/' + item.dataset.bondid));
+      });
+    } catch (err) {
+      view.innerHTML = `<div class="msg msg-error">${escapeHtml(friendlyError(err))}</div>
+        <p style="margin-top:10px;"><a href="#judges">← Back to judges</a></p>`;
+    }
+  }
+
+  // ─── Boot ──────────────────────────────────────────────────────────────
+  function boot() {
+    buildChainSelect();
+    // Silent reconnect: if wallet exposes an already-permitted account, restore it.
+    if (window.ethereum && window.ethereum.request) {
+      window.ethereum.request({ method: 'eth_accounts' }).then(async (accs) => {
+        if (accs && accs.length > 0) {
+          try {
+            provider = new ethers.BrowserProvider(window.ethereum);
+            signer = await provider.getSigner();
+            account = ethers.getAddress(accs[0]);
+            $('walletAddr').textContent = short(account);
+            $('walletInfo').classList.remove('hidden');
+            $('connectBtn').classList.add('hidden');
+            await refreshWalletChainId();
+            attachWalletListeners();
+            log(`Silent reconnect: ${account}`);
+            render();
+          } catch (_) {}
+        }
+      }).catch(() => {});
+    }
+    if (!location.hash) location.hash = '#browse';
+    else render();
+  }
+
+  boot();
 })();
 </script>
 </body>

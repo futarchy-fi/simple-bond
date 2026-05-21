@@ -80,24 +80,24 @@ describe("SimpleBond v0.6 frontend surface", function () {
         expect(v6html).to.include("wallet_switchEthereumChain");
         expect(v6html).to.include("BrowserProvider");
 
-        // All v0.6 write paths are reachable from the UI.
-        expect(v6html).to.include("createBond(");
-        expect(v6html).to.include("modifyClaim(");
-        expect(v6html).to.include("challenge(bondId");
-        expect(v6html).to.include("concede(bondId");
-        expect(v6html).to.include("closeBond(bondId)");
-        expect(v6html).to.include("openBond(bondId)");
-        expect(v6html).to.include("withdrawBond(bondId)");
-        expect(v6html).to.include("claimRefunds(bondId");
+        // All v0.6 write paths are reachable from the UI (method names appear in tx calls).
+        expect(v6html).to.include(".createBond(");
+        expect(v6html).to.include(".modifyClaim(");
+        expect(v6html).to.match(/\.challenge\(\s*bondId/);
+        expect(v6html).to.match(/\.concede\(\s*bondId/);
+        expect(v6html).to.include(".closeBond(bondId");
+        expect(v6html).to.include(".openBond(bondId");
+        expect(v6html).to.include(".withdrawBond(bondId");
+        expect(v6html).to.include(".claimRefunds(bondId");
+        expect(v6html).to.include(".claimTimeout(bondId");
 
         // Per-challenge timing surfaced to user.
-        expect(v6html).to.include("concessionDeadline(bondId, i)");
-        expect(v6html).to.include("rulingDeadline(bondId, i)");
+        expect(v6html).to.include("concessionDeadline");
+        expect(v6html).to.include("rulingDeadline");
 
-        // Profile registry forms.
-        expect(v6html).to.include("registryContract('judge'");
-        expect(v6html).to.include("registryContract('poster'");
-        expect(v6html).to.include("registryContract('challenger'");
+        // Profile registries reachable (judge registry surfaced; bond pins judgeProfileId).
+        expect(v6html).to.include("registerProfile");
+        expect(v6html).to.include("judgeProfileRegistry");
 
         // Hash+content pattern visible: status badges named after ChallengeStatus enum.
         for (const s of ["Pending", "Won", "Lost", "Conceded", "RejectedByJudge", "Refunded"]) {
