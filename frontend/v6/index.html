@@ -52,6 +52,10 @@
     background-repeat: no-repeat; background-position: right 10px center;
   }
   .chain-select:hover, .chain-select:focus { border-color: var(--accent); }
+  .chain-label {
+    font-size: 13px; color: var(--muted); padding: 6px 10px;
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px;
+  }
   .wallet-info { font-size: 13px; }
   .wallet-info .address {
     font-family: ui-monospace, monospace;
@@ -399,7 +403,8 @@
     <h1>SimpleBond <small>v0.6</small></h1>
     <div class="header-spacer"></div>
     <div class="header-right">
-      <select id="chainSelect" class="chain-select"></select>
+      <select id="chainSelect" class="chain-select hidden"></select>
+      <span id="chainLabel" class="chain-label hidden"></span>
       <div id="notifyBell" class="notify-bell hidden"></div>
       <div id="walletInfo" class="wallet-info hidden">
         <span class="address mono" id="walletAddr" title="Click to disconnect"></span>
@@ -610,24 +615,43 @@
   // ─── Header / Chain selector / Wallet ──────────────────────────────────
   function buildChainSelect() {
     const sel = $('chainSelect');
+    const label = $('chainLabel');
     sel.innerHTML = '';
-    const ids = Object.keys(chains);
-    if (ids.length === 0) {
+    const visible = Object.keys(chains).filter((id) => {
+      const c = chains[id];
+      return !c.bondVersion || c.bondVersion === 6;
+    });
+
+    if (visible.length === 0) {
       const opt = document.createElement('option');
       opt.textContent = 'No v0.6 chain configured';
       opt.disabled = true;
       sel.appendChild(opt);
-      return;
-    }
-    for (const id of ids) {
+      sel.classList.remove('hidden');
+      if (label) label.classList.add('hidden');
+    } else if (visible.length === 1) {
+      // Single-chain site (bond.futarchy.fi → mainnet, staging → Sepolia).
+      // Show a static label instead of a one-option dropdown.
+      const id = visible[0];
       const c = chains[id];
-      if (c.bondVersion && c.bondVersion !== 6) continue;
-      const opt = document.createElement('option');
-      opt.value = id;
-      const testnet = String(id) === '11155111' ? ' (testnet)' : '';
-      opt.textContent = `${c.name}${testnet}`;
-      if (id === activeChainId) opt.selected = true;
-      sel.appendChild(opt);
+      const testnet = String(id) === '11155111' ? ' · testnet' : '';
+      sel.classList.add('hidden');
+      if (label) {
+        label.textContent = `${c.name}${testnet}`;
+        label.classList.remove('hidden');
+      }
+    } else {
+      for (const id of visible) {
+        const c = chains[id];
+        const opt = document.createElement('option');
+        opt.value = id;
+        const testnet = String(id) === '11155111' ? ' (testnet)' : '';
+        opt.textContent = `${c.name}${testnet}`;
+        if (id === activeChainId) opt.selected = true;
+        sel.appendChild(opt);
+      }
+      sel.classList.remove('hidden');
+      if (label) label.classList.add('hidden');
     }
     $('footerChain').textContent = chain() ? chain().name : '—';
   }

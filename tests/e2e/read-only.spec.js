@@ -12,9 +12,11 @@ test.describe("read-only flows", () => {
         for (const route of ["create", "browse", "judges", "my", "view"]) {
             await expect(page.locator(`button.tab[data-route="${route}"]`)).toBeVisible();
         }
-        // Chain selector renders at least one v0.6 chain option.
-        const chainOptions = page.locator("#chainSelect option");
-        expect(await chainOptions.count()).toBeGreaterThanOrEqual(1);
+        // Chain selector is hidden on single-chain hosts and replaced by a
+        // #chainLabel pill. Multi-chain (localhost) keeps the dropdown.
+        const labelVisible = await page.locator("#chainLabel:visible").count();
+        const selectVisible = await page.locator("#chainSelect:visible").count();
+        expect(labelVisible + selectVisible).toBeGreaterThanOrEqual(1);
     });
 
     test("A2 — Browse loads (or shows empty state) without decode errors", async ({ page }) => {
@@ -42,31 +44,30 @@ test.describe("read-only flows", () => {
 });
 
 test.describe("hostname routing (H)", () => {
-    test("H1 — mainnet site exposes chain 1 in the selector", async ({ page, baseURL }) => {
+    test("H1 — mainnet site shows Ethereum label (selector hidden)", async ({ page, baseURL }) => {
         test.skip(!/bond\.futarchy\.fi/.test(baseURL || ""), "only relevant on mainnet host");
         await page.goto("/");
-        const opts = await page.locator("#chainSelect option").allTextContents();
-        const onlyMainnet = opts.every((t) => /\b1\b|Ethereum/.test(t));
-        expect(onlyMainnet, `expected only mainnet options, got: ${opts.join(", ")}`).toBe(true);
+        await expect(page.locator("#chainLabel:visible")).toContainText(/Ethereum/);
+        await expect(page.locator("#chainSelect")).toBeHidden();
     });
 
-    test("H2 — staging site exposes Sepolia in the selector", async ({ page, baseURL }) => {
+    test("H2 — staging site shows Sepolia label (selector hidden)", async ({ page, baseURL }) => {
         test.skip(
             !/staging\.bond\.futarchy\./.test(baseURL || ""),
             "only relevant on staging host"
         );
         await page.goto("/");
-        const opts = await page.locator("#chainSelect option").allTextContents();
-        const hasSepolia = opts.some((t) => /11155111|Sepolia/.test(t));
-        expect(hasSepolia, `expected Sepolia in options, got: ${opts.join(", ")}`).toBe(true);
+        await expect(page.locator("#chainLabel:visible")).toContainText(/Sepolia/);
+        await expect(page.locator("#chainSelect")).toBeHidden();
     });
 
-    test("H3 — local dev exposes both chains", async ({ page, baseURL }) => {
+    test("H3 — local dev exposes both chains in the dropdown", async ({ page, baseURL }) => {
         test.skip(!/localhost/.test(baseURL || ""), "only relevant on localhost");
         await page.goto("/");
+        await expect(page.locator("#chainSelect:visible")).toBeVisible();
         const opts = await page.locator("#chainSelect option").allTextContents();
-        const hasMainnet = opts.some((t) => /\b1\b|Ethereum/.test(t));
-        const hasSepolia = opts.some((t) => /11155111|Sepolia/.test(t));
+        const hasMainnet = opts.some((t) => /Ethereum/.test(t));
+        const hasSepolia = opts.some((t) => /Sepolia/.test(t));
         expect(hasMainnet, "missing mainnet").toBe(true);
         expect(hasSepolia, "missing sepolia").toBe(true);
     });
