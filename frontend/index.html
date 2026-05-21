@@ -831,18 +831,23 @@
     if (_readProviderCache[key]) return _readProviderCache[key];
     const list = Array.isArray(c.rpcs) && c.rpcs.length ? c.rpcs : (c.rpc ? [c.rpc] : []);
     if (list.length === 0) throw new Error(`Missing rpc in runtime-config.chains[${activeChainId}]`);
+    // Pin the network so each JsonRpcProvider skips its eth_chainId
+    // round-trip on first use — that probe was hanging for seconds against
+    // some public RPCs and stalling the very first contract read.
+    const net = ethers.Network.from(Number(activeChainId));
+    const makeProvider = (u) => new ethers.JsonRpcProvider(u, net, { staticNetwork: true });
     if (list.length === 1) {
-      _readProviderCache[key] = new ethers.JsonRpcProvider(list[0]);
+      _readProviderCache[key] = makeProvider(list[0]);
     } else {
       const providers = list.map((u, i) => ({
-        provider: new ethers.JsonRpcProvider(u),
+        provider: makeProvider(u),
         priority: i,
         stallTimeout: 1500,
         weight: 1,
       }));
-      // FallbackProvider with quorum=1 returns first-success; if it errors,
-      // the next provider gets tried.
-      _readProviderCache[key] = new ethers.FallbackProvider(providers, undefined, { quorum: 1 });
+      // FallbackProvider with quorum=1 returns first-success; on error the
+      // next provider in priority order gets tried.
+      _readProviderCache[key] = new ethers.FallbackProvider(providers, net, { quorum: 1 });
     }
     return _readProviderCache[key];
   }

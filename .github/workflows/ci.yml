@@ -63,7 +63,7 @@ jobs:
         timeout-minutes: 10
 
       - name: Run Playwright (live-mainnet read-only)
-        run: npx playwright test --project live-mainnet --grep "A1|A2|A5|H1" --reporter=list
+        run: npx playwright test --project live-mainnet --grep "A1|A2|A5|H1|judge resolution" --reporter=list
         timeout-minutes: 5
         continue-on-error: true
 

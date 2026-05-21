@@ -19,11 +19,12 @@ window.SIMPLE_BOND_CONFIG = Object.assign(
         // intermittently dropping connections in some browsers, so we lead
         // with a more reliable endpoint.
         rpc: "https://eth.drpc.org",
+        // FallbackProvider walks this list in order. ankr/cloudflare/llamarpc
+        // were tested and either reject the request or fail to respond, which
+        // caused the page to hang for ~20s on first contract read.
         rpcs: [
           "https://eth.drpc.org",
-          "https://rpc.ankr.com/eth",
           "https://ethereum-rpc.publicnode.com",
-          "https://cloudflare-eth.com",
         ],
         bondContract: "0x6B24380B1980db3e2DfDd2b62f5ed3E7E88DFA43",
         deployBlock: 25139967,
