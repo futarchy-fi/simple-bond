@@ -36,6 +36,34 @@ test.describe("read-only flows", () => {
         expect(decodeError, `unexpected decode error: ${decodeError}`).toBeUndefined();
     });
 
+    test("Clicking Create without a wallet shows the Rabby-first install modal", async ({ page }) => {
+        // Stub out window.ethereum so the page boots into the no-wallet state
+        // regardless of where the test runs.
+        await page.addInitScript(() => {
+            try { delete window.ethereum; } catch (_) {}
+            Object.defineProperty(window, "ethereum", { value: undefined, configurable: true });
+        });
+        await page.goto("/#create");
+        await page.fill("#cb-claim", "no-wallet modal test");
+        await page.click("#wizNext");
+        await page.waitForSelector("#cb-bond");
+        await page.click("#wizNext");
+        await page.waitForSelector("#cb-jpid");
+        await page.fill("#cb-jpid", "0");
+        await page.click("#wizNext");
+        await page.waitForSelector("#cb-ad");
+        await page.click("#wizNext");
+        await page.waitForSelector("#wizCreate");
+        await page.click("#wizCreate");
+        await expect(page.locator("#noWalletModal")).toBeVisible({ timeout: 10_000 });
+        await expect(page.locator("#noWalletModal")).toContainText(/Rabby/);
+        await expect(page.locator("#noWalletModal a[href*='rabby.io']")).toBeVisible();
+        await expect(page.locator("#noWalletModal a[href*='metamask.io']")).toBeVisible();
+        // Dismissible via Cancel.
+        await page.locator("#noWalletCancel").click();
+        await expect(page.locator("#noWalletModal")).toHaveCount(0);
+    });
+
     test("Create wizard advances to Review with no wallet connected", async ({ page }) => {
         // The wizard must work end-to-end without window.ethereum so users
         // can see the shape of the bond they're about to post before any

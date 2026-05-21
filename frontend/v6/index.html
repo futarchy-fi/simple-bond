@@ -924,9 +924,45 @@
     refreshNetworkBanner();
   }
 
+  // No-wallet onboarding modal — surfaced when window.ethereum is missing
+  // and the user tries to act on a wallet-gated path (Create, etc.).
+  // Recommends Rabby first; MetaMask as fallback. Dismissible.
+  function showNoWalletModal() {
+    if (document.getElementById('noWalletModal')) return;
+    const overlay = document.createElement('div');
+    overlay.id = 'noWalletModal';
+    overlay.style.cssText = `
+      position: fixed; inset: 0; background: rgba(17, 24, 39, 0.45);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 9999;
+    `;
+    overlay.innerHTML = `
+      <div style="background: white; border-radius: 8px; max-width: 460px; padding: 24px; box-shadow: 0 12px 40px rgba(0,0,0,0.25);">
+        <h3 style="margin: 0 0 8px; font-family: Georgia, serif;">You'll need a wallet</h3>
+        <p class="hint" style="font-size: 14px; line-height: 1.5;">SimpleBond signs your bond and challenge transactions with an Ethereum wallet you control. We recommend <strong>Rabby</strong> — clearer transaction previews than MetaMask, and a more honest UI overall. MetaMask works too.</p>
+        <div class="row" style="margin: 14px 0 6px; gap: 8px; flex-wrap: wrap;">
+          <a href="https://rabby.io" target="_blank" rel="noopener"><button class="primary">Install Rabby (recommended)</button></a>
+          <a href="https://metamask.io/download/" target="_blank" rel="noopener"><button class="secondary">Install MetaMask</button></a>
+        </div>
+        <p class="hint" style="font-size: 12px; margin-top: 10px;">After installing, reload this page and click Create again.</p>
+        <div class="row" style="margin-top: 14px; gap: 8px;">
+          <button class="ghost" id="noWalletReload">I just installed one — reload</button>
+          <button class="ghost" id="noWalletCancel">Cancel</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    const close = () => overlay.remove();
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+    document.addEventListener('keydown', function escClose(e) {
+      if (e.key === 'Escape') { close(); document.removeEventListener('keydown', escClose); }
+    });
+    document.getElementById('noWalletReload').addEventListener('click', () => location.reload());
+    document.getElementById('noWalletCancel').addEventListener('click', close);
+  }
+
   async function connectWallet() {
     if (!window.ethereum) {
-      alert('No wallet detected. Install MetaMask, Rabby, or another EIP-1193 wallet to continue.');
+      showNoWalletModal();
       return;
     }
     try {
