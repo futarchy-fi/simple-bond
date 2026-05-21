@@ -29,11 +29,12 @@ test.describe("create wizard — judge resolution", () => {
 
         // Resolution should finish well under 8s. The bug we just fixed
         // (un-pinned network + broken RPCs in the fallback list) was
-        // observed in the 20s+ range.
+        // observed in the 20s+ range. The UI renders the resolved
+        // address truncated as "0x1234…abcd", so we match either form.
         await expect.poll(
             async () => (await page.locator("#cb-judgeResolved").textContent()) || "",
             { timeout: 8000, intervals: [200, 400, 800] }
-        ).toMatch(/0x[0-9a-fA-F]{40}/);
+        ).toMatch(/Profile #0\s*→\s*judge contract\s*0x[0-9a-fA-F]{4}[…\.]+[0-9a-fA-F]{4}/i);
 
         // And no "not found / unreadable" message.
         const txt = await page.locator("#cb-judgeResolved").textContent();
