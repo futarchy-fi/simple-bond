@@ -497,6 +497,20 @@
     try { return parseFloat(ethers.formatUnits(amount, decimals || 18)).toLocaleString(undefined, { maximumFractionDigits: 4 }); }
     catch { return String(amount); }
   }
+
+  // sUSDS BigInt → $X (≈ Y sUSDS) for display.
+  // `rate` should already be resolved via susdsRate(token).
+  function fmtUsdAndSusds(amount, rate, tokenSym) {
+    try {
+      const usdStr = susdsBigIntToUsdString(amount, rate);
+      const susds = parseFloat(ethers.formatUnits(amount, rate.decimals || 18))
+        .toLocaleString(undefined, { maximumFractionDigits: 4 });
+      const sym = tokenSym || 'sUSDS';
+      return `<strong>$${usdStr}</strong> <span class="hint" style="font-size:11px;">(${susds} ${escapeHtml(sym)})</span>`;
+    } catch {
+      return fmtUnits(amount, rate.decimals || 18);
+    }
+  }
   function fmtSeconds(seconds) {
     const s = Number(seconds);
     if (!s) return '0';
@@ -548,6 +562,32 @@
     if (isUserRejection(err)) return 'Transaction cancelled.';
     return err?.reason || err?.shortMessage || err?.message || String(err);
   }
+  // sUSDS-specific funding helper. Returns an HTML string with the user's
+  // current balance + actionable links to get more. Designed to render
+  // inline near the Create form / submitCreate error path.
+  const MAINNET_SUSDS = '0xa3931d71877C0E7a3148CB7Eb4463524FEc27fbD'.toLowerCase();
+  const MAINNET_USDS  = '0xdC035D45d973E3EC169d2276DDab16f1e407384F';
+  const MAINNET_DAI   = '0x6B175474E89094C44Da98b954EedeAC495271d0F';
+  function renderFundingHelp(token, meta, have, need, _haveBig, _needBig) {
+    const isSusds = String(token).toLowerCase() === MAINNET_SUSDS;
+    const tokenLabel = meta.symbol || 'tokens';
+    const linksSusds = `
+      <li><a href="https://app.sky.money/?network=ethereum&widget=savings" target="_blank" rel="noopener">Sky Savings</a> — deposit USDS or DAI, receive sUSDS</li>
+      <li><a href="https://cow.fi/?inputCurrency=${MAINNET_USDS}&outputCurrency=${MAINNET_SUSDS}" target="_blank" rel="noopener">CowSwap (USDS → sUSDS)</a></li>
+      <li><a href="https://cow.fi/?inputCurrency=ETH&outputCurrency=${MAINNET_SUSDS}" target="_blank" rel="noopener">CowSwap (ETH → sUSDS)</a></li>
+      <li><a href="https://app.sky.money/?network=ethereum&widget=upgrade" target="_blank" rel="noopener">Sky Upgrade</a> — migrate DAI → USDS first</li>
+      <li>Or wrap directly: USDS contract <span class="mono">${MAINNET_USDS.slice(0,8)}…</span> → call <code>sUSDS.deposit(amount, you)</code></li>`;
+    const linksGeneric = `
+      <li>Acquire ${escapeHtml(tokenLabel)} from any DEX/CEX, then send it to the connected wallet.</li>`;
+    return `<div class="msg msg-error" style="text-align:left;">
+      <strong>Insufficient ${escapeHtml(tokenLabel)} balance.</strong> You hold <strong>${escapeHtml(have)}</strong>; this bond locks <strong>${escapeHtml((parseFloat(have) + parseFloat(need)).toString())}</strong>.
+      <details style="margin-top:6px;">
+        <summary style="cursor:pointer;">How to get ${escapeHtml(tokenLabel)}</summary>
+        <ul style="margin:6px 0 0 18px;font-size:13px;">${isSusds ? linksSusds : linksGeneric}</ul>
+      </details>
+    </div>`;
+  }
+
   async function tokenMeta(addr) {
     const k = addr.toLowerCase();
     if (tokenMetaCache[k]) return tokenMetaCache[k];
@@ -560,6 +600,66 @@
     try { symbol = await erc20.symbol(); } catch (_) {}
     tokenMetaCache[k] = { decimals, symbol };
     return tokenMetaCache[k];
+  }
+
+  // ─── sUSDS ↔ USD conversion ────────────────────────────────────────────
+  // sUSDS is an ERC-4626 vault over USDS. 1 sUSDS share appreciates against
+  // USDS over time at the Sky Savings Rate. Posters reason in USD;
+  // the contract works in sUSDS shares. We convert at input/display time.
+  //
+  // Cached per token-address with a TTL so repeated calls don't hammer the
+  // RPC. Falls back to 1:1 when the token doesn't expose the 4626 view
+  // (e.g. MockSUSDS without the helper methods, plain ERC-20 tokens).
+  const susdsRateCache = {}; // { addr: { sharesPerAsset, assetsPerShare, decimals, ts } }
+  const SUSDS_RATE_TTL_MS = 5 * 60 * 1000;
+
+  async function susdsRate(tokenAddr) {
+    const k = tokenAddr.toLowerCase();
+    const cached = susdsRateCache[k];
+    if (cached && Date.now() - cached.ts < SUSDS_RATE_TTL_MS) return cached;
+    const meta = await tokenMeta(tokenAddr);
+    const unit = 10n ** BigInt(meta.decimals);
+    const erc4626 = new ethers.Contract(tokenAddr, [
+      'function convertToShares(uint256 assets) view returns (uint256 shares)',
+      'function convertToAssets(uint256 shares) view returns (uint256 assets)',
+    ], readProvider());
+    let sharesPerAsset = 1, assetsPerShare = 1;
+    try {
+      const shares = await erc4626.convertToShares(unit);
+      const assets = await erc4626.convertToAssets(unit);
+      // Convert bigint to Number with 6 decimals of precision — enough for
+      // a savings-rate token. We only use these as display estimates.
+      sharesPerAsset = Number((shares * 1_000_000n) / unit) / 1_000_000;
+      assetsPerShare = Number((assets * 1_000_000n) / unit) / 1_000_000;
+    } catch (_) {
+      // Token doesn't expose the 4626 surface → treat as 1:1.
+    }
+    susdsRateCache[k] = { sharesPerAsset, assetsPerShare, decimals: meta.decimals, ts: Date.now() };
+    return susdsRateCache[k];
+  }
+
+  // USD-string input → sUSDS BigInt (in the token's smallest units).
+  // Returns 0n on bad input; caller validates.
+  function usdStringToSusdsBigInt(usdStr, rate) {
+    if (!usdStr || usdStr === '') return 0n;
+    const usdNum = parseFloat(usdStr);
+    if (!isFinite(usdNum) || usdNum < 0) return 0n;
+    // shares = USDS * sharesPerAsset. Use 6-decimal multiplication for stability.
+    const dec = rate.decimals;
+    const usdUnits = ethers.parseUnits(usdStr, dec);
+    const shares = (usdUnits * BigInt(Math.round(rate.sharesPerAsset * 1_000_000))) / 1_000_000n;
+    return shares;
+  }
+
+  // sUSDS BigInt → USD display string with 2-decimal formatting.
+  function susdsBigIntToUsdString(susdsAmount, rate) {
+    if (!susdsAmount) return '0.00';
+    const dec = rate.decimals;
+    const usdUnits = (susdsAmount * BigInt(Math.round(rate.assetsPerShare * 1_000_000))) / 1_000_000n;
+    return Number(ethers.formatUnits(usdUnits, dec)).toLocaleString('en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
   }
 
   // ─── Contract factories ────────────────────────────────────────────────
@@ -944,7 +1044,11 @@
           });
         } catch (_) { /* skip per-bond fail */ }
       }
-      bondListCache[bondListKey()] = { rows, fetchedAt: Date.now() };
+      const cc = chain();
+      let rate;
+      try { rate = await susdsRate(cc.approvedToken); }
+      catch (_) { rate = { sharesPerAsset: 1, assetsPerShare: 1, decimals: 18 }; }
+      bondListCache[bondListKey()] = { rows, rate, fetchedAt: Date.now() };
       // Best-effort: fetch claim previews via event logs (one batch)
       try {
         const c = chain();
@@ -1009,6 +1113,9 @@
       </div>`;
       return;
     }
+    // Cache the rate at render time. browseRowHtml reads from a module-scoped
+    // _browseRenderRate so we don't have to thread the rate through the row.
+    _browseRenderRate = data.rate || { sharesPerAsset: 1, assetsPerShare: 1, decimals: 18 };
     container.innerHTML = visible.map(r => browseRowHtml(r)).join('');
     container.querySelectorAll('.bond-list-item').forEach(item => {
       const bondId = item.dataset.bondid;
@@ -1019,6 +1126,8 @@
       });
     });
   }
+
+  let _browseRenderRate = { sharesPerAsset: 1, assetsPerShare: 1, decimals: 18 };
 
   function browseRowHtml(r) {
     const claim = r.claimPreview ? escapeHtml(r.claimPreview).split('\n')[0].slice(0, 220) : `<span class="mono">${r.claimHash.slice(0, 18)}…</span>`;
@@ -1033,8 +1142,8 @@
       <div class="bli-meta">
         <span>poster ${addressLink(r.poster)}</span>
         <span>judge profile <a href="#judge/${r.judgeProfileId}">#${r.judgeProfileId}</a></span>
-        <span>bond <span class="stat-val">${fmtUnits(r.bondAmount, 18)}</span></span>
-        <span>challenge <span class="stat-val">${fmtUnits(r.challengeAmount, 18)}</span></span>
+        <span>bond <span class="stat-val">$${susdsBigIntToUsdString(r.bondAmount, _browseRenderRate)}</span></span>
+        <span>challenge <span class="stat-val">$${susdsBigIntToUsdString(r.challengeAmount, _browseRenderRate)}</span></span>
       </div>
     </div>`;
   }
@@ -1477,22 +1586,35 @@
           <span class="wizard-stage-num">2</span>
           <span class="wizard-stage-title">Stake</span>
         </div>
-        <div class="wizard-stage-hint">Token is the chain's approved sUSDS. Override in advanced step.</div>
+        <div class="wizard-stage-hint">Amounts in <strong>USD</strong>. The contract locks the equivalent <code>sUSDS</code> (Sky's yield-bearing dollar) under the hood — your stake earns the Sky Savings Rate while the bond is open.</div>
         <div class="grid-3">
           <div class="form-group">
-            <label for="cb-bond">Bond amount (sUSDS)</label>
-            <input id="cb-bond" value="${escapeHtml(createState.bondAmount)}">
+            <label for="cb-bond">Bond amount ($)</label>
+            <input id="cb-bond" value="${escapeHtml(createState.bondAmount)}" inputmode="decimal">
+            <div class="hint mono" id="cb-bond-conv" style="font-size:11px;margin-top:4px;">&nbsp;</div>
           </div>
           <div class="form-group">
-            <label for="cb-ch">Challenge amount</label>
-            <input id="cb-ch" value="${escapeHtml(createState.challengeAmount)}">
+            <label for="cb-ch">Challenge amount ($)</label>
+            <input id="cb-ch" value="${escapeHtml(createState.challengeAmount)}" inputmode="decimal">
+            <div class="hint mono" id="cb-ch-conv" style="font-size:11px;margin-top:4px;">&nbsp;</div>
           </div>
           <div class="form-group">
-            <label for="cb-fee">Judge fee (max, ≤ challenge)</label>
-            <input id="cb-fee" value="${escapeHtml(createState.judgeFee)}">
+            <label for="cb-fee">Judge fee max ($)</label>
+            <input id="cb-fee" value="${escapeHtml(createState.judgeFee)}" inputmode="decimal">
+            <div class="hint mono" id="cb-fee-conv" style="font-size:11px;margin-top:4px;">&nbsp;</div>
           </div>
         </div>
-        <div id="beliefCardSlot"></div>`;
+        <div id="beliefCardSlot"></div>
+        <details style="margin-top:14px;background:var(--surface-2);border-radius:6px;padding:10px 14px;">
+          <summary style="cursor:pointer;font-weight:600;">About sUSDS — why your stake earns yield</summary>
+          <p class="hint" style="margin:8px 0;">sUSDS is the savings token of <strong>Sky</strong> (formerly Maker), one of the longest-running stablecoin issuers in crypto. Locking sUSDS in a bond doesn't pause the yield: your stake keeps earning the Sky Savings Rate the whole time the bond is open. When the bond settles you get back the same number of sUSDS, now worth more USD than when you locked it.</p>
+          <ul style="font-size:13px;margin:8px 0 4px 18px;">
+            <li><a href="https://docs.sky.money/sky-token-suite/sky-savings-rate" target="_blank" rel="noopener">How sUSDS / Sky Savings Rate works</a> (Sky docs)</li>
+            <li><a href="https://sky.money" target="_blank" rel="noopener">sky.money</a> — current rate &amp; one-stop deposit/withdraw UI</li>
+            <li><a href="https://defillama.com/protocol/sky" target="_blank" rel="noopener">DeFiLlama: Sky TVL &amp; history</a></li>
+            <li><a href="https://makerdao.com/sky" target="_blank" rel="noopener">MakerDAO → Sky transition</a></li>
+          </ul>
+        </details>`;
       // Partial re-render of the belief-thresholds card only — re-rendering
       // the whole stage on every keystroke blew focus off the input the user
       // was typing into. The inputs themselves stay mounted; only the
@@ -1527,7 +1649,32 @@
         $('beliefCardSlot').innerHTML = html;
       };
       renderBelief();
-      const ev = () => { updateNextBtn(); renderBelief(); };
+      // Live USD → sUSDS preview. The rate read is async; we render once
+      // the helper resolves and then refresh on every keystroke off the
+      // cached rate.
+      let stakeRate = { sharesPerAsset: 1, assetsPerShare: 1, decimals: 18 };
+      const renderConv = () => {
+        const fmt = (idVal, slotId) => {
+          const n = parseFloat(idVal);
+          const slot = $(slotId);
+          if (!slot) return;
+          if (!isFinite(n) || n <= 0) { slot.innerHTML = '&nbsp;'; return; }
+          const shares = stakeRate.sharesPerAsset * n;
+          slot.innerHTML = `≈ ${shares.toFixed(stakeRate.sharesPerAsset === 1 ? 2 : 4)} sUSDS`;
+        };
+        fmt(createState.bondAmount, 'cb-bond-conv');
+        fmt(createState.challengeAmount, 'cb-ch-conv');
+        fmt(createState.judgeFee, 'cb-fee-conv');
+      };
+      (async () => {
+        try {
+          const c2 = chain();
+          stakeRate = await susdsRate(c2.approvedToken);
+          renderConv();
+        } catch (_) {}
+      })();
+      renderConv();
+      const ev = () => { updateNextBtn(); renderBelief(); renderConv(); };
       $('cb-bond').addEventListener('input', (e) => { createState.bondAmount = e.target.value; ev(); });
       $('cb-ch').addEventListener('input', (e) => { createState.challengeAmount = e.target.value; ev(); });
       $('cb-fee').addEventListener('input', (e) => { createState.judgeFee = e.target.value; ev(); });
@@ -1637,7 +1784,7 @@
             </div>
             <div class="summary-item">
               <div class="summary-label">Bond / challenge / fee</div>
-              <div class="summary-value">${escapeHtml(createState.bondAmount)} / ${escapeHtml(createState.challengeAmount)} / ${escapeHtml(createState.judgeFee)} sUSDS</div>
+              <div class="summary-value">$${escapeHtml(createState.bondAmount)} / $${escapeHtml(createState.challengeAmount)} / $${escapeHtml(createState.judgeFee)} <span class="hint" style="font-size:11px;">(locked as sUSDS)</span></div>
             </div>
             <div class="summary-item">
               <div class="summary-label">Judge profile</div>
@@ -1724,13 +1871,28 @@
       const c = chain();
       const token = ethers.getAddress(createState.token || c.approvedToken);
       const meta = await tokenMeta(token);
-      const bondAmount = ethers.parseUnits(createState.bondAmount, meta.decimals);
-      const challengeAmount = ethers.parseUnits(createState.challengeAmount, meta.decimals);
-      const judgeFee = ethers.parseUnits(createState.judgeFee, meta.decimals);
+      // Inputs are in USD; convert to sUSDS shares via the live ERC-4626
+      // rate (or 1:1 for tokens without the 4626 surface). Stored on-chain
+      // values are in sUSDS shares.
+      const rate = await susdsRate(token);
+      const bondAmount = usdStringToSusdsBigInt(createState.bondAmount, rate);
+      const challengeAmount = usdStringToSusdsBigInt(createState.challengeAmount, rate);
+      const judgeFee = usdStringToSusdsBigInt(createState.judgeFee, rate);
       if (judgeFee > challengeAmount) throw new Error('Judge fee must be ≤ challenge amount.');
       if (!createState.judgeAddr) {
         await resolveJudgeFromProfile();
         if (!createState.judgeAddr) throw new Error(`Judge profile #${createState.judgeProfileId} could not be resolved.`);
+      }
+      // Pre-check the user's token balance before any wallet prompt so a
+      // doomed createBond doesn't waste an approve tx (the underlying
+      // SafeTransferFrom reverts with e.g. 'SUsds/insufficient-balance').
+      let balance = 0n;
+      try { balance = await erc20Contract(token).balanceOf(account); } catch (_) {}
+      if (balance < bondAmount) {
+        const need = ethers.formatUnits(bondAmount - balance, meta.decimals);
+        const have = ethers.formatUnits(balance, meta.decimals);
+        msg.innerHTML = renderFundingHelp(token, meta, have, need, balance, bondAmount);
+        throw new Error(`You hold ${have} ${meta.symbol}; need ${ethers.formatUnits(bondAmount, meta.decimals)} to post this bond.`);
       }
       const steps = [];
       // Check approval
@@ -1971,6 +2133,8 @@
 
       let tokenSym = '???', tokenDec = 18;
       try { const m = await tokenMeta(b.token); tokenSym = m.symbol; tokenDec = m.decimals; } catch (_) {}
+      let tokenRate = { sharesPerAsset: 1, assetsPerShare: 1, decimals: tokenDec };
+      try { tokenRate = await susdsRate(b.token); } catch (_) {}
 
       const bondAmount = b.bondAmount;
       const challengeAmount = b.challengeAmount;
@@ -2017,9 +2181,9 @@
             <div class="bond-field"><div class="label">Judge contract</div><div class="value">${addressLink(b.judge)}</div></div>
             <div class="bond-field"><div class="label">Judge profile</div><div class="value"><a href="#judge/${b.judgeProfileId}">#${b.judgeProfileId}</a></div></div>
             <div class="bond-field"><div class="label">Token</div><div class="value">${addressLink(b.token, tokenSym)}</div></div>
-            <div class="bond-field"><div class="label">Bond amount</div><div class="value">${fmtUnits(bondAmount, tokenDec)} ${escapeHtml(tokenSym)}</div></div>
-            <div class="bond-field"><div class="label">Challenge amount</div><div class="value">${fmtUnits(challengeAmount, tokenDec)} ${escapeHtml(tokenSym)}</div></div>
-            <div class="bond-field"><div class="label">Judge fee (max)</div><div class="value">${fmtUnits(judgeFee, tokenDec)} ${escapeHtml(tokenSym)}</div></div>
+            <div class="bond-field"><div class="label">Bond amount</div><div class="value">${fmtUsdAndSusds(bondAmount, tokenRate, tokenSym)}</div></div>
+            <div class="bond-field"><div class="label">Challenge amount</div><div class="value">${fmtUsdAndSusds(challengeAmount, tokenRate, tokenSym)}</div></div>
+            <div class="bond-field"><div class="label">Judge fee (max)</div><div class="value">${fmtUsdAndSusds(judgeFee, tokenRate, tokenSym)}</div></div>
             <div class="bond-field"><div class="label">Acceptance delay</div><div class="value">${fmtSeconds(b.acceptanceDelay)}</div></div>
             <div class="bond-field"><div class="label">Ruling buffer</div><div class="value">${fmtSeconds(b.rulingBuffer)}</div></div>
             <div class="bond-field"><div class="label">Max challenges</div><div class="value">${b.maxChallenges}</div></div>

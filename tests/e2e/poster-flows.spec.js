@@ -11,6 +11,21 @@ const {
 } = require("./fixtures/helpers");
 
 test.describe("C — poster flows", () => {
+    test("Stake step labels are USD-denominated + show sUSDS conversion", async ({ page }) => {
+        await page.goto("/#create");
+        await page.fill("#cb-claim", "USD label test");
+        await page.click("#wizNext");
+        await page.waitForSelector("#cb-bond");
+        // Labels show '$' (USD-denominated).
+        await expect(page.locator('label[for="cb-bond"]')).toContainText("Bond amount ($)");
+        await expect(page.locator('label[for="cb-ch"]')).toContainText("Challenge amount ($)");
+        await expect(page.locator('label[for="cb-fee"]')).toContainText("Judge fee max ($)");
+        // sUSDS conversion line populates from MockSUSDS's 1:1 rate.
+        await expect(page.locator("#cb-bond-conv")).toContainText(/≈\s+[\d.,]+\s+sUSDS/, { timeout: 10_000 });
+        // The Sky info card is reachable below the inputs.
+        await expect(page.locator("summary", { hasText: /About sUSDS/i })).toBeVisible();
+    });
+
     test("typing in stake inputs does not lose focus (regression)", async ({ page }) => {
         // Bug: re-rendering the entire stage on every keystroke unmounted the
         // input the user was typing into, dropping focus after each digit.
