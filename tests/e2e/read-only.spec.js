@@ -9,9 +9,11 @@ test.describe("read-only flows", () => {
         await page.goto("/");
         await expect(page).toHaveTitle(/SimpleBond v0\.6/);
         // The rebuilt UI uses <button class="tab" data-route="…"> for nav.
-        for (const route of ["create", "browse", "judges", "my", "view"]) {
+        // 'view' is a per-bond detail page, not a tab.
+        for (const route of ["create", "browse", "judges", "my"]) {
             await expect(page.locator(`button.tab[data-route="${route}"]`)).toBeVisible();
         }
+        await expect(page.locator('button.tab[data-route="view"]')).toHaveCount(0);
         // Chain selector is hidden on single-chain hosts and replaced by a
         // #chainLabel pill. Multi-chain (localhost) keeps the dropdown.
         const labelVisible = await page.locator("#chainLabel:visible").count();

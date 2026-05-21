@@ -423,7 +423,6 @@
     <button class="tab" data-route="browse">Browse</button>
     <button class="tab" data-route="judges">Judges</button>
     <button class="tab" data-route="my">My Bonds</button>
-    <button class="tab" data-route="view">View</button>
   </nav>
 
   <main id="view"></main>
@@ -1156,6 +1155,14 @@
     } else if (r.route === 'my') {
       renderMyBonds();
     } else if (r.route === 'view') {
+      // View is a per-bond detail page, not a primary nav target. If we
+      // landed here without a bondId, redirect to Browse instead of
+      // surfacing a confusing 'Invalid bond id' error.
+      const idNum = Number(r.bondId);
+      if (!Number.isFinite(idNum) || idNum < 0) {
+        navigate('#browse');
+        return;
+      }
       renderBondDetail(r.bondId);
     } else if (r.route === 'judge') {
       renderJudgeProfile(r);
@@ -1388,18 +1395,33 @@
 
       <details class="card" style="margin-top:8px;">
         <summary style="cursor:pointer;font-weight:600;font-family:Georgia,serif;font-size:16px;">Poster &amp; challenger profiles (optional)</summary>
-        <p class="hint" style="margin:10px 0;">Posters and challengers can optionally publish a self-description. Bonds do <em>not</em> snapshot these — observers read whatever is the most recent entry for your address. Skip unless you want a public handle.</p>
+        <p class="hint" style="margin:10px 0;">Posters and challengers can optionally publish a self-description so anyone reading a bond can see who's behind the wallet.</p>
+
+        <div class="card" style="background: var(--surface-2); margin-bottom: 12px;">
+          <strong>How registration works</strong>
+          <ul class="hint" style="font-size: 13px; margin: 6px 0 4px 18px;">
+            <li><strong>One signature</strong> sends a single <code>registerProfile(content)</code> call to the
+              ${c?.posterProfileRegistry ? `<a href="${explorerAddr(c.posterProfileRegistry)}" target="_blank" rel="noopener">PosterProfileRegistry</a>` : 'PosterProfileRegistry'} /
+              ${c?.challengerProfileRegistry ? `<a href="${explorerAddr(c.challengerProfileRegistry)}" target="_blank" rel="noopener">ChallengerProfileRegistry</a>` : 'ChallengerProfileRegistry'} contract.</li>
+            <li>Each call stores <code>{ owner: your wallet, contentHash: keccak256(content), content }</code> and emits a <code>ProfileRegistered</code> event.</li>
+            <li><strong>Entries are append-only.</strong> Updating your profile means submitting a new entry; the old one stays readable forever. Bonds do <em>not</em> pin a snapshot of these — observers read whatever is the most recent entry for your address.</li>
+            <li>You pay gas (~50–80k) per registration. There's no fee to the contract or to us.</li>
+            <li>Skip this entirely if you'd rather post bonds anonymously — the wallet address alone is enough on-chain identity.</li>
+          </ul>
+        </div>
 
         <div class="form-group">
           <label for="pp-content">Poster profile content</label>
-          <textarea id="pp-content" rows="3" placeholder="Self-description for posters (handle, contact, areas of claim)."></textarea>
+          <textarea id="pp-content" rows="3" placeholder="e.g. 'Anna López. Independent journalist. Claims usually about EU regulatory filings.'"></textarea>
           <button id="pp-go" class="secondary" style="margin-top:4px;">Register poster profile</button>
+          <div id="pp-msg" style="margin-top:8px;"></div>
         </div>
 
         <div class="form-group" style="margin-top:12px;">
           <label for="cp-content">Challenger profile content</label>
-          <textarea id="cp-content" rows="3" placeholder="Self-description for challengers."></textarea>
+          <textarea id="cp-content" rows="3" placeholder="e.g. 'Pseudonymous fact-checker — covers climate-science claims. Reach me on Farcaster.'"></textarea>
           <button id="cp-go" class="secondary" style="margin-top:4px;">Register challenger profile</button>
+          <div id="cp-msg" style="margin-top:8px;"></div>
         </div>
       </details>
     `;
@@ -1414,6 +1436,8 @@
   }
 
   async function registerSimpleProfile(kind, content) {
+    const msg = $(`${kind === 'poster' ? 'pp' : 'cp'}-msg`);
+    const setMsg = (html) => { if (msg) msg.innerHTML = html; };
     try {
       if (!signer) throw new Error('Connect a wallet first');
       const c = chain();
@@ -1421,13 +1445,21 @@
       if (!addr) throw new Error(`Missing ${kind}ProfileRegistry address in runtime-config`);
       const abi = window.SIMPLE_BOND_V6_REGISTRY_ABI;
       const reg = new ethers.Contract(addr, abi, signer);
+      setMsg(`<div class="msg msg-info"><span class="spinner"></span>Submitting registerProfile(content) to ${escapeHtml(kind === 'poster' ? 'PosterProfileRegistry' : 'ChallengerProfileRegistry')}…</div>`);
       const tx = await reg.registerProfile(content || '');
       const r = await waitForTx(tx);
       const ev = r.logs.find(l => { try { return reg.interface.parseLog(l).name === 'ProfileRegistered'; } catch { return false; } });
       const entryId = ev ? reg.interface.parseLog(ev).args.entryId : '?';
       log(`Registered ${kind} profile entryId=${entryId}`, 'ok');
+      const txLink = `<a href="${explorerTx(r.hash)}" target="_blank" rel="noopener">view tx</a>`;
+      setMsg(`<div class="msg msg-success">Registered <strong>${escapeHtml(kind)}</strong> profile #${entryId}. ${txLink}</div>`);
     } catch (e) {
-      if (!isUserRejection(e)) log(friendlyError(e), 'err');
+      if (!isUserRejection(e)) {
+        log(friendlyError(e), 'err');
+        setMsg(`<div class="msg msg-error">${escapeHtml(friendlyError(e))}</div>`);
+      } else {
+        setMsg('');
+      }
     }
   }
 
