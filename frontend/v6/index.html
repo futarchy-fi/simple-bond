@@ -38,6 +38,7 @@
     <script src="https://cdn.jsdelivr.net/npm/ethers@6.16.0/dist/ethers.umd.min.js"></script>
     <script src="../runtime-config.js"></script>
     <script src="./abi.js"></script>
+    <script src="./manualJudgeV6.bytecode.js"></script>
 </head>
 <body>
     <header>
@@ -131,17 +132,22 @@
     }
     $('connectBtn').addEventListener('click', () => connect().catch(e => log(e.message, 'err')));
 
+    // Always use the chain's own RPC for reads; the wallet might be on a
+    // different chain than the dropdown selection, which would silently return
+    // 0x and break decoding.
     function readProvider() {
-        return signer ? signer : new ethers.JsonRpcProvider(
-            chain() && chain().rpc
-                ? chain().rpc
-                : 'https://ethereum-sepolia-rpc.publicnode.com'
-        );
+        const c = chain();
+        if (!c || !c.rpc) throw new Error(`Missing rpc in runtime-config.chains[${activeChainId}]`);
+        return new ethers.JsonRpcProvider(c.rpc);
     }
     function bondContract(withSigner = false) {
         const c = chain();
         if (!c || !c.bondContract) throw new Error(`Missing bondContract in runtime-config.chains[${activeChainId}]`);
-        return new ethers.Contract(c.bondContract, window.SIMPLE_BOND_V6_ABI, withSigner ? signer : readProvider());
+        if (withSigner) {
+            if (!signer) throw new Error('Connect a wallet first');
+            return new ethers.Contract(c.bondContract, window.SIMPLE_BOND_V6_ABI, signer);
+        }
+        return new ethers.Contract(c.bondContract, window.SIMPLE_BOND_V6_ABI, readProvider());
     }
     function registryContract(kind, withSigner = false) {
         const c = chain();
@@ -394,32 +400,79 @@
     }
 
     async function renderProfiles() {
+        const c = chain();
+        const canonicalJudge = c && c.manualJudgeV6 ? c.manualJudgeV6 : '';
         $('view').innerHTML = `<h2>Profile registries</h2>
+
             <div class="card">
                 <h3>Judge profile</h3>
-                <label>Judge contract address</label><input id="jp-addr">
-                <label>Profile content (criteria, links, etc.)</label><textarea id="jp-content"></textarea>
-                <button id="jp-go">Register</button>
+                <p><small>A judge profile is a public statement of how you (or some judge contract you trust) will rule on disputes. A bond pins the profile id at creation, so judges can't quietly change their stated criteria later. Two ways to fill the address field below:</small></p>
+                <ul style="font-size: 13px; color: #555;">
+                  <li><strong>Use the canonical ManualJudgeV6</strong> at <code>${canonicalJudge}</code> — its operator is the deployer (0x693E…b43d). Fine for testing; rulings go through them.</li>
+                  <li><strong>Deploy your own ManualJudgeV6</strong> with the button below — you become the proposed operator, accept the role in one click, and the form pre-fills with the new address.</li>
+                </ul>
+                <div class="row" style="margin: 8px 0;">
+                  <button id="jp-deploy-new">Deploy a fresh ManualJudgeV6 (I'll be operator)</button>
+                  <button id="jp-use-canonical">Use canonical ManualJudgeV6</button>
+                </div>
+                <label>Judge contract address</label><input id="jp-addr" placeholder="0x… (must point to a deployed v0.6 judge contract)">
+                <label>Profile content (criteria, links, etc.)</label><textarea id="jp-content" placeholder="e.g. 'I judge claims using rule X. Reach me via Y. Bond test ${new Date().toISOString().slice(0,10)}.'"></textarea>
+                <button id="jp-go" class="primary">Register judge profile</button>
             </div>
+
             <div class="card">
                 <h3>Poster profile</h3>
+                <p><small>Optional self-description for posters. Bonds do not snapshot this — the registry's current entry is what observers see.</small></p>
                 <label>Profile content</label><textarea id="pp-content"></textarea>
-                <button id="pp-go">Register</button>
+                <button id="pp-go">Register poster profile</button>
             </div>
+
             <div class="card">
                 <h3>Challenger profile</h3>
+                <p><small>Optional self-description for challengers.</small></p>
                 <label>Profile content</label><textarea id="cp-content"></textarea>
-                <button id="cp-go">Register</button>
+                <button id="cp-go">Register challenger profile</button>
             </div>`;
+
+        $('jp-use-canonical').addEventListener('click', () => {
+            $('jp-addr').value = canonicalJudge;
+            log(`Pre-filled canonical ManualJudgeV6: ${canonicalJudge}`);
+        });
+
+        $('jp-deploy-new').addEventListener('click', async () => {
+            try {
+                if (!signer) throw new Error('Connect a wallet first');
+                if (!window.SIMPLE_BOND_V6_MANUAL_JUDGE_BYTECODE) throw new Error('Missing manualJudgeV6.bytecode.js');
+                log(`Deploying a fresh ManualJudgeV6 (proposed operator: ${account})…`);
+                // ManualJudgeV6 constructor: address _proposedOperator
+                const factory = new ethers.ContractFactory(
+                    ["constructor(address)"],
+                    window.SIMPLE_BOND_V6_MANUAL_JUDGE_BYTECODE,
+                    signer
+                );
+                const judge = await factory.deploy(account);
+                await judge.waitForDeployment();
+                const addr = await judge.getAddress();
+                log(`Deployed at ${addr}. Activating…`);
+                const judgeAbi = window.SIMPLE_BOND_V6_MANUAL_JUDGE_ABI;
+                const activated = new ethers.Contract(addr, judgeAbi, signer);
+                const tx = await activated.acceptOperatorRole();
+                await tx.wait();
+                log(`Activated. You are now the operator of ${addr}.`);
+                $('jp-addr').value = addr;
+            } catch (e) { log(e.message, 'err'); }
+        });
+
         $('jp-go').addEventListener('click', async () => {
             try {
                 if (!signer) throw new Error('Connect a wallet first');
+                if (!$('jp-addr').value) throw new Error('Judge contract address required — use the canonical button or deploy your own.');
                 const reg = registryContract('judge', true);
                 const tx = await reg.registerProfile($('jp-addr').value, $('jp-content').value);
                 const r = await tx.wait();
                 const log_ = r.logs.find(l => { try { return reg.interface.parseLog(l).name === 'ProfileRegistered'; } catch { return false; } });
                 const parsed = log_ ? reg.interface.parseLog(log_) : null;
-                log(`Registered judge profile entryId=${parsed?.args?.entryId}`);
+                log(`Registered judge profile entryId=${parsed?.args?.entryId}. Save this id — you'll use it as judgeProfileId when creating a bond.`);
             } catch (e) { log(e.message, 'err'); }
         });
         $('pp-go').addEventListener('click', async () => {

@@ -15,6 +15,7 @@ window.SIMPLE_BOND_CONFIG = Object.assign(
     chains: {
       1: {
         name: "Ethereum",
+        rpc: "https://ethereum-rpc.publicnode.com",
         bondContract: "0x6B24380B1980db3e2DfDd2b62f5ed3E7E88DFA43",
         deployBlock: 25139967,
         judgeProfileRegistry: "0x8fee829120b8823899372Ac3d39f77746192b407",
@@ -28,6 +29,7 @@ window.SIMPLE_BOND_CONFIG = Object.assign(
       },
       11155111: {
         name: "Sepolia",
+        rpc: "https://ethereum-sepolia-rpc.publicnode.com",
         bondContract: "0xEeEB10a05b4D819d736DB7A130eaC0f36626F583",
         deployBlock: 10888612,
         judgeProfileRegistry: "0x5C182867862c061a32C7621c0e3529FF682bbF22",
