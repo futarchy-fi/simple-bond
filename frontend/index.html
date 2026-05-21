@@ -419,7 +419,7 @@
   </div>
 
   <nav class="tabs" id="tabs">
-    <button class="tab" data-route="create">Create</button>
+    <button class="tab" data-route="create">Create bond</button>
     <button class="tab" data-route="browse">Browse</button>
     <button class="tab" data-route="judges">Judges</button>
     <button class="tab" data-route="my">My Bonds</button>
@@ -1711,6 +1711,70 @@
   }
 
   // ─── CREATE WIZARD ─────────────────────────────────────────────────────
+  // Draft persistence: every wizard input updates localStorage (debounced)
+  // so an interrupted bond creation can be resumed later. Cleared once the
+  // bond is successfully created or the user discards the draft. Scoped by
+  // chain id since judgeProfileId / token are chain-specific.
+  const DRAFT_KEY_PREFIX = 'simpleBond.draftCreateBond.v1.';
+  let _draftRestored = false;
+  let _draftSaveTimer = null;
+  function draftKey() { return DRAFT_KEY_PREFIX + (activeChainId || 'unknown'); }
+  function isDraftEmpty(s) {
+    return !s.claim.trim()
+      && s.bondAmount === '10'
+      && s.challengeAmount === '3'
+      && s.judgeFee === '0.5'
+      && s.judgeProfileId === ''
+      && Number(s.acceptanceDelay) === 7 * 86400
+      && Number(s.rulingBuffer) === 7 * 86400
+      && Number(s.maxChallenges) === 10;
+  }
+  function saveDraft() {
+    try {
+      if (isDraftEmpty(createState)) { localStorage.removeItem(draftKey()); return; }
+      const data = {
+        claim: createState.claim,
+        bondAmount: createState.bondAmount,
+        challengeAmount: createState.challengeAmount,
+        judgeFee: createState.judgeFee,
+        judgeProfileId: createState.judgeProfileId,
+        acceptanceDelay: createState.acceptanceDelay,
+        rulingBuffer: createState.rulingBuffer,
+        maxChallenges: createState.maxChallenges,
+        step: createState.step,
+        savedAt: Date.now(),
+      };
+      localStorage.setItem(draftKey(), JSON.stringify(data));
+    } catch (_) {}
+  }
+  function scheduleSaveDraft() {
+    clearTimeout(_draftSaveTimer);
+    _draftSaveTimer = setTimeout(saveDraft, 400);
+  }
+  function loadDraft() {
+    try {
+      const raw = localStorage.getItem(draftKey());
+      return raw ? JSON.parse(raw) : null;
+    } catch (_) { return null; }
+  }
+  function clearDraft() {
+    try { localStorage.removeItem(draftKey()); } catch (_) {}
+    _draftRestored = false;
+  }
+  function applyDraft(d) {
+    if (!d || typeof d !== 'object') return false;
+    if (typeof d.claim === 'string') createState.claim = d.claim;
+    if (typeof d.bondAmount === 'string') createState.bondAmount = d.bondAmount;
+    if (typeof d.challengeAmount === 'string') createState.challengeAmount = d.challengeAmount;
+    if (typeof d.judgeFee === 'string') createState.judgeFee = d.judgeFee;
+    if (typeof d.judgeProfileId === 'string') createState.judgeProfileId = d.judgeProfileId;
+    if (typeof d.acceptanceDelay === 'number') createState.acceptanceDelay = d.acceptanceDelay;
+    if (typeof d.rulingBuffer === 'number') createState.rulingBuffer = d.rulingBuffer;
+    if (typeof d.maxChallenges === 'number') createState.maxChallenges = d.maxChallenges;
+    if (typeof d.step === 'number') createState.step = Math.max(0, Math.min(4, d.step));
+    return true;
+  }
+
   // State persisted only while the create tab is visible.
   const createState = {
     step: 0,
@@ -1746,6 +1810,16 @@
   function renderCreate() {
     const c = chain();
     if (!createState.token) createState.token = c?.approvedToken || '';
+    // Restore an in-progress draft if one exists and we haven't already
+    // loaded it this session. createPrefill (deep-link judge id) wins over
+    // the draft for the judge field.
+    if (!_draftRestored) {
+      const d = loadDraft();
+      if (d && !isDraftEmpty(d)) {
+        applyDraft(d);
+        _draftRestored = true;
+      }
+    }
     if (createPrefill && createPrefill.judgeProfileId) {
       createState.judgeProfileId = createPrefill.judgeProfileId;
       createPrefill = {};
@@ -1782,8 +1856,15 @@
     const cur = createState.step;
     const stageEl = $('createWizard');
     const progress = ((cur + 1) / stages.length) * 100;
+    const draftBanner = _draftRestored
+      ? `<div id="draftBanner" style="background:var(--surface-2);border:1px solid var(--border);border-radius:6px;padding:8px 12px;margin-bottom:12px;font-size:13px;display:flex;justify-content:space-between;align-items:center;gap:10px;">
+          <span>Resumed from your saved draft.</span>
+          <button type="button" id="draftDiscard" class="secondary" style="padding:4px 10px;font-size:12px;">Discard draft</button>
+        </div>`
+      : '';
     stageEl.innerHTML = `
       <div class="wizard">
+        ${draftBanner}
         <div class="wizard-top">
           <div class="wizard-step-count">Step ${cur + 1} of ${stages.length}</div>
           <div class="wizard-progress"><div class="wizard-progress-bar" style="width:${progress}%"></div></div>
@@ -1799,11 +1880,16 @@
         <div id="wizStepper"></div>
       </div>`;
     renderStage(cur);
-    $('wizPrev').addEventListener('click', () => { createState.step = Math.max(0, cur - 1); renderWizard(); });
+    if (_draftRestored) {
+      const db = $('draftDiscard');
+      if (db) db.addEventListener('click', () => { clearDraft(); resetCreateState(); renderCreate(); });
+    }
+    $('wizPrev').addEventListener('click', () => { createState.step = Math.max(0, cur - 1); saveDraft(); renderWizard(); });
     if (cur < stages.length - 1) {
       $('wizNext').addEventListener('click', () => {
         if (!isStageValid(cur)) return;
         createState.step = cur + 1;
+        saveDraft();
         renderWizard();
       });
     } else {
@@ -2077,6 +2163,7 @@
       const btn = $('wizNext');
       if (btn) btn.disabled = !isStageValid(createState.step);
     }
+    scheduleSaveDraft();
   }
 
   async function resolveJudgeFromProfile() {
@@ -2196,6 +2283,7 @@
         } catch (_) {}
       }
       log(`Created bond #${bondId ?? '?'} (tx ${receipt.hash})`);
+      clearDraft();
       msg.innerHTML = `<div class="success-card">
         <div class="sc-label">Bond created!</div>
         <div class="sc-id">Bond #${bondId ?? '?'}</div>
@@ -2215,7 +2303,7 @@
   }
   // Expose to onclick handlers in injected HTML
   window.__simpleBondView = (id) => navigate('#view/' + id);
-  window.__simpleBondAnother = () => { resetCreateState(); render(); };
+  window.__simpleBondAnother = () => { clearDraft(); resetCreateState(); render(); };
   window.__simpleBondCopyLink = async (id) => {
     const link = location.origin + location.pathname + '#view/' + id;
     try { await navigator.clipboard.writeText(link); log(`Copied ${link}`); }
