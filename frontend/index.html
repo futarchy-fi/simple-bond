@@ -1046,68 +1046,68 @@
     const c = chain();
     const canonicalJudge = c && c.manualJudgeV6 ? c.manualJudgeV6 : '';
     $('view').innerHTML = `
-      <h2 style="margin-bottom:12px;">Judges on ${escapeHtml(c?.name || '—')}</h2>
+      <h2 style="margin-bottom:4px;">Judges on ${escapeHtml(c?.name || '—')}</h2>
+      <p class="hint" style="margin-bottom:16px;">Every bond pins a <strong>judge profile id</strong> at creation. Browse the registered profiles below and pick one when you <a href="#create">create a bond</a>. You only need to register a profile yourself if you want to <em>offer judging services</em>.</p>
 
-      <div class="judge-onboarding" id="judgeOnboardingCard">
-        <h3 id="onboardTitle">Become a judge</h3>
-        <div id="onboardHint" class="hint" style="margin-top:4px;"></div>
-        <div id="onboardStatus" class="status"></div>
-        <div id="onboardAddress" class="address-row hidden"></div>
-        <div class="actions" id="onboardActions"></div>
-        <div id="judgeMsg"></div>
-      </div>
-
-      <div class="card">
-        <h3>Quick-deploy options</h3>
-        <p class="hint" style="margin-bottom:10px;">Two ways to get a judge contract address before registering a profile:</p>
-        <div class="row" style="margin: 8px 0;">
-          <button id="jp-deploy-new">Deploy a fresh ManualJudgeV6 (I'll be operator)</button>
-          <button class="secondary" id="jp-use-canonical">Use canonical ManualJudgeV6</button>
-        </div>
-        <div class="hint">
-          <strong>Canonical</strong>: <span class="mono">${escapeHtml(canonicalJudge || '—')}</span> — operated by the deploy key.
-          Fine for testing. Rulings go through that operator.<br>
-          <strong>Deploy your own</strong>: you become the proposed operator, accept the role in one click, and the form fills with the new address.
-        </div>
-      </div>
-
-      <div class="card" id="profileEditorCard">
-        <h3>Register a judge profile</h3>
-        <p class="hint" style="margin-bottom:10px;">A profile pins your judging criteria for any bond that snapshots this profile id. Profile entries are append-only — updating creates a new entry id.</p>
-        <div class="form-group">
-          <label for="jp-addr">Judge contract address</label>
-          <input id="jp-addr" placeholder="0x… (must be a deployed v0.6 judge contract)">
-        </div>
-        <div class="form-group">
-          <label for="jp-content">Profile content (criteria, links, contact info)</label>
-          <textarea id="jp-content" rows="5" placeholder="Explain how you (or this judge contract) decide claim disputes. Links, contact info, and example rulings welcome."></textarea>
-        </div>
-        <button id="jp-go">Register judge profile</button>
-      </div>
-
-      <h3 style="margin: 16px 0 8px;">Registered profiles</h3>
+      <h3 style="margin: 8px 0;">Registered judge profiles</h3>
       <div id="judgesList"><div class="loading"><span class="spinner"></span>Loading profiles…</div></div>
 
-      <h3 style="margin: 24px 0 8px;">Other profile registries</h3>
-      <p class="hint" style="margin-bottom:10px;">Posters and challengers can optionally register their own append-only profiles. Bonds do not snapshot these — observers read the current entry directly.</p>
+      <details class="card" id="judgeOfferDetails" style="margin-top:24px;">
+        <summary style="cursor:pointer;font-weight:600;font-family:Georgia,serif;font-size:16px;">Offer judging services</summary>
+        <p class="hint" style="margin:10px 0;">This is for anyone who wants to <strong>resolve disputes</strong> for SimpleBond claims (lawyers, fact-checkers, domain experts, prediction markets, etc.). Posters pin your profile id when creating a bond and you (or your judge contract) rule on challenges. Skip this whole section if you only want to post or challenge bonds.</p>
 
-      <div class="card">
-        <h3>Poster profile</h3>
+        <div class="judge-onboarding" id="judgeOnboardingCard">
+          <h4 id="onboardTitle" style="margin:8px 0;">Set up your judge contract</h4>
+          <div id="onboardHint" class="hint" style="margin-top:4px;"></div>
+          <div id="onboardStatus" class="status"></div>
+          <div id="onboardAddress" class="address-row hidden"></div>
+          <div class="actions" id="onboardActions"></div>
+          <div id="judgeMsg"></div>
+        </div>
+
+        <div style="margin-top: 16px; padding: 12px; background: var(--surface-2); border-radius: 6px;">
+          <h4 style="margin: 0 0 8px;">Two paths to a judge address</h4>
+          <div class="row" style="margin-bottom: 8px;">
+            <button id="jp-deploy-new">Deploy my own judge contract</button>
+            <button class="secondary" id="jp-use-canonical">Use the default judge</button>
+          </div>
+          <div class="hint" style="font-size:12px;">
+            <strong>Deploy my own</strong> — you become the operator of a fresh <code>ManualJudgeV6</code>; rulings go through your wallet. Right for serious judges.<br>
+            <strong>Use the default</strong> — points at <span class="mono">${escapeHtml(canonicalJudge || '—')}</span>, operated by the SimpleBond deploy key. Only useful for testing or one-off bonds where you don't need to control rulings.
+          </div>
+        </div>
+
+        <div id="profileEditorCard" style="margin-top: 16px;">
+          <h4 style="margin: 0 0 8px;">Register your profile</h4>
+          <p class="hint" style="margin-bottom:10px;">After you have a judge contract address (above), publish a profile so posters can find you. Entries are append-only — updates create a new entry id.</p>
+          <div class="form-group">
+            <label for="jp-addr">Judge contract address</label>
+            <input id="jp-addr" placeholder="0x… (filled by the buttons above, or paste your own)">
+          </div>
+          <div class="form-group">
+            <label for="jp-content">Profile content (criteria, links, contact info)</label>
+            <textarea id="jp-content" rows="5" placeholder="Explain how you (or this judge contract) decide claim disputes. Links, contact info, and example rulings welcome."></textarea>
+          </div>
+          <button id="jp-go">Register judge profile</button>
+        </div>
+      </details>
+
+      <details class="card" style="margin-top:8px;">
+        <summary style="cursor:pointer;font-weight:600;font-family:Georgia,serif;font-size:16px;">Poster &amp; challenger profiles (optional)</summary>
+        <p class="hint" style="margin:10px 0;">Posters and challengers can optionally publish a self-description. Bonds do <em>not</em> snapshot these — observers read whatever is the most recent entry for your address. Skip unless you want a public handle.</p>
+
         <div class="form-group">
-          <label for="pp-content">Profile content</label>
+          <label for="pp-content">Poster profile content</label>
           <textarea id="pp-content" rows="3" placeholder="Self-description for posters (handle, contact, areas of claim)."></textarea>
+          <button id="pp-go" class="secondary" style="margin-top:4px;">Register poster profile</button>
         </div>
-        <button id="pp-go" class="secondary">Register poster profile</button>
-      </div>
 
-      <div class="card">
-        <h3>Challenger profile</h3>
-        <div class="form-group">
-          <label for="cp-content">Profile content</label>
+        <div class="form-group" style="margin-top:12px;">
+          <label for="cp-content">Challenger profile content</label>
           <textarea id="cp-content" rows="3" placeholder="Self-description for challengers."></textarea>
+          <button id="cp-go" class="secondary" style="margin-top:4px;">Register challenger profile</button>
         </div>
-        <button id="cp-go" class="secondary">Register challenger profile</button>
-      </div>
+      </details>
     `;
 
     $('jp-use-canonical').addEventListener('click', () => {
@@ -1154,8 +1154,8 @@
     addrRow.innerHTML = '';
 
     if (!signer) {
-      titleEl.textContent = 'Become a judge';
-      hintEl.textContent = 'Connect a wallet to deploy your own judge contract or register a profile pointing at the canonical one.';
+      titleEl.textContent = 'Set up your judge contract';
+      hintEl.textContent = 'Connect a wallet to deploy your own judge contract, or paste the address of one you already control.';
       statusEl.textContent = '';
       const b = document.createElement('button');
       b.textContent = 'Connect wallet';
@@ -1166,27 +1166,14 @@
 
     const myJudge = getMyJudgeContract();
     if (!myJudge) {
-      titleEl.textContent = 'Become a judge';
-      hintEl.textContent = 'You can deploy your own ManualJudgeV6, then register a profile that points to it.';
-      statusEl.textContent = 'Step 1: Deploy your judge contract (you will be the proposed operator).';
-      const b1 = document.createElement('button');
-      b1.textContent = 'Deploy my judge contract';
-      b1.addEventListener('click', () => deployFreshJudge());
-      const b2 = document.createElement('button');
-      b2.className = 'secondary';
-      b2.textContent = 'Use canonical ManualJudgeV6';
-      b2.addEventListener('click', () => {
-        const c = chain();
-        $('jp-addr').value = c?.manualJudgeV6 || '';
-        $('jp-addr').focus();
-      });
-      actions.appendChild(b1);
-      actions.appendChild(b2);
+      titleEl.textContent = 'No judge contract yet';
+      hintEl.textContent = 'Pick one of the two paths below — deploy your own (recommended for real judges) or point at the default judge for testing.';
+      statusEl.textContent = '';
       return;
     }
 
-    titleEl.textContent = 'Your judge';
-    hintEl.textContent = `You control a ManualJudgeV6 deployed via this page.`;
+    titleEl.textContent = 'Your judge contract';
+    hintEl.textContent = `You control this ManualJudgeV6 (deployed via this page).`;
     addrRow.innerHTML = `Judge contract: ${addressLink(myJudge)} <button class="ghost" id="copyJudgeBtn">Copy</button>`;
     addrRow.classList.remove('hidden');
 
@@ -1198,7 +1185,7 @@
         judge.operator().catch(() => null),
       ]);
       if (isActive === false) {
-        statusEl.textContent = 'Step 2: Activate by accepting the operator role.';
+        statusEl.textContent = 'Inactive — accept the operator role to activate.';
         const b = document.createElement('button');
         b.textContent = 'Activate judge (acceptOperatorRole)';
         b.addEventListener('click', () => acceptOperatorRole(myJudge));
@@ -1206,7 +1193,7 @@
       } else if (operator && operator.toLowerCase() !== account.toLowerCase()) {
         statusEl.textContent = `Active. Operator is ${short(operator)} (not your current wallet).`;
       } else {
-        statusEl.textContent = 'Active. Register a profile so this judge is visible to posters.';
+        statusEl.textContent = 'Active. Register a profile below so posters can find you.';
       }
     } catch (err) {
       statusEl.textContent = `Could not read judge state: ${friendlyError(err)}`;

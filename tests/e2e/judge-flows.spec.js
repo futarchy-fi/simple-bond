@@ -70,13 +70,18 @@ test.describe("E — judge flows", () => {
         await page.goto("/#judges");
         await switchAccount(KEYS.judgeOperator);
         await page.reload();
+        // The judge-offering UI lives inside a collapsed <details> so it
+        // doesn't distract people who just want to browse profiles.
+        await page.locator("#judgeOfferDetails summary").click();
         await page.waitForSelector("#jp-use-canonical");
         await page.locator("#jp-use-canonical").click();
         await page.fill("#jp-content", "e2e canonical profile");
         await page.locator("#jp-go").click();
-        // Profile registered → log line includes 'entryId'.
+        // The page renders the static heading "Registered judge profiles"
+        // unconditionally, so wait specifically for the log line that
+        // includes "entryId=" — that only appears after the tx confirms.
         await page.waitForFunction(
-            () => /Registered judge profile/i.test(document.body.innerText),
+            () => /entryId=\d+/i.test(document.body.innerText),
             null,
             { timeout: 60_000 }
         );
@@ -102,6 +107,7 @@ test.describe("E — judge flows", () => {
         await page.goto("/#judges");
         await switchAccount(KEYS.challenger2);
         await page.reload();
+        await page.locator("#judgeOfferDetails summary").click();
         await page.waitForSelector("#jp-deploy-new");
         // Capture the post-deploy address from #jp-addr (the helper auto-fills it).
         await page.locator("#jp-deploy-new").click();
