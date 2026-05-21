@@ -93,7 +93,7 @@ module.exports = {
             chainId: 137,
         },
         ethereum: {
-            url: process.env.ETH_RPC_URL || "https://eth.llamarpc.com",
+            url: process.env.ETH_RPC_URL || "https://ethereum-rpc.publicnode.com",
             accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
             chainId: 1,
         },
