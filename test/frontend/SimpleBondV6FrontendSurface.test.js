@@ -111,13 +111,13 @@ describe("SimpleBond v0.6 frontend surface", function () {
         expect(v6smoke).to.include("SIMPLE_BOND_V6_ABI");
     });
 
-    it("runtime-config exposes the chains[] schema while keeping the legacy gnosis* keys", function () {
+    it("runtime-config exposes the chains[] schema with mainnet + sepolia entries and defaults to mainnet", function () {
         expect(runtimeConfig).to.include("chains:");
-        expect(runtimeConfig).to.include("defaultChainId");
-        expect(runtimeConfig).to.match(/100:\s*\{[\s\S]*bondVersion:\s*5/);
-        // Legacy compat
-        expect(runtimeConfig).to.include("gnosisBondContract:");
-        expect(runtimeConfig).to.include("gnosisJudgeProfileRegistry:");
-        expect(runtimeConfig).to.include("gnosisOfficialDirectory:");
+        expect(runtimeConfig).to.include("defaultChainId: 1");
+        expect(runtimeConfig).to.match(/1:\s*\{[\s\S]*bondVersion:\s*6/);
+        expect(runtimeConfig).to.match(/11155111:\s*\{[\s\S]*bondVersion:\s*6/);
+        // Gnosis legacy entry + gnosis* keys retired at v0.6 cutover.
+        expect(runtimeConfig).to.not.include("gnosisBondContract:");
+        expect(runtimeConfig).to.not.match(/100:\s*\{/);
     });
 });

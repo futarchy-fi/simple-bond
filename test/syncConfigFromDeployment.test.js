@@ -51,8 +51,8 @@ describe("syncConfigFromDeployment", function () {
         expect(patched).to.include("0x0000000000000000000000000000000000000004"); // simpleBondV6
         expect(patched).to.include("sepolia.etherscan.io");
         expect(patched).to.include("bondVersion");
-        // Legacy gnosis keys preserved.
-        expect(patched).to.include("0x7dF485C013f8671B656d585f1d1411640B1D2776");
+        // Mainnet (chain 1) entry kept intact across a sepolia patch.
+        expect(patched).to.match(/1:\s*\{/);
     });
 
     it("idempotent — running twice produces the same file (no duplicate entries)", () => {
