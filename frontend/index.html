@@ -1087,6 +1087,7 @@
             <textarea id="jp-content" rows="5" placeholder="Explain how you (or this judge contract) decide claim disputes. Links, contact info, and example rulings welcome."></textarea>
           </div>
           <button id="jp-go">Register judge profile</button>
+          <div id="jp-msg" style="margin-top:10px;"></div>
         </div>
       </details>
 
@@ -1270,7 +1271,10 @@
   }
 
   async function registerJudgeProfile() {
-    const msg = $('judgeMsg');
+    // Inline status lives right under the Register button so the user sees
+    // confirmation where they clicked. (The #judgeMsg slot up in the
+    // onboarding card was too far away from the form to be useful.)
+    const msg = $('jp-msg');
     try {
       if (!signer) { await connectWallet(); if (!signer) return; }
       const addr = $('jp-addr').value.trim();
@@ -1295,7 +1299,7 @@
         } catch (_) {}
       }
       log(`Registered judge profile entryId=${entryId ?? '?'}. Save it — you'll use it as judgeProfileId when creating a bond.`);
-      msg && (msg.innerHTML = `<div class="msg msg-success">Registered profile <strong>#${entryId ?? '?'}</strong>. <a href="#judge/${entryId ?? ''}">View profile</a></div>`);
+      msg && (msg.innerHTML = `<div class="msg msg-success">Registered profile <strong>#${entryId ?? '?'}</strong>. <a href="#judge/${entryId ?? ''}">View profile</a> · <a href="#create">Create a bond pinning this profile</a></div>`);
       // optimistic refresh
       judgeState.entries = null;
       loadJudgeEntries();
