@@ -84,10 +84,28 @@ async function gotoBondDetail(page, bondId) {
 }
 
 // Time-travel the hardhat node forward by `seconds`. Useful for getting past
-// the per-challenge acceptance / ruling windows.
-async function timeTravel(deployed, seconds) {
+// the per-challenge acceptance / ruling windows. Also syncs the page's
+// Date.now to the chain's block.timestamp so the UI's wall-clock gating
+// matches what the contract sees.
+async function timeTravel(deployed, seconds, page) {
     await rpc(deployed).send("evm_increaseTime", [seconds]);
     await rpc(deployed).send("evm_mine", []);
+    if (page) await syncDateToChain(deployed, page);
+}
+
+// Set the page's Date.now() to match the chain's latest block.timestamp.
+// Necessary when previous tests in the same worker already advanced chain
+// time — the per-test localStorage offset isn't enough to catch up.
+async function syncDateToChain(deployed, page) {
+    const block = await rpc(deployed).send("eth_getBlockByNumber", ["latest", false]);
+    const chainNow = parseInt(block.timestamp, 16);
+    await page.evaluate((cn) => {
+        const realNow = Math.floor(Date.now() / 1000) -
+            Math.floor((parseInt(localStorage.getItem("__dateOffsetSec") || "0", 10) || 0));
+        // realNow is unaffected by our offset; difference = chainNow - realNow.
+        const newOffset = cn - realNow + 1; // +1 to be safely > rulingStart
+        localStorage.setItem("__dateOffsetSec", String(newOffset));
+    }, chainNow);
 }
 
 module.exports = {
@@ -101,4 +119,5 @@ module.exports = {
     createBondViaUI,
     gotoBondDetail,
     timeTravel,
+    syncDateToChain,
 };

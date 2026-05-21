@@ -249,9 +249,32 @@ const test = base.extend({
                 });
 
                 // Mutable per-page mock account. Tests can change via window.__setMockAccount.
-                window.__mockKey = defaultKey;
+                // Persist the choice in localStorage so it survives navigations/reloads.
+                window.__mockKey = (typeof localStorage !== "undefined" &&
+                                    localStorage.getItem("__mockKey")) || defaultKey;
                 window.__mockChainId = deployed.chainId;
                 window.__mockRpc = deployed.rpc;
+
+                // Date.now stub — the UI gates timeout buttons on
+                // Math.floor(Date.now()/1000) compared against on-chain
+                // timing views. evm_increaseTime advances chain time but not
+                // wall clock; this stub adds a configurable offset so tests
+                // can keep the two in sync.
+                const offsetKey = "__dateOffsetSec";
+                const origNow = Date.now.bind(Date);
+                Date.now = () => {
+                    let off = 0;
+                    try {
+                        off = parseInt(localStorage.getItem(offsetKey) || "0", 10) || 0;
+                    } catch (_) {}
+                    return origNow() + off * 1000;
+                };
+                window.__addDateOffset = (sec) => {
+                    try {
+                        const cur = parseInt(localStorage.getItem(offsetKey) || "0", 10) || 0;
+                        localStorage.setItem(offsetKey, String(cur + sec));
+                    } catch (_) {}
+                };
 
                 const listeners = {};
                 const waitForEthers = () => new Promise((resolve) => {
@@ -320,6 +343,7 @@ const test = base.extend({
 
                 window.__setMockAccount = (privKey) => {
                     window.__mockKey = privKey;
+                    try { localStorage.setItem("__mockKey", privKey); } catch (_) {}
                     const wallet = new window.ethers.Wallet(privKey);
                     for (const fn of (listeners.accountsChanged || [])) {
                         fn([wallet.address]);
