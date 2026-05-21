@@ -41,6 +41,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install build tools (for native deps like better-sqlite3)
+        run: apt-get update && apt-get install -y --no-install-recommends make g++ python3
+
       - name: Install dependencies
         run: npm ci
 
