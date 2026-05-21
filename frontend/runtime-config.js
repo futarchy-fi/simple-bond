@@ -47,3 +47,24 @@ window.SIMPLE_BOND_CONFIG = Object.assign(
   },
   window.SIMPLE_BOND_CONFIG || {}
 );
+
+// Hostname-based chain filtering:
+//   staging.bond.futarchy.* → testnet only (Sepolia)
+//   bond.futarchy.fi/ai     → mainnet only
+//   localhost / other       → both chains visible (development)
+(function () {
+  const h = (typeof location !== "undefined" && location.hostname) || "";
+  const cfg = window.SIMPLE_BOND_CONFIG;
+  if (!cfg || !cfg.chains) return;
+  if (/^staging\.bond\.futarchy\./.test(h)) {
+    delete cfg.chains[1];
+    cfg.defaultChainId = 11155111;
+    cfg.siteRole = "testnet";
+  } else if (/^bond\.futarchy\.(fi|ai)$/.test(h)) {
+    delete cfg.chains[11155111];
+    cfg.defaultChainId = 1;
+    cfg.siteRole = "mainnet";
+  } else {
+    cfg.siteRole = "dev";
+  }
+})();
