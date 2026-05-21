@@ -1463,32 +1463,6 @@
         </div>`;
       $('cb-claim').addEventListener('input', (e) => { createState.claim = e.target.value; updateNextBtn(); });
     } else if (i === 1) {
-      const b = parseFloat(createState.bondAmount) || 0;
-      const cha = parseFloat(createState.challengeAmount) || 0;
-      const fee = parseFloat(createState.judgeFee) || 0;
-      let beliefHtml = '';
-      if (b > 0 && cha > 0) {
-        const net = b + cha - fee;
-        if (net > 0) {
-          const challPct = (cha * 100 / net).toFixed(1);
-          const postPct = ((1 - b / net) * 100).toFixed(1);
-          beliefHtml = `<div class="belief-card">
-            <h3>Implied belief thresholds</h3>
-            <div class="belief-grid">
-              <div class="belief-item belief-challenger">
-                <div class="belief-label">Challenger signals</div>
-                <div class="belief-value">&gt;${challPct}%</div>
-                <div class="belief-desc">chance poster is wrong</div>
-              </div>
-              <div class="belief-item belief-poster">
-                <div class="belief-label">Poster signals</div>
-                <div class="belief-value">&lt;${postPct}%</div>
-                <div class="belief-desc">chance they're wrong</div>
-              </div>
-            </div>
-          </div>`;
-        }
-      }
       body.innerHTML = `
         <div class="wizard-stage-header">
           <span class="wizard-stage-num">2</span>
@@ -1509,8 +1483,42 @@
             <input id="cb-fee" value="${escapeHtml(createState.judgeFee)}">
           </div>
         </div>
-        ${beliefHtml}`;
-      const ev = () => { updateNextBtn(); renderStage(1); };
+        <div id="beliefCardSlot"></div>`;
+      // Partial re-render of the belief-thresholds card only — re-rendering
+      // the whole stage on every keystroke blew focus off the input the user
+      // was typing into. The inputs themselves stay mounted; only the
+      // computed display below them updates.
+      const renderBelief = () => {
+        const b = parseFloat(createState.bondAmount) || 0;
+        const cha = parseFloat(createState.challengeAmount) || 0;
+        const fee = parseFloat(createState.judgeFee) || 0;
+        let html = '';
+        if (b > 0 && cha > 0) {
+          const net = b + cha - fee;
+          if (net > 0) {
+            const challPct = (cha * 100 / net).toFixed(1);
+            const postPct = ((1 - b / net) * 100).toFixed(1);
+            html = `<div class="belief-card">
+              <h3>Implied belief thresholds</h3>
+              <div class="belief-grid">
+                <div class="belief-item belief-challenger">
+                  <div class="belief-label">Challenger signals</div>
+                  <div class="belief-value">&gt;${challPct}%</div>
+                  <div class="belief-desc">chance poster is wrong</div>
+                </div>
+                <div class="belief-item belief-poster">
+                  <div class="belief-label">Poster signals</div>
+                  <div class="belief-value">&lt;${postPct}%</div>
+                  <div class="belief-desc">chance they're wrong</div>
+                </div>
+              </div>
+            </div>`;
+          }
+        }
+        $('beliefCardSlot').innerHTML = html;
+      };
+      renderBelief();
+      const ev = () => { updateNextBtn(); renderBelief(); };
       $('cb-bond').addEventListener('input', (e) => { createState.bondAmount = e.target.value; ev(); });
       $('cb-ch').addEventListener('input', (e) => { createState.challengeAmount = e.target.value; ev(); });
       $('cb-fee').addEventListener('input', (e) => { createState.judgeFee = e.target.value; ev(); });
@@ -1565,8 +1573,24 @@
           <label for="cb-max">Max challenges (total ever filed)</label>
           <input id="cb-max" type="number" min="1" value="${createState.maxChallenges}">
         </div>`;
-      $('cb-ad').addEventListener('input', (e) => { createState.acceptanceDelay = Number(e.target.value || 0); updateNextBtn(); renderStage(3); });
-      $('cb-rb').addEventListener('input', (e) => { createState.rulingBuffer = Number(e.target.value || 0); updateNextBtn(); renderStage(3); });
+      // Update preset highlights in place rather than re-rendering the whole
+      // stage on every keystroke (which would blow focus off the input).
+      const refreshPresetActive = (containerId, current) => {
+        document.querySelectorAll(`#${containerId} .preset`).forEach(b => {
+          if (Number(b.dataset.sec) === current) b.classList.add('active');
+          else b.classList.remove('active');
+        });
+      };
+      $('cb-ad').addEventListener('input', (e) => {
+        createState.acceptanceDelay = Number(e.target.value || 0);
+        updateNextBtn();
+        refreshPresetActive('acceptPresets', createState.acceptanceDelay);
+      });
+      $('cb-rb').addEventListener('input', (e) => {
+        createState.rulingBuffer = Number(e.target.value || 0);
+        updateNextBtn();
+        refreshPresetActive('rulingPresets', createState.rulingBuffer);
+      });
       $('cb-max').addEventListener('input', (e) => { createState.maxChallenges = Number(e.target.value || 0); updateNextBtn(); });
       document.querySelectorAll('#acceptPresets .preset').forEach(b => b.addEventListener('click', () => {
         createState.acceptanceDelay = Number(b.dataset.sec); renderStage(3); updateNextBtn();

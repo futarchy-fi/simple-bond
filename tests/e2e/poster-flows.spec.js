@@ -11,6 +11,29 @@ const {
 } = require("./fixtures/helpers");
 
 test.describe("C — poster flows", () => {
+    test("typing in stake inputs does not lose focus (regression)", async ({ page }) => {
+        // Bug: re-rendering the entire stage on every keystroke unmounted the
+        // input the user was typing into, dropping focus after each digit.
+        // Fix is a surgical update of the belief-thresholds card instead.
+        await page.goto("/#create");
+        await page.fill("#cb-claim", "regression test");
+        await page.click("#wizNext");
+        await page.waitForSelector("#cb-bond");
+        await page.focus("#cb-bond");
+        await page.keyboard.press("Control+A");
+        await page.keyboard.press("Backspace");
+        await page.keyboard.type("12345", { delay: 30 });
+        await expect(page.locator("#cb-bond")).toBeFocused();
+        await expect(page.locator("#cb-bond")).toHaveValue("12345");
+        // Same for challenge and judgeFee.
+        await page.focus("#cb-ch");
+        await page.keyboard.press("Control+A");
+        await page.keyboard.press("Backspace");
+        await page.keyboard.type("987", { delay: 30 });
+        await expect(page.locator("#cb-ch")).toBeFocused();
+        await expect(page.locator("#cb-ch")).toHaveValue("987");
+    });
+
     test("C1 — create bond walks the wizard and emits BondCreated", async ({ page, deployed }) => {
         test.setTimeout(120_000);
         const before = await nextBondId(deployed);
