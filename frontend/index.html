@@ -1066,14 +1066,12 @@
         </div>
 
         <div style="margin-top: 16px; padding: 12px; background: var(--surface-2); border-radius: 6px;">
-          <h4 style="margin: 0 0 8px;">Two paths to a judge address</h4>
+          <h4 style="margin: 0 0 8px;">Get a judge contract address</h4>
           <div class="row" style="margin-bottom: 8px;">
             <button id="jp-deploy-new">Deploy my own judge contract</button>
-            <button class="secondary" id="jp-use-canonical">Use the default judge</button>
           </div>
           <div class="hint" style="font-size:12px;">
-            <strong>Deploy my own</strong> — you become the operator of a fresh <code>ManualJudgeV6</code>; rulings go through your wallet. Right for serious judges.<br>
-            <strong>Use the default</strong> — points at <span class="mono">${escapeHtml(canonicalJudge || '—')}</span>, operated by the SimpleBond deploy key. Only useful for testing or one-off bonds where you don't need to control rulings.
+            You become the proposed operator of a fresh <code>ManualJudgeV6</code>; rulings go through your wallet. Already control a deployed judge? Paste its address into the field below instead.
           </div>
         </div>
 
@@ -1110,10 +1108,6 @@
       </details>
     `;
 
-    $('jp-use-canonical').addEventListener('click', () => {
-      $('jp-addr').value = canonicalJudge;
-      log(`Pre-filled canonical ManualJudgeV6: ${canonicalJudge}`);
-    });
     $('jp-deploy-new').addEventListener('click', () => deployFreshJudge());
     $('jp-go').addEventListener('click', () => registerJudgeProfile());
     $('pp-go').addEventListener('click', () => registerSimpleProfile('poster', $('pp-content').value));
@@ -1543,10 +1537,20 @@
         <div class="form-group">
           <label for="cb-jpid">Judge profile id</label>
           <input id="cb-jpid" type="number" min="0" value="${escapeHtml(createState.judgeProfileId)}" placeholder="0">
-          <div class="hint"><a href="#judges">Browse registered profiles</a></div>
+          <div class="row" style="margin-top:8px;gap:8px;">
+            <button type="button" class="secondary" id="cb-use-default-judge">Use the default test judge</button>
+            <a href="#judges" style="font-size:13px;align-self:center;">Browse all registered profiles</a>
+          </div>
+          <div class="hint" style="margin-top:6px;">The <strong>default test judge</strong> (profile id 0) is the SimpleBond-operated <code>ManualJudgeV6</code>. Fine for early v0.6 experiments — rulings are made by us. For production claims, pick a profile from a judge you trust.</div>
         </div>
         <div id="cb-judgeResolved" class="hint" style="margin-top:8px;"></div>`;
       $('cb-jpid').addEventListener('input', (e) => { createState.judgeProfileId = e.target.value; resolveJudgeFromProfile(); updateNextBtn(); });
+      $('cb-use-default-judge').addEventListener('click', () => {
+        createState.judgeProfileId = '0';
+        $('cb-jpid').value = '0';
+        resolveJudgeFromProfile();
+        updateNextBtn();
+      });
       resolveJudgeFromProfile();
     } else if (i === 3) {
       const presetsHtml = (current, presets, kind) => presets.map(p =>

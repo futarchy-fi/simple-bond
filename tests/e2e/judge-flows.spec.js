@@ -73,8 +73,13 @@ test.describe("E — judge flows", () => {
         // The judge-offering UI lives inside a collapsed <details> so it
         // doesn't distract people who just want to browse profiles.
         await page.locator("#judgeOfferDetails summary").click();
-        await page.waitForSelector("#jp-use-canonical");
-        await page.locator("#jp-use-canonical").click();
+        await page.waitForSelector("#jp-addr");
+        // The "Use default judge" button on the judges side was removed —
+        // pointing a profile at a judge you don't control is nonsense.
+        // For this test we register a second profile pointing at the same
+        // canonical judge as the fixture's seed (operator is fine to register
+        // multiple profiles); paste the address manually.
+        await page.fill("#jp-addr", deployed.manualJudgeV6);
         await page.fill("#jp-content", "e2e canonical profile");
         await page.locator("#jp-go").click();
         // The page renders the static heading "Registered judge profiles"
