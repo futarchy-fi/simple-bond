@@ -73,7 +73,10 @@ describe("SimpleBond v0.6 frontend surface", function () {
 
         // Iterates runtime-config.chains for the v0.6 selector.
         expect(v6html).to.include("cfg.chains");
-        expect(v6html).to.include("bondVersion !== 6");
+        // The chain filter now uses the positive form
+        // `!c.bondVersion || c.bondVersion === 6` since the dropdown is
+        // hidden entirely on single-chain hosts.
+        expect(v6html).to.match(/bondVersion(\s*===\s*6|\s*!==\s*6)/);
 
         // Wallet + network switch via MetaMask.
         expect(v6html).to.include("window.ethereum");

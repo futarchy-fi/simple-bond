@@ -548,6 +548,32 @@
     if (isUserRejection(err)) return 'Transaction cancelled.';
     return err?.reason || err?.shortMessage || err?.message || String(err);
   }
+  // sUSDS-specific funding helper. Returns an HTML string with the user's
+  // current balance + actionable links to get more. Designed to render
+  // inline near the Create form / submitCreate error path.
+  const MAINNET_SUSDS = '0xa3931d71877C0E7a3148CB7Eb4463524FEc27fbD'.toLowerCase();
+  const MAINNET_USDS  = '0xdC035D45d973E3EC169d2276DDab16f1e407384F';
+  const MAINNET_DAI   = '0x6B175474E89094C44Da98b954EedeAC495271d0F';
+  function renderFundingHelp(token, meta, have, need, _haveBig, _needBig) {
+    const isSusds = String(token).toLowerCase() === MAINNET_SUSDS;
+    const tokenLabel = meta.symbol || 'tokens';
+    const linksSusds = `
+      <li><a href="https://app.sky.money/?network=ethereum&widget=savings" target="_blank" rel="noopener">Sky Savings</a> — deposit USDS or DAI, receive sUSDS</li>
+      <li><a href="https://cow.fi/?inputCurrency=${MAINNET_USDS}&outputCurrency=${MAINNET_SUSDS}" target="_blank" rel="noopener">CowSwap (USDS → sUSDS)</a></li>
+      <li><a href="https://cow.fi/?inputCurrency=ETH&outputCurrency=${MAINNET_SUSDS}" target="_blank" rel="noopener">CowSwap (ETH → sUSDS)</a></li>
+      <li><a href="https://app.sky.money/?network=ethereum&widget=upgrade" target="_blank" rel="noopener">Sky Upgrade</a> — migrate DAI → USDS first</li>
+      <li>Or wrap directly: USDS contract <span class="mono">${MAINNET_USDS.slice(0,8)}…</span> → call <code>sUSDS.deposit(amount, you)</code></li>`;
+    const linksGeneric = `
+      <li>Acquire ${escapeHtml(tokenLabel)} from any DEX/CEX, then send it to the connected wallet.</li>`;
+    return `<div class="msg msg-error" style="text-align:left;">
+      <strong>Insufficient ${escapeHtml(tokenLabel)} balance.</strong> You hold <strong>${escapeHtml(have)}</strong>; this bond locks <strong>${escapeHtml((parseFloat(have) + parseFloat(need)).toString())}</strong>.
+      <details style="margin-top:6px;">
+        <summary style="cursor:pointer;">How to get ${escapeHtml(tokenLabel)}</summary>
+        <ul style="margin:6px 0 0 18px;font-size:13px;">${isSusds ? linksSusds : linksGeneric}</ul>
+      </details>
+    </div>`;
+  }
+
   async function tokenMeta(addr) {
     const k = addr.toLowerCase();
     if (tokenMetaCache[k]) return tokenMetaCache[k];
@@ -560,6 +586,66 @@
     try { symbol = await erc20.symbol(); } catch (_) {}
     tokenMetaCache[k] = { decimals, symbol };
     return tokenMetaCache[k];
+  }
+
+  // ─── sUSDS ↔ USD conversion ────────────────────────────────────────────
+  // sUSDS is an ERC-4626 vault over USDS. 1 sUSDS share appreciates against
+  // USDS over time at the Sky Savings Rate. Posters reason in USD;
+  // the contract works in sUSDS shares. We convert at input/display time.
+  //
+  // Cached per token-address with a TTL so repeated calls don't hammer the
+  // RPC. Falls back to 1:1 when the token doesn't expose the 4626 view
+  // (e.g. MockSUSDS without the helper methods, plain ERC-20 tokens).
+  const susdsRateCache = {}; // { addr: { sharesPerAsset, assetsPerShare, decimals, ts } }
+  const SUSDS_RATE_TTL_MS = 5 * 60 * 1000;
+
+  async function susdsRate(tokenAddr) {
+    const k = tokenAddr.toLowerCase();
+    const cached = susdsRateCache[k];
+    if (cached && Date.now() - cached.ts < SUSDS_RATE_TTL_MS) return cached;
+    const meta = await tokenMeta(tokenAddr);
+    const unit = 10n ** BigInt(meta.decimals);
+    const erc4626 = new ethers.Contract(tokenAddr, [
+      'function convertToShares(uint256 assets) view returns (uint256 shares)',
+      'function convertToAssets(uint256 shares) view returns (uint256 assets)',
+    ], readProvider());
+    let sharesPerAsset = 1, assetsPerShare = 1;
+    try {
+      const shares = await erc4626.convertToShares(unit);
+      const assets = await erc4626.convertToAssets(unit);
+      // Convert bigint to Number with 6 decimals of precision — enough for
+      // a savings-rate token. We only use these as display estimates.
+      sharesPerAsset = Number((shares * 1_000_000n) / unit) / 1_000_000;
+      assetsPerShare = Number((assets * 1_000_000n) / unit) / 1_000_000;
+    } catch (_) {
+      // Token doesn't expose the 4626 surface → treat as 1:1.
+    }
+    susdsRateCache[k] = { sharesPerAsset, assetsPerShare, decimals: meta.decimals, ts: Date.now() };
+    return susdsRateCache[k];
+  }
+
+  // USD-string input → sUSDS BigInt (in the token's smallest units).
+  // Returns 0n on bad input; caller validates.
+  function usdStringToSusdsBigInt(usdStr, rate) {
+    if (!usdStr || usdStr === '') return 0n;
+    const usdNum = parseFloat(usdStr);
+    if (!isFinite(usdNum) || usdNum < 0) return 0n;
+    // shares = USDS * sharesPerAsset. Use 6-decimal multiplication for stability.
+    const dec = rate.decimals;
+    const usdUnits = ethers.parseUnits(usdStr, dec);
+    const shares = (usdUnits * BigInt(Math.round(rate.sharesPerAsset * 1_000_000))) / 1_000_000n;
+    return shares;
+  }
+
+  // sUSDS BigInt → USD display string with 2-decimal formatting.
+  function susdsBigIntToUsdString(susdsAmount, rate) {
+    if (!susdsAmount) return '0.00';
+    const dec = rate.decimals;
+    const usdUnits = (susdsAmount * BigInt(Math.round(rate.assetsPerShare * 1_000_000))) / 1_000_000n;
+    return Number(ethers.formatUnits(usdUnits, dec)).toLocaleString('en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
   }
 
   // ─── Contract factories ────────────────────────────────────────────────
@@ -1731,6 +1817,17 @@
       if (!createState.judgeAddr) {
         await resolveJudgeFromProfile();
         if (!createState.judgeAddr) throw new Error(`Judge profile #${createState.judgeProfileId} could not be resolved.`);
+      }
+      // Pre-check the user's token balance before any wallet prompt so a
+      // doomed createBond doesn't waste an approve tx (the underlying
+      // SafeTransferFrom reverts with e.g. 'SUsds/insufficient-balance').
+      let balance = 0n;
+      try { balance = await erc20Contract(token).balanceOf(account); } catch (_) {}
+      if (balance < bondAmount) {
+        const need = ethers.formatUnits(bondAmount - balance, meta.decimals);
+        const have = ethers.formatUnits(balance, meta.decimals);
+        msg.innerHTML = renderFundingHelp(token, meta, have, need, balance, bondAmount);
+        throw new Error(`You hold ${have} ${meta.symbol}; need ${ethers.formatUnits(bondAmount, meta.decimals)} to post this bond.`);
       }
       const steps = [];
       // Check approval
