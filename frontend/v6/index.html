@@ -1063,6 +1063,27 @@
 
       <h3 style="margin: 16px 0 8px;">Registered profiles</h3>
       <div id="judgesList"><div class="loading"><span class="spinner"></span>Loading profiles…</div></div>
+
+      <h3 style="margin: 24px 0 8px;">Other profile registries</h3>
+      <p class="hint" style="margin-bottom:10px;">Posters and challengers can optionally register their own append-only profiles. Bonds do not snapshot these — observers read the current entry directly.</p>
+
+      <div class="card">
+        <h3>Poster profile</h3>
+        <div class="form-group">
+          <label for="pp-content">Profile content</label>
+          <textarea id="pp-content" rows="3" placeholder="Self-description for posters (handle, contact, areas of claim)."></textarea>
+        </div>
+        <button id="pp-go" class="secondary">Register poster profile</button>
+      </div>
+
+      <div class="card">
+        <h3>Challenger profile</h3>
+        <div class="form-group">
+          <label for="cp-content">Profile content</label>
+          <textarea id="cp-content" rows="3" placeholder="Self-description for challengers."></textarea>
+        </div>
+        <button id="cp-go" class="secondary">Register challenger profile</button>
+      </div>
     `;
 
     $('jp-use-canonical').addEventListener('click', () => {
@@ -1071,9 +1092,29 @@
     });
     $('jp-deploy-new').addEventListener('click', () => deployFreshJudge());
     $('jp-go').addEventListener('click', () => registerJudgeProfile());
+    $('pp-go').addEventListener('click', () => registerSimpleProfile('poster', $('pp-content').value));
+    $('cp-go').addEventListener('click', () => registerSimpleProfile('challenger', $('cp-content').value));
 
     refreshOnboarding();
     loadJudgeEntries();
+  }
+
+  async function registerSimpleProfile(kind, content) {
+    try {
+      if (!signer) throw new Error('Connect a wallet first');
+      const c = chain();
+      const addr = kind === 'poster' ? c.posterProfileRegistry : c.challengerProfileRegistry;
+      if (!addr) throw new Error(`Missing ${kind}ProfileRegistry address in runtime-config`);
+      const abi = window.SIMPLE_BOND_V6_REGISTRY_ABI;
+      const reg = new ethers.Contract(addr, abi, signer);
+      const tx = await reg.registerProfile(content || '');
+      const r = await waitForTx(tx);
+      const ev = r.logs.find(l => { try { return reg.interface.parseLog(l).name === 'ProfileRegistered'; } catch { return false; } });
+      const entryId = ev ? reg.interface.parseLog(ev).args.entryId : '?';
+      log(`Registered ${kind} profile entryId=${entryId}`, 'ok');
+    } catch (e) {
+      if (!isUserRejection(e)) log(friendlyError(e), 'err');
+    }
   }
 
   async function refreshOnboarding() {
