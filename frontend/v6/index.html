@@ -562,30 +562,180 @@
     if (isUserRejection(err)) return 'Transaction cancelled.';
     return err?.reason || err?.shortMessage || err?.message || String(err);
   }
-  // sUSDS-specific funding helper. Returns an HTML string with the user's
-  // current balance + actionable links to get more. Designed to render
-  // inline near the Create form / submitCreate error path.
+  // sUSDS funding plumbing — addresses + state detection + path selection.
   const MAINNET_SUSDS = '0xa3931d71877C0E7a3148CB7Eb4463524FEc27fbD'.toLowerCase();
   const MAINNET_USDS  = '0xdC035D45d973E3EC169d2276DDab16f1e407384F';
   const MAINNET_DAI   = '0x6B175474E89094C44Da98b954EedeAC495271d0F';
-  function renderFundingHelp(token, meta, have, need, _haveBig, _needBig) {
-    const isSusds = String(token).toLowerCase() === MAINNET_SUSDS;
-    const tokenLabel = meta.symbol || 'tokens';
-    const linksSusds = `
-      <li><a href="https://app.sky.money/?network=ethereum&widget=savings" target="_blank" rel="noopener">Sky Savings</a> — deposit USDS or DAI, receive sUSDS</li>
-      <li><a href="https://cow.fi/?inputCurrency=${MAINNET_USDS}&outputCurrency=${MAINNET_SUSDS}" target="_blank" rel="noopener">CowSwap (USDS → sUSDS)</a></li>
-      <li><a href="https://cow.fi/?inputCurrency=ETH&outputCurrency=${MAINNET_SUSDS}" target="_blank" rel="noopener">CowSwap (ETH → sUSDS)</a></li>
-      <li><a href="https://app.sky.money/?network=ethereum&widget=upgrade" target="_blank" rel="noopener">Sky Upgrade</a> — migrate DAI → USDS first</li>
-      <li>Or wrap directly: USDS contract <span class="mono">${MAINNET_USDS.slice(0,8)}…</span> → call <code>sUSDS.deposit(amount, you)</code></li>`;
-    const linksGeneric = `
-      <li>Acquire ${escapeHtml(tokenLabel)} from any DEX/CEX, then send it to the connected wallet.</li>`;
+  const MAINNET_USDC  = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48';
+  const MAINNET_USDT  = '0xdAC17F958D2ee523a2206206994597C13D831ec7';
+
+  // Reads the user's balances + tx count to pick a funding path. Returns:
+  //   { eth, sUSDS, USDS, DAI, USDC, USDT, txCount, sophisticated, chosen }
+  // 'chosen' is one of: 'usds' | 'dai' | 'usdc' | 'usdt' | 'eth' | 'none'
+  async function detectFundingState(account, tokenAddr) {
+    const provider = readProvider();
+    const erc20 = (a) => new ethers.Contract(a, [
+      'function balanceOf(address) view returns (uint256)',
+    ], provider);
+    const z = 0n;
+    // Each read times out individually so a slow/missing RPC for one of
+    // the candidate tokens doesn't stall the funding card.
+    const safeRead = (p, fallback) => withTimeout(p.catch(() => fallback), 4000, fallback);
+    const [eth, sUSDS, USDS, DAI, USDC, USDT, txCount] = await Promise.all([
+      safeRead(provider.getBalance(account), z),
+      safeRead(erc20(tokenAddr).balanceOf(account), z),
+      safeRead(erc20(MAINNET_USDS).balanceOf(account), z),
+      safeRead(erc20(MAINNET_DAI).balanceOf(account), z),
+      safeRead(erc20(MAINNET_USDC).balanceOf(account), z),
+      safeRead(erc20(MAINNET_USDT).balanceOf(account), z),
+      safeRead(provider.getTransactionCount(account), 0),
+    ]);
+    let chosen = 'none';
+    if (USDS > 0n) chosen = 'usds';
+    else if (DAI > 0n) chosen = 'dai';
+    else if (USDC > 0n) chosen = 'usdc';
+    else if (USDT > 0n) chosen = 'usdt';
+    else if (eth > ethers.parseEther('0.001')) chosen = 'eth';
+    return { eth, sUSDS, USDS, DAI, USDC, USDT, txCount, sophisticated: txCount > 20, chosen };
+  }
+
+  // Render the tailored funding card given a detected state and the
+  // sUSDS amount the user is trying to lock. Returns HTML.
+  function renderFundingCard(state, tokenAddr, needShares, rate, tokenSym) {
+    // Treat the token as sUSDS-like (and surface the tailored card) if
+    // either the address matches mainnet sUSDS OR the symbol contains
+    // 'USDS' (catches MockSUSDS on Sepolia and the local hardhat fixture).
+    const isSusds = String(tokenAddr).toLowerCase() === MAINNET_SUSDS ||
+                    /USDS/i.test(tokenSym || '');
+    const dec = rate.decimals || 18;
+    const haveUsd = susdsBigIntToUsdString(state.sUSDS, rate);
+    const needUsd = susdsBigIntToUsdString(needShares, rate);
+    const sym = escapeHtml(tokenSym || 'sUSDS');
+    // For non-sUSDS tokens we don't have a tailored funding path; show a
+    // generic message.
+    if (!isSusds) {
+      return `<div class="msg msg-error" style="text-align:left;">
+        <strong>Insufficient ${sym} balance.</strong> You hold $${escapeHtml(haveUsd)}; this bond locks $${escapeHtml(needUsd)}.
+        <p class="hint" style="margin-top:6px;">Acquire ${sym} from a DEX or CEX of your choice and try again.</p>
+      </div>`;
+    }
+    const usdsFmt = parseFloat(ethers.formatUnits(state.USDS, dec)).toLocaleString('en-US', { maximumFractionDigits: 2 });
+    const daiFmt  = parseFloat(ethers.formatUnits(state.DAI,  18)).toLocaleString('en-US', { maximumFractionDigits: 2 });
+    const usdcFmt = parseFloat(ethers.formatUnits(state.USDC, 6)).toLocaleString('en-US', { maximumFractionDigits: 2 });
+    const usdtFmt = parseFloat(ethers.formatUnits(state.USDT, 6)).toLocaleString('en-US', { maximumFractionDigits: 2 });
+    const ethFmt  = parseFloat(ethers.formatEther(state.eth)).toLocaleString('en-US', { maximumFractionDigits: 4 });
+    const cowSwap = (input) => `https://swap.cow.fi/#/1/swap/${input}/${MAINNET_SUSDS}`;
+    const sky    = (widget) => `https://app.sky.money/?network=ethereum&widget=${widget}`;
+
+    const headers = `
+      <strong>Not enough sUSDS yet.</strong> You hold <strong>$${escapeHtml(haveUsd)}</strong>;
+      this bond locks <strong>$${escapeHtml(needUsd)}</strong>.
+      <div class="hint" style="margin-top:4px;font-size:12px;">
+        Balances detected: ${usdsFmt} USDS · ${daiFmt} DAI · ${usdcFmt} USDC · ${usdtFmt} USDT · ${ethFmt} ETH
+      </div>`;
+
+    let primary = '';
+    let alts = [];
+    if (state.chosen === 'usds') {
+      primary = `
+        <div style="margin-top:10px;padding:10px;background:var(--surface-2);border-radius:6px;">
+          <strong>Fastest path:</strong> deposit your USDS directly into sUSDS Savings — keeps your dollar exposure, starts earning yield, fills the bond in one click.
+          <div class="row" style="margin-top:8px;gap:8px;">
+            <button id="fund-deposit-usds" class="primary">Deposit USDS → sUSDS</button>
+            <span class="hint" style="font-size:12px;">Two signatures: approve + deposit.</span>
+          </div>
+          <div id="fund-deposit-msg" style="margin-top:6px;"></div>
+        </div>`;
+      alts = [
+        `<li>Or <a href="${cowSwap(MAINNET_USDS)}" target="_blank" rel="noopener">swap USDS → sUSDS on CowSwap</a></li>`,
+        `<li>Or <a href="${sky('savings')}" target="_blank" rel="noopener">use Sky Savings UI</a></li>`,
+      ];
+    } else if (state.chosen === 'dai') {
+      primary = `
+        <div style="margin-top:10px;padding:10px;background:var(--surface-2);border-radius:6px;">
+          <strong>Two steps:</strong> upgrade DAI → USDS (1:1 via Sky), then deposit to sUSDS.
+          <div class="row" style="margin-top:8px;gap:8px;">
+            <a href="${sky('upgrade')}" target="_blank" rel="noopener"><button>1. Upgrade DAI → USDS</button></a>
+            <a href="${sky('savings')}" target="_blank" rel="noopener"><button class="secondary">2. Deposit USDS → sUSDS</button></a>
+          </div>
+          <div class="hint" style="margin-top:6px;font-size:12px;">After step 1, refresh this page — the one-click deposit will appear here.</div>
+        </div>`;
+      alts = [
+        `<li><a href="${cowSwap(MAINNET_DAI)}" target="_blank" rel="noopener">Skip Sky: swap DAI → sUSDS on CowSwap</a></li>`,
+      ];
+    } else if (state.chosen === 'usdc') {
+      primary = `
+        <div style="margin-top:10px;padding:10px;background:var(--surface-2);border-radius:6px;">
+          <strong>Swap USDC → sUSDS</strong> on CowSwap (gas-optimized, MEV-protected).
+          <div class="row" style="margin-top:8px;">
+            <a href="${cowSwap(MAINNET_USDC)}" target="_blank" rel="noopener"><button>Open CowSwap</button></a>
+          </div>
+        </div>`;
+    } else if (state.chosen === 'usdt') {
+      primary = `
+        <div style="margin-top:10px;padding:10px;background:var(--surface-2);border-radius:6px;">
+          <strong>Swap USDT → sUSDS</strong> on CowSwap.
+          <div class="row" style="margin-top:8px;">
+            <a href="${cowSwap(MAINNET_USDT)}" target="_blank" rel="noopener"><button>Open CowSwap</button></a>
+          </div>
+        </div>`;
+    } else if (state.chosen === 'eth') {
+      primary = `
+        <div style="margin-top:10px;padding:10px;background:var(--surface-2);border-radius:6px;">
+          <strong>Swap ETH → sUSDS</strong> on CowSwap.
+          <div class="row" style="margin-top:8px;">
+            <a href="${cowSwap('ETH')}" target="_blank" rel="noopener"><button>Open CowSwap</button></a>
+          </div>
+        </div>`;
+    } else {
+      primary = `
+        <div style="margin-top:10px;padding:10px;background:var(--surface-2);border-radius:6px;">
+          <strong>Your wallet looks empty.</strong> Bring crypto in first:
+          <ul style="margin:8px 0 0 18px;font-size:13px;">
+            <li><a href="https://www.coinbase.com" target="_blank" rel="noopener">Coinbase</a> · <a href="https://www.kraken.com" target="_blank" rel="noopener">Kraken</a> · <a href="https://www.binance.com" target="_blank" rel="noopener">Binance</a> — buy ETH or USDC, withdraw to <span class="mono">${escapeHtml(account || '0x…')}</span></li>
+            <li><a href="https://www.moonpay.com/buy/usdc" target="_blank" rel="noopener">MoonPay</a> · <a href="https://ramp.network" target="_blank" rel="noopener">Ramp</a> — card → crypto, direct to your wallet</li>
+            <li>Bridge from L2 with <a href="https://across.to" target="_blank" rel="noopener">Across</a> or <a href="https://app.hop.exchange" target="_blank" rel="noopener">Hop</a></li>
+          </ul>
+        </div>`;
+    }
+
     return `<div class="msg msg-error" style="text-align:left;">
-      <strong>Insufficient ${escapeHtml(tokenLabel)} balance.</strong> You hold <strong>${escapeHtml(have)}</strong>; this bond locks <strong>${escapeHtml((parseFloat(have) + parseFloat(need)).toString())}</strong>.
-      <details style="margin-top:6px;">
-        <summary style="cursor:pointer;">How to get ${escapeHtml(tokenLabel)}</summary>
-        <ul style="margin:6px 0 0 18px;font-size:13px;">${isSusds ? linksSusds : linksGeneric}</ul>
-      </details>
+      ${headers}
+      ${primary}
+      ${alts.length ? `<details style="margin-top:8px;"><summary style="cursor:pointer;font-size:13px;">Other ways</summary><ul style="margin:6px 0 0 18px;font-size:13px;">${alts.join('')}</ul></details>` : ''}
     </div>`;
+  }
+
+  // One-click USDS → sUSDS via the ERC-4626 deposit() helper.
+  // Approves USDS to the sUSDS vault if needed, then deposits.
+  async function doSusdsDeposit(usdsAmount, tokenAddr) {
+    const msg = $('fund-deposit-msg');
+    const btn = $('fund-deposit-usds');
+    if (btn) btn.disabled = true;
+    try {
+      if (!signer) throw new Error('Connect a wallet first');
+      msg && (msg.innerHTML = `<div class="msg msg-info"><span class="spinner"></span>Approving USDS…</div>`);
+      const usds = new ethers.Contract(MAINNET_USDS, [
+        'function allowance(address,address) view returns (uint256)',
+        'function approve(address,uint256) returns (bool)',
+      ], signer);
+      const cur = await usds.allowance(account, tokenAddr);
+      if (cur < usdsAmount) {
+        const tx = await usds.approve(tokenAddr, usdsAmount);
+        await waitForTx(tx);
+      }
+      msg && (msg.innerHTML = `<div class="msg msg-info"><span class="spinner"></span>Depositing USDS…</div>`);
+      const susds = new ethers.Contract(tokenAddr, [
+        'function deposit(uint256 assets, address receiver) returns (uint256)',
+      ], signer);
+      const tx = await susds.deposit(usdsAmount, account);
+      await waitForTx(tx);
+      msg && (msg.innerHTML = `<div class="msg msg-success">Deposit complete. Click <strong>Create bond</strong> again.</div>`);
+    } catch (err) {
+      msg && (msg.innerHTML = `<div class="msg msg-error">${escapeHtml(friendlyError(err))}</div>`);
+    } finally {
+      if (btn) btn.disabled = false;
+    }
   }
 
   async function tokenMeta(addr) {
@@ -1889,10 +2039,24 @@
       let balance = 0n;
       try { balance = await erc20Contract(token).balanceOf(account); } catch (_) {}
       if (balance < bondAmount) {
-        const need = ethers.formatUnits(bondAmount - balance, meta.decimals);
-        const have = ethers.formatUnits(balance, meta.decimals);
-        msg.innerHTML = renderFundingHelp(token, meta, have, need, balance, bondAmount);
-        throw new Error(`You hold ${have} ${meta.symbol}; need ${ethers.formatUnits(bondAmount, meta.decimals)} to post this bond.`);
+        const state = await detectFundingState(account, token);
+        msg.innerHTML = renderFundingCard(state, token, bondAmount, rate, meta.symbol);
+        // Wire the one-click deposit if the card includes it.
+        const depBtn = $('fund-deposit-usds');
+        if (depBtn) {
+          depBtn.addEventListener('click', () => {
+            // Use the user's full USDS balance OR the exact shortfall —
+            // whichever is smaller. ERC-4626 deposit takes assets (USDS).
+            const shortfallShares = bondAmount - balance;
+            const shortfallAssets = (shortfallShares * BigInt(Math.round(rate.assetsPerShare * 1_000_000))) / 1_000_000n;
+            const usdsAmount = state.USDS < shortfallAssets ? state.USDS : shortfallAssets;
+            doSusdsDeposit(usdsAmount, token);
+          });
+        }
+        const haveUsd = susdsBigIntToUsdString(balance, rate);
+        const needUsd = susdsBigIntToUsdString(bondAmount, rate);
+        log(`Create blocked: insufficient ${meta.symbol} ($${haveUsd} / $${needUsd})`, 'err');
+        return; // funding card already rendered; outer catch would clobber it
       }
       const steps = [];
       // Check approval
