@@ -12,6 +12,19 @@ window.SIMPLE_BOND_CONFIG = Object.assign(
     notifyApiBase: "/api/notify",
 
     chains: {
+      11155111: {
+            "name": "Sepolia",
+            "bondContract": "0xEeEB10a05b4D819d736DB7A130eaC0f36626F583",
+            "deployBlock": 10888612,
+            "judgeProfileRegistry": "0x5C182867862c061a32C7621c0e3529FF682bbF22",
+            "posterProfileRegistry": "0x7644dfE83B1e1e9E466644557606Ff28916fCc15",
+            "challengerProfileRegistry": "0xA6c22430CB34AC5403D6f2a01BecD90c91e09C23",
+            "manualJudgeV6": "0x25E749d42EE4AD0afBEF5c92Bede672784AbDBa9",
+            "officialDirectory": "0xe93B0E8fd59FA1dbfa3441559616ADBD3344395F",
+            "approvedToken": "0x8983aebdA1D5f2b406144D7AAa4f50df4ec8A837",
+            "explorer": "https://sepolia.etherscan.io",
+            "bondVersion": 6
+      },
       // 1 (Ethereum mainnet) — populated by scripts/v6/deployAll.js output.
       // 11155111 (Sepolia) — populated by scripts/v6/deployAll.js output for
       //   staging.bond.futarchy.ai.

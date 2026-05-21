@@ -34,7 +34,9 @@ async function main() {
     // Pre-flight checks (only on real networks).
     if (network !== "hardhat" && network !== "localhost") {
         const bal = await hre.ethers.provider.getBalance(deployer.address);
-        const minBalance = chainId === 1 ? hre.ethers.parseEther("0.02") : hre.ethers.parseEther("0.05");
+        // Mainnet floor reflects ~5M gas at sub-1 gwei (~$15 budget) plus
+        // headroom; testnet floor reflects typical Sepolia public-RPC gas.
+        const minBalance = chainId === 1 ? hre.ethers.parseEther("0.02") : hre.ethers.parseEther("0.01");
         console.log(`Deployer balance:                ${hre.ethers.formatEther(bal)} ETH`);
         if (bal < minBalance) {
             throw new Error(`Insufficient deployer balance. Need at least ${hre.ethers.formatEther(minBalance)} ETH; have ${hre.ethers.formatEther(bal)}.`);
