@@ -559,7 +559,14 @@
   }
   function friendlyError(err) {
     if (isUserRejection(err)) return 'Transaction cancelled.';
-    return err?.reason || err?.shortMessage || err?.message || String(err);
+    const msg = String(err?.reason || err?.shortMessage || err?.message || err);
+    // "could not coalesce error" is ethers v6's fallback when the wallet
+    // provider returns a non-standard / empty error. Usually means a
+    // dropped RPC or a wallet whose response shape ethers doesn't know.
+    if (/could not coalesce/i.test(msg)) {
+      return "Your wallet's RPC dropped or returned an unexpected response. Try: refresh the page, switch wallet (Rabby is the most reliable), or try again in a few seconds.";
+    }
+    return msg;
   }
   // sUSDS funding plumbing — addresses + state detection + path selection.
   const MAINNET_SUSDS = '0xa3931d71877C0E7a3148CB7Eb4463524FEc27fbD'.toLowerCase();
@@ -812,10 +819,32 @@
   }
 
   // ─── Contract factories ────────────────────────────────────────────────
+  // Cached read provider per chain so we don't re-create the network on
+  // every call. A FallbackProvider is used when chain.rpcs is an array,
+  // giving us automatic failover when a public RPC drops connections
+  // (publicnode.com has been flaky from some browsers).
+  const _readProviderCache = {};
   function readProvider() {
     const c = chain();
-    if (!c || !c.rpc) throw new Error(`Missing rpc in runtime-config.chains[${activeChainId}]`);
-    return new ethers.JsonRpcProvider(c.rpc);
+    if (!c) throw new Error(`No chain in runtime-config.chains[${activeChainId}]`);
+    const key = String(activeChainId);
+    if (_readProviderCache[key]) return _readProviderCache[key];
+    const list = Array.isArray(c.rpcs) && c.rpcs.length ? c.rpcs : (c.rpc ? [c.rpc] : []);
+    if (list.length === 0) throw new Error(`Missing rpc in runtime-config.chains[${activeChainId}]`);
+    if (list.length === 1) {
+      _readProviderCache[key] = new ethers.JsonRpcProvider(list[0]);
+    } else {
+      const providers = list.map((u, i) => ({
+        provider: new ethers.JsonRpcProvider(u),
+        priority: i,
+        stallTimeout: 1500,
+        weight: 1,
+      }));
+      // FallbackProvider with quorum=1 returns first-success; if it errors,
+      // the next provider gets tried.
+      _readProviderCache[key] = new ethers.FallbackProvider(providers, undefined, { quorum: 1 });
+    }
+    return _readProviderCache[key];
   }
   function bondReadContract() {
     const c = chain();
