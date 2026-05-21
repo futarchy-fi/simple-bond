@@ -10,7 +10,11 @@
     "test": "hardhat test",
     "notify": "node backend/server.mjs",
     "notify:api": "node backend/api.mjs",
-    "notify:worker": "node backend/worker.mjs"
+    "notify:worker": "node backend/worker.mjs",
+    "e2e": "playwright test",
+    "e2e:live": "playwright test --project live-mainnet --project live-sepolia",
+    "e2e:local": "playwright test --project local",
+    "e2e:report": "playwright show-report"
   },
   "repository": {
     "type": "git",
@@ -31,6 +35,7 @@
     "@nomicfoundation/hardhat-network-helpers": "^1.1.2",
     "@nomicfoundation/hardhat-verify": "^2.1.3",
     "@openzeppelin/contracts": "^5.0.0",
+    "@playwright/test": "1.60.0",
     "chai": "^4.5.0",
     "dotenv": "^16.0.0",
     "hardhat": "^2.22.0"
