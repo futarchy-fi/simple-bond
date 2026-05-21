@@ -36,6 +36,34 @@ test.describe("read-only flows", () => {
         expect(decodeError, `unexpected decode error: ${decodeError}`).toBeUndefined();
     });
 
+    test("Create wizard advances to Review with no wallet connected", async ({ page }) => {
+        // The wizard must work end-to-end without window.ethereum so users
+        // can see the shape of the bond they're about to post before any
+        // wallet/funding friction. Connect/funding only fires at Create-click.
+        await page.goto("/#create");
+        // Step 1 — Claim
+        await page.fill("#cb-claim", "wallet-less review test");
+        await page.click("#wizNext");
+        // Step 2 — Stake (defaults are pre-filled)
+        await page.waitForSelector("#cb-bond");
+        await page.click("#wizNext");
+        // Step 3 — Judge (just type 0; resolution may fail because the page
+        // uses chain RPC even without a wallet — that's fine)
+        await page.waitForSelector("#cb-jpid");
+        await page.fill("#cb-jpid", "0");
+        // Either resolveJudgeFromProfile succeeded (mainnet/sepolia) or it
+        // failed (smoke test against live URL where no profile exists yet).
+        // Continue regardless.
+        await page.click("#wizNext");
+        // Step 4 — Timing (defaults are valid)
+        await page.waitForSelector("#cb-ad");
+        await page.click("#wizNext");
+        // Step 5 — Review; the Create button must say 'Create bond' (no
+        // 'Connect wallet to create' fallback).
+        await expect(page.locator("#wizCreate")).toBeVisible();
+        await expect(page.locator("#wizCreate")).toHaveText(/^Create bond$/);
+    });
+
     test("A5 — /v6/smoke.html responds + has a 'Read nextBondId' button", async ({ page }) => {
         await page.goto("/v6/smoke.html");
         await expect(page.locator("#readNext")).toBeVisible();
