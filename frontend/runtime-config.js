@@ -7,8 +7,10 @@
 //   defaultChainId: which chain the UI selects first.
 window.SIMPLE_BOND_CONFIG = Object.assign(
   {
-    // Override these when the static frontend and APIs live on different origins.
-    notifyApiBase: "/api/notify",
+    // Frontend (Netlify) and notification API (GCP VM behind Caddy) live on
+    // different origins, so this points at the absolute API base. The API
+    // sends Access-Control-Allow-Origin: * so cross-origin fetches work.
+    notifyApiBase: "https://api.bond.futarchy.ai/api/notify",
 
     chains: {
       1: {

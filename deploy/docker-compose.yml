@@ -1,0 +1,33 @@
+# SimpleBond notification backend — runs on the futarchy-indexers GCP VM
+# alongside the indexer containers.
+#
+#   cd /opt/simple-bond
+#   cp deploy/bond-notify.env.example deploy/bond-notify.env   # then edit secrets
+#   docker compose -p bond-notify -f deploy/docker-compose.yml up -d --build
+#
+# Caddy on the VM host terminates TLS for api.bond.futarchy.ai and reverse
+# proxies to 127.0.0.1:3200 (see deploy/Caddyfile).
+services:
+  bond-notify:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: bond-notify:latest
+    container_name: bond-notify
+    restart: unless-stopped
+    env_file:
+      - ./bond-notify.env
+    environment:
+      NODE_ENV: production
+      BOND_NOTIFY_HOST: 0.0.0.0
+      BOND_NOTIFY_PORT: "3200"
+      BOND_NOTIFY_BASE_URL: https://api.bond.futarchy.ai
+      SIMPLE_BOND_FRONTEND_URL: https://bond.futarchy.ai
+    # Bound to localhost only; public access is via Caddy + TLS.
+    ports:
+      - "127.0.0.1:3200:3200"
+    volumes:
+      - bond-notify-data:/app/data
+
+volumes:
+  bond-notify-data:

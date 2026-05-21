@@ -10,6 +10,13 @@ interface IBondJudgeV5 {
     /// @dev A successful call does not obligate the judge to later rule on the
     /// merits. The judge may still reject the bond later or simply do nothing
     /// until timeout, depending on its own policy.
+    /// @param token ERC-20 token proposed for the bond.
+    /// @param bondAmount Bond collateral amount proposed by the poster.
+    /// @param challengeAmount Challenge amount proposed for each challenger.
+    /// @param judgeFee Maximum judge fee proposed per ruling.
+    /// @param deadline Challenge deadline proposed for the bond.
+    /// @param acceptanceDelay Delay after a challenge before ruling may begin.
+    /// @param rulingBuffer Length of the ruling window after it opens.
     function validateBond(
         address token,
         uint256 bondAmount,

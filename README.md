@@ -203,7 +203,28 @@ The current email worker target is Gnosis-only and watches:
 - `CHAINS[100].contract = 0x7dF485C013f8671B656d585f1d1411640B1D2776`
 - `CHAINS[100].startBlock = 45569363`
 
-Sample systemd units live in `deploy/systemd/`:
+### Current deployment (GCP)
+
+The frontend is hosted on **Netlify** at `https://bond.futarchy.ai`. The
+notification backend runs in **combined mode** (`backend/server.mjs`, API +
+watcher in one process, one SQLite DB) as a Docker container on the
+`futarchy-indexers` GCP VM, fronted by host Caddy for TLS at
+`https://api.bond.futarchy.ai`:
+
+```bash
+# on the VM, repo cloned at /opt/simple-bond
+cp deploy/bond-notify.env.example deploy/bond-notify.env   # set BOND_NOTIFY_HMAC_SECRET
+docker compose -p bond-notify -f deploy/docker-compose.yml up -d --build
+```
+
+See `Dockerfile`, `deploy/docker-compose.yml`, and `deploy/Caddyfile`.
+
+> Email is currently stubbed (`backend/mailer.mjs` is a logged no-op) because
+> the original AWS SES account was decommissioned in the GCP migration. The API
+> and watcher run fully; only outbound notification emails are disabled until a
+> new provider is wired in.
+
+Sample (legacy) systemd units also live in `deploy/systemd/`:
 
 - `deploy/systemd/bond-notify-api.service`
 - `deploy/systemd/bond-notify-worker.service`

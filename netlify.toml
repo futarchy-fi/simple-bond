@@ -1,0 +1,13 @@
+# Netlify config for the SimpleBond static frontend (bond.futarchy.ai).
+# The notification API runs separately on GCP; see frontend/runtime-config.js.
+[build]
+  publish = "frontend"
+  command = ""
+
+# Client-side routes such as /judge/:id must fall back to index.html.
+# force is false (default) so real files (runtime-config.js, judges.js,
+# index.html) are still served directly when they exist.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

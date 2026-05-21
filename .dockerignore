@@ -1,0 +1,16 @@
+.git
+node_modules
+frontend
+contracts
+artifacts
+cache
+test
+analysis
+deploy
+data
+*.md
+hardhat.config.js
+scripts
+.fleet
+.editorconfig
+.npmrc
