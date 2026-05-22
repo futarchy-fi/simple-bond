@@ -857,11 +857,16 @@
   // to an unrelated contract (e.g. Gnosis Chain reuses our mainnet addresses
   // for completely different code), producing wildly misleading revert
   // messages like "FAOSale: fallback not allowed".
+  //
+  // Fires a fire-and-forget wallet_switchEthereumChain in parallel so the
+  // wallet's own switch prompt pops up immediately. The user can accept the
+  // switch and click their action again — no need to hunt for the banner.
   function requireWalletOnActiveChain() {
     if (!signer) throw new Error('Connect a wallet first');
     if (walletChainId != null && String(walletChainId) !== String(activeChainId)) {
       const want = chain()?.name || `chain ${activeChainId}`;
-      throw new Error(`Wallet is on chain ${walletChainId}, switch to ${want} first (use the banner at the top of the page).`);
+      switchWalletNetwork().catch(() => {});
+      throw new Error(`Wallet is on chain ${walletChainId}. We've asked it to switch to ${want} — accept the prompt in your wallet, then click again.`);
     }
   }
   function bondReadContract() {
@@ -1688,32 +1693,48 @@
 
   async function loadJudgeEntries() {
     const c = chain();
+    const listEl = $('judgesList');
     if (!c?.judgeProfileRegistry) {
-      $('judgesList').innerHTML = `<div class="empty-state">Judge registry not configured on ${escapeHtml(c?.name || 'this chain')}.</div>`;
+      listEl.innerHTML = `<div class="empty-state">Judge registry not configured on ${escapeHtml(c?.name || 'this chain')}.</div>`;
       return;
     }
-    try {
-      const reg = judgeRegRead();
-      const count = Number(await reg.entryCount());
-      if (count === 0) {
-        $('judgesList').innerHTML = `<div class="empty-state">No judge profiles registered yet on ${escapeHtml(c?.name || 'this chain')}.</div>`;
+    listEl.innerHTML = `<div class="hint" style="padding:8px;"><span class="spinner"></span> Loading judge profiles…</div>`;
+    // One automatic retry — public RPCs occasionally hand back a 5xx and the
+    // FallbackProvider's per-call retry doesn't always cover read paths.
+    // A Retry button is rendered on the final failure so the user isn't stuck
+    // refreshing the whole page.
+    let lastErr = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const reg = judgeRegRead();
+        const count = Number(await reg.entryCount());
+        if (count === 0) {
+          listEl.innerHTML = `<div class="empty-state">No judge profiles registered yet on ${escapeHtml(c?.name || 'this chain')}.</div>`;
+          return;
+        }
+        const start = Math.max(0, count - 50);
+        const entries = [];
+        for (let i = count - 1; i >= start; i--) {
+          try {
+            const [owner, judgeContract, contentHash, content] = await reg.getProfile(i);
+            entries.push({ entryId: i, owner, judgeContract, contentHash, content });
+            judgeProfileEntryCache[`${activeChainId}:${i}`] = { entryId: i, owner, judgeContract, contentHash, content };
+          } catch (_) {}
+        }
+        judgeState.entries = entries;
+        listEl.innerHTML = entries.map(e => judgeEntryHtml(e)).join('');
         return;
+      } catch (err) {
+        lastErr = err;
+        if (attempt === 0) await new Promise(r => setTimeout(r, 800));
       }
-      // Fetch latest 50 entries, descending
-      const start = Math.max(0, count - 50);
-      const entries = [];
-      for (let i = count - 1; i >= start; i--) {
-        try {
-          const [owner, judgeContract, contentHash, content] = await reg.getProfile(i);
-          entries.push({ entryId: i, owner, judgeContract, contentHash, content });
-          judgeProfileEntryCache[`${activeChainId}:${i}`] = { entryId: i, owner, judgeContract, contentHash, content };
-        } catch (_) {}
-      }
-      judgeState.entries = entries;
-      $('judgesList').innerHTML = entries.map(e => judgeEntryHtml(e)).join('');
-    } catch (err) {
-      $('judgesList').innerHTML = `<div class="msg msg-error">${escapeHtml(friendlyError(err))}</div>`;
     }
+    listEl.innerHTML = `<div class="msg msg-error" style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+        <span>Couldn't load profiles: ${escapeHtml(friendlyError(lastErr))}</span>
+        <button id="judgesRetryBtn" class="secondary" style="padding:4px 10px;font-size:12px;">Retry</button>
+      </div>`;
+    const rb = $('judgesRetryBtn');
+    if (rb) rb.addEventListener('click', () => loadJudgeEntries());
   }
 
   function judgeEntryHtml(e) {

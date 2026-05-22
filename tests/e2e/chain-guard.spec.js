@@ -31,8 +31,8 @@ test.describe("wrong-chain guard", () => {
         await page.fill("#pp-content", "should never reach the chain");
         await page.click("#pp-go");
         await expect(page.locator("#pp-msg")).toContainText(/Wallet is on chain 100/i, { timeout: 5_000 });
-        // The friendly message names the chain we want.
-        await expect(page.locator("#pp-msg")).toContainText(/switch to/i);
+        // The friendly message names the chain we want and asks for a switch.
+        await expect(page.locator("#pp-msg")).toContainText(/switch/i);
         // And critically: NO raw revert string leaking through.
         await expect(page.locator("#pp-msg")).not.toContainText(/fallback not allowed/i);
         await expect(page.locator("#pp-msg")).not.toContainText(/FAOSale/i);
