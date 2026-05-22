@@ -851,14 +851,27 @@
     }
     return _readProviderCache[key];
   }
+  // Refuses to hand out a signer-bound contract when the wallet is sitting
+  // on a different chain than the page. Without this, a tx is sent to the
+  // configured contract address ON THE WRONG CHAIN — that address may belong
+  // to an unrelated contract (e.g. Gnosis Chain reuses our mainnet addresses
+  // for completely different code), producing wildly misleading revert
+  // messages like "FAOSale: fallback not allowed".
+  function requireWalletOnActiveChain() {
+    if (!signer) throw new Error('Connect a wallet first');
+    if (walletChainId != null && String(walletChainId) !== String(activeChainId)) {
+      const want = chain()?.name || `chain ${activeChainId}`;
+      throw new Error(`Wallet is on chain ${walletChainId}, switch to ${want} first (use the banner at the top of the page).`);
+    }
+  }
   function bondReadContract() {
     const c = chain();
     if (!c || !c.bondContract) throw new Error(`Missing bondContract in runtime-config.chains[${activeChainId}]`);
     return new ethers.Contract(c.bondContract, window.SIMPLE_BOND_V6_ABI, readProvider());
   }
   function bondWriteContract() {
+    requireWalletOnActiveChain();
     const c = chain();
-    if (!signer) throw new Error('Connect a wallet first');
     return new ethers.Contract(c.bondContract, window.SIMPLE_BOND_V6_ABI, signer);
   }
   function judgeRegRead() {
@@ -867,14 +880,16 @@
     return new ethers.Contract(c.judgeProfileRegistry, window.SIMPLE_BOND_V6_JUDGE_REGISTRY_ABI, readProvider());
   }
   function judgeRegWrite() {
+    requireWalletOnActiveChain();
     const c = chain();
-    if (!signer) throw new Error('Connect a wallet first');
     return new ethers.Contract(c.judgeProfileRegistry, window.SIMPLE_BOND_V6_JUDGE_REGISTRY_ABI, signer);
   }
   function manualJudgeContract(addr, withSigner) {
+    if (withSigner) requireWalletOnActiveChain();
     return new ethers.Contract(addr, window.SIMPLE_BOND_V6_MANUAL_JUDGE_ABI, withSigner ? signer : readProvider());
   }
   function erc20Contract(addr, withSigner) {
+    if (withSigner) requireWalletOnActiveChain();
     return new ethers.Contract(addr, [
       'function balanceOf(address) view returns (uint256)',
       'function decimals() view returns (uint8)',
@@ -1473,7 +1488,7 @@
     const msg = $(`${kind === 'poster' ? 'pp' : 'cp'}-msg`);
     const setMsg = (html) => { if (msg) msg.innerHTML = html; };
     try {
-      if (!signer) throw new Error('Connect a wallet first');
+      requireWalletOnActiveChain();
       const c = chain();
       const addr = kind === 'poster' ? c.posterProfileRegistry : c.challengerProfileRegistry;
       if (!addr) throw new Error(`Missing ${kind}ProfileRegistry address in runtime-config`);
@@ -1588,6 +1603,7 @@
     const msg = $('judgeMsg');
     try {
       if (!signer) { await connectWallet(); if (!signer) return; }
+      requireWalletOnActiveChain();
       if (!window.SIMPLE_BOND_V6_MANUAL_JUDGE_BYTECODE) throw new Error('Missing manualJudgeV6.bytecode.js');
       msg && (msg.innerHTML = `<div class="msg msg-info"><span class="spinner"></span>Deploying ManualJudgeV6 with you as proposed operator…</div>`);
       log(`Deploying ManualJudgeV6 (proposed operator: ${account})…`);
@@ -2201,9 +2217,7 @@
     const stepperEl = $('wizStepper');
     try {
       if (!signer) { await connectWallet(); if (!signer) return; }
-      if (String(walletChainId) !== String(activeChainId)) {
-        throw new Error(`Wallet is on chain ${walletChainId}, switch to ${chain().name} first.`);
-      }
+      requireWalletOnActiveChain();
       if (!isStageValid(0) || !isStageValid(1) || !isStageValid(2) || !isStageValid(3)) {
         throw new Error('Some required fields are missing.');
       }
