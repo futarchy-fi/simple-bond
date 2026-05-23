@@ -834,8 +834,17 @@
     // Pin the network so each JsonRpcProvider skips its eth_chainId
     // round-trip on first use — that probe was hanging for seconds against
     // some public RPCs and stalling the very first contract read.
+    //
+    // batchMaxCount: 3 keeps us under drpc's free-tier batch limit ("Batch
+    // of more than 3 requests are not allowed on free tier", error code 31)
+    // — exceeding it makes the entire batch 500 and every read in it fails
+    // at once. publicnode is more permissive but the lower cap is harmless
+    // there (ethers just sends more, smaller batches).
     const net = ethers.Network.from(Number(activeChainId));
-    const makeProvider = (u) => new ethers.JsonRpcProvider(u, net, { staticNetwork: true });
+    const makeProvider = (u) => new ethers.JsonRpcProvider(u, net, {
+      staticNetwork: true,
+      batchMaxCount: 3,
+    });
     if (list.length === 1) {
       _readProviderCache[key] = makeProvider(list[0]);
     } else {
