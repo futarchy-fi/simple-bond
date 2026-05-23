@@ -1568,6 +1568,13 @@
       const abi = window.SIMPLE_BOND_V6_REGISTRY_ABI;
       const reg = new ethers.Contract(addr, abi, signer);
       setMsg(`<div class="msg msg-info"><span class="spinner"></span>Submitting registerProfile(content) to ${escapeHtml(kind === 'poster' ? 'PosterProfileRegistry' : 'ChallengerProfileRegistry')}…</div>`);
+      // Preflight via eth_call so any contract revert surfaces with its
+      // reason string before MetaMask pops up.
+      try { await reg.registerProfile.staticCall(content || ''); }
+      catch (simErr) {
+        const reason = simErr?.reason || simErr?.shortMessage || simErr?.message || String(simErr);
+        throw new Error(`Pre-check failed: ${reason}`);
+      }
       const tx = await reg.registerProfile(content || '');
       const r = await waitForTx(tx);
       const ev = r.logs.find(l => { try { return reg.interface.parseLog(l).name === 'ProfileRegistered'; } catch { return false; } });
@@ -1731,13 +1738,30 @@
       const content = $('jp-content').value;
       if (!addr) throw new Error('Judge contract address required.');
       if (!ethers.isAddress(addr)) throw new Error('Not a valid address.');
-      // Best-effort: confirm it's a contract
-      try {
-        const code = await readProvider().getCode(addr);
-        if (!code || code === '0x') throw new Error('Judge must be a deployed contract, not an EOA.');
-      } catch (_) {}
+      if (/^0x0+$/i.test(addr)) throw new Error('Judge address cannot be the zero address.');
+      // Confirm it's actually a deployed contract on the active chain. The
+      // outer try/catch used to swallow this throw (defeating the check),
+      // letting a Gnosis-only address or an EOA reach the wallet and bomb
+      // there with a vague "couldn't be completed" message. If the RPC
+      // itself errors we still proceed — that's the legitimate fallback
+      // the original intent was reaching for.
+      let codeProbeFailed = false;
+      let code = '';
+      try { code = await readProvider().getCode(addr); }
+      catch (_) { codeProbeFailed = true; }
+      if (!codeProbeFailed && (!code || code === '0x')) {
+        throw new Error(`No contract code at ${addr} on ${chain()?.name || 'this chain'}. Did you mean to deploy a judge first, or paste an address from a different chain?`);
+      }
       msg && (msg.innerHTML = `<div class="msg msg-info"><span class="spinner"></span>Registering profile…</div>`);
       const reg = judgeRegWrite();
+      // Preflight via eth_call so any revert (e.g. "Zero judge") surfaces
+      // BEFORE the MetaMask popup, with a clean reason string instead of
+      // MetaMask Smart Transactions' generic "couldn't be completed".
+      try { await reg.registerProfile.staticCall(ethers.getAddress(addr), content); }
+      catch (simErr) {
+        const reason = simErr?.reason || simErr?.shortMessage || simErr?.message || String(simErr);
+        throw new Error(`Pre-check failed: ${reason}`);
+      }
       const tx = await reg.registerProfile(ethers.getAddress(addr), content);
       const r = await waitForTx(tx);
       let entryId = null;
