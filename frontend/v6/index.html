@@ -859,29 +859,44 @@
   // messages like "FAOSale: fallback not allowed".
   //
   // Fires a fire-and-forget wallet_switchEthereumChain in parallel so the
-  // wallet's own switch prompt pops up immediately. We also record the
-  // timestamp so when chainChanged eventually lands on the right chain we
-  // can surface a clear "try again" toast — many wallets auto-accept a
-  // switch to a known chain without showing a prompt, leaving the user
-  // staring at a stale error that's actually resolved.
+  // wallet's own switch prompt pops up immediately. We also remember the
+  // button that was just clicked so when chainChanged lands on the right
+  // chain we can auto-re-fire it — otherwise the user is stuck having to
+  // remember to click again after they confirm the switch.
   let _lastChainRejectedAt = 0;
+  let _lastClickedBtn = null;
+  let _retryBtnAfterChainSwitch = null;
+  if (typeof document !== 'undefined') {
+    document.addEventListener('click', (e) => {
+      const btn = e.target.closest('button');
+      if (btn) _lastClickedBtn = btn;
+    }, true);
+  }
   function requireWalletOnActiveChain() {
     if (!signer) throw new Error('Connect a wallet first');
     if (walletChainId != null && String(walletChainId) !== String(activeChainId)) {
       const want = chain()?.name || `chain ${activeChainId}`;
       switchWalletNetwork().catch(() => {});
       _lastChainRejectedAt = Date.now();
-      throw new Error(`Wallet is on chain ${walletChainId}. We've asked it to switch to ${want} — accept the prompt in your wallet, then click again.`);
+      // Stash the button so chainChanged can re-click it once the wallet
+      // lands on the right chain. Excluding the banner's Switch button
+      // prevents an infinite loop if the user clicks it manually.
+      if (_lastClickedBtn && _lastClickedBtn.id !== 'networkSwitchBtn') {
+        _retryBtnAfterChainSwitch = _lastClickedBtn;
+      }
+      throw new Error(`Wallet is on chain ${walletChainId}. We've asked it to switch to ${want} — accept the prompt in your wallet and we'll auto-retry.`);
     }
   }
-  function showChainReadyToast() {
+  function showChainReadyToast(autoRetrying) {
     const existing = document.getElementById('chainReadyToast');
     if (existing) existing.remove();
     const name = chain()?.name || 'the right chain';
     const t = document.createElement('div');
     t.id = 'chainReadyToast';
     t.style.cssText = 'position:fixed;bottom:20px;right:20px;background:#10b981;color:white;padding:12px 16px;border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,0.2);z-index:9999;max-width:320px;font-size:14px;line-height:1.4;';
-    t.innerHTML = `Wallet is now on <strong>${escapeHtml(name)}</strong>. Click your action again to retry.`;
+    t.innerHTML = autoRetrying
+      ? `Wallet is now on <strong>${escapeHtml(name)}</strong>. Retrying your last action…`
+      : `Wallet is now on <strong>${escapeHtml(name)}</strong>. Click your action again to retry.`;
     document.body.appendChild(t);
     setTimeout(() => { try { t.remove(); } catch (_) {} }, 8000);
   }
@@ -1083,16 +1098,36 @@
       $('walletAddr').textContent = short(account);
       render();
     };
-    _chainHandler = (hexChainId) => {
+    _chainHandler = async (hexChainId) => {
       walletChainId = parseInt(hexChainId, 16);
+      // Rebuild provider + signer so they bind to the new network. ethers v6's
+      // BrowserProvider caches the network detected on construction and throws
+      // "network changed: <old> => <new>" on the next call if the wallet
+      // chain has moved underneath it. Without this rebuild, the auto-retry
+      // path below would fire and immediately blow up with that error.
+      if (window.ethereum) {
+        try {
+          provider = new ethers.BrowserProvider(window.ethereum);
+          signer = await provider.getSigner();
+        } catch (_) { /* wallet may have disconnected — leave stale state */ }
+      }
       refreshNetworkBanner();
       // If the wallet just landed on the right chain after a recent write
-      // attempt was rejected for chain mismatch, surface a toast so the user
-      // knows their next click will go through.
+      // attempt was rejected for chain mismatch, auto-re-fire the button
+      // that originally triggered the rejection. Otherwise the user thinks
+      // confirming the switch was the whole action and never knows they
+      // need to click again.
       if (String(walletChainId) === String(activeChainId)
           && Date.now() - _lastChainRejectedAt < 30_000) {
         _lastChainRejectedAt = 0;
-        showChainReadyToast();
+        const btn = _retryBtnAfterChainSwitch;
+        _retryBtnAfterChainSwitch = null;
+        if (btn && document.body.contains(btn)) {
+          showChainReadyToast(true);
+          setTimeout(() => { try { btn.click(); } catch (_) {} }, 300);
+        } else {
+          showChainReadyToast(false);
+        }
       }
     };
     window.ethereum.on('accountsChanged', _accountsHandler);

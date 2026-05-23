@@ -37,4 +37,23 @@ test.describe("wrong-chain guard", () => {
         await expect(page.locator("#pp-msg")).not.toContainText(/fallback not allowed/i);
         await expect(page.locator("#pp-msg")).not.toContainText(/FAOSale/i);
     });
+
+    test("after the wallet switches back to the active chain, the rejected action auto-retries", async ({ page, deployed }) => {
+        // Same setup: start on wrong chain, attempt write, get rejected.
+        await page.addInitScript(() => { window.__mockChainId = 100; });
+        await page.goto("/#judges");
+        await page.waitForSelector("#walletInfo:not(.hidden)");
+        await page.locator('summary:has-text("Poster & challenger profiles")').click();
+        await page.fill("#pp-content", "profile content registered via auto-retry");
+        await page.click("#pp-go");
+        // First attempt fails with chain mismatch.
+        await expect(page.locator("#pp-msg")).toContainText(/Wallet is on chain 100/i, { timeout: 5_000 });
+        // Simulate the wallet completing the switch back to the active chain.
+        await page.evaluate((cid) => window.__fireChainChanged(cid), deployed.chainId);
+        // The chain-ready toast appears.
+        await expect(page.locator("#chainReadyToast")).toBeVisible({ timeout: 3_000 });
+        // The auto-retry re-clicks the Register button — success message
+        // ("Registered poster profile #N") replaces the chain-mismatch error.
+        await expect(page.locator("#pp-msg")).toContainText(/Registered\s+(?:<strong>)?poster(?:<\/strong>)?\s*profile/i, { timeout: 15_000 });
+    });
 });

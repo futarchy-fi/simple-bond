@@ -349,6 +349,18 @@ const test = base.extend({
                         fn([wallet.address]);
                     }
                 };
+                // Test-only helper: simulate the wallet switching to a new chain.
+                // Mutates __mockChainId so subsequent eth_chainId calls reflect
+                // it, then fires every chainChanged listener with the hex id —
+                // mirroring what a real EIP-1193 wallet does on user-initiated
+                // network changes.
+                window.__fireChainChanged = (chainIdNum) => {
+                    window.__mockChainId = chainIdNum;
+                    const hex = "0x" + chainIdNum.toString(16);
+                    for (const fn of (listeners.chainChanged || [])) {
+                        fn(hex);
+                    }
+                };
 
                 Object.defineProperty(window, "ethereum", {
                     value: provider,
