@@ -1618,7 +1618,7 @@
     const myJudge = getMyJudgeContract();
     if (!myJudge) {
       titleEl.textContent = 'No judge contract yet';
-      hintEl.textContent = 'Pick one of the two paths below — deploy your own (recommended for real judges) or point at the default judge for testing.';
+      hintEl.textContent = '';
       statusEl.textContent = '';
       return;
     }
