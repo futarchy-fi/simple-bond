@@ -9,11 +9,12 @@ A truth-machine bond contract. Make a claim, back it with money, and let the wor
 
 The previous `v0.5` line (Gnosis Chain, the original audit target) has been **retired from the live UI** — bond.futarchy.ai no longer points at Gnosis. Its contracts remain deployed on Gnosis but are not surfaced by the app. The notes below about Gnosis deployment are historical, kept for reference.
 
-- current core line: `contracts/core/SimpleBondV5.sol`
-- current minimal judge wrapper: `contracts/judges/ManualJudge.sol`
-- current `v0.5` audit docs: `AUDIT_SCOPE.md` and `SPEC.md`
-- next-release docs (on `spec/v06`): `SPEC_V06.md`, `AUDIT_SCOPE_V06.md`
-- legacy contract lines and the current Kleros adapter: `contracts/legacy/`
+- current (live) core line: `contracts/core/SimpleBondV6.sol`
+- current judge wrapper: `contracts/judges/ManualJudgeV6.sol`
+- current profile registries: `contracts/profiles/JudgeProfileRegistryV6.sol`, `PosterProfileRegistry.sol`, `ChallengerProfileRegistry.sol`
+- current `v0.6` docs: `SPEC_V06.md`, `AUDIT_SCOPE_V06.md`, `RELEASE_V06.md`, `CHANGELOG.md`
+- previous `v0.5` line (Gnosis, retired from UI): `contracts/core/SimpleBondV5.sol`, `contracts/judges/ManualJudge.sol`, docs `SPEC.md` / `AUDIT_SCOPE.md`
+- legacy contract lines and the Kleros adapter: `contracts/legacy/`
 
 ## Repository Layout
 
@@ -22,8 +23,10 @@ The previous `v0.5` line (Gnosis Chain, the original audit target) has been **re
 - `contracts/interfaces/` - shared interfaces
 - `contracts/legacy/` - older contract generations and legacy adapters
 - `contracts/test/` - test-only Solidity contracts
-- `test/core/v5/` - active `v0.5` test suites
-- `test/helpers/v5/` - active `v0.5` test helpers
+- `test/core/v6/` - active `v0.6` test suites (live line)
+- `test/helpers/v6/` - active `v0.6` test helpers
+- `test/core/v5/` - `v0.5` test suites (retired Gnosis line)
+- `test/helpers/v5/` - `v0.5` test helpers
 - `test/legacy/` - legacy regression suites for older contract lines
 - `test/frontend/` - frontend/backend consumer and helper tests
 - `test/tooling/` - deploy and repository-tooling tests
@@ -137,20 +140,30 @@ getChallenge(bondId, index) → (challenger, status, metadata)
 
 ## Deploy
 
+The live `v0.6` stack deploys in one script. `scripts/v6/deployAll.js` deploys the
+profile registries, `SimpleBondV6`, `ManualJudgeV6`, and the OfficialBondDirectory,
+writes `deployments/<network>.json`, and prints a runtime-config block ready to paste
+into `frontend/runtime-config.js` and `backend/config.mjs`.
+
 ```bash
-cp .env.example .env  # add PRIVATE_KEY and RPC_URL
+cp .env.example .env  # add PRIVATE_KEY and ETH_RPC_URL
 npx hardhat compile
-npx hardhat run scripts/deploy.js --network gnosis
-npx hardhat run scripts/deployJudgeProfileRegistry.js --network gnosis
-npx hardhat run scripts/deployJudgeRegistry.js --network gnosis
-npx hardhat run scripts/deployOfficialBondDirectory.js --network gnosis
+
+# Ethereum mainnet — pass sUSDS as the approved token
+APPROVED_TOKEN=0xa3931d71877C0E7a3148CB7Eb4463524FEc27fbD \
+  npx hardhat run scripts/v6/deployAll.js --network ethereum
+
+# Sepolia testnet — deploy a MockSUSDS first, then pass its address
+npx hardhat run scripts/v6/deployMockSUSDS.js --network sepolia
+APPROVED_TOKEN=<mock-susds-addr> \
+  npx hardhat run scripts/v6/deployAll.js --network sepolia
 ```
 
-`scripts/deploy.js` now deploys `SimpleBondV5`.
-`scripts/deployJudgeProfileRegistry.js` deploys the optional on-chain public judge profile registry.
-`scripts/deployJudgeRegistry.js` deploys the canonical on-chain mapping from operator wallet to judge contract.
-`scripts/deployOfficialBondDirectory.js` deploys the optional Futarchy-controlled on-chain directory of official judges and supported tokens, with separate transferable `owner` and `admin` roles.
-All four scripts print the post-deploy runtime-config checklist you need for the live site.
+After deploy, `scripts/v6/syncConfigFromDeployment.js` writes the addresses into the
+frontend/backend config, and `scripts/v6/verifyDeployment.js` sanity-checks the live
+wiring. The legacy `v0.5` Gnosis scripts (`scripts/deploy.js` → `SimpleBondV5`,
+`scripts/deployJudgeProfileRegistry.js`, etc.) remain in the repo for the retired
+Gnosis line but are not used for the live deployment.
 
 ## Frontend Runtime Config
 
@@ -175,19 +188,7 @@ window.SIMPLE_BOND_CONFIG = {
 };
 ```
 
-Hostname routing in `runtime-config.js` selects the chain: `bond.futarchy.ai`/`.fi` → mainnet only; `staging.bond.futarchy.*` → Sepolia only; localhost → both. The old Gnosis `v0.5` addresses (`0x7dF485…`) are no longer shipped.
-If the frontend moves to Netlify or any other static host, point `notifyApiBase` at the public API origin instead, for example:
-
-```js
-window.SIMPLE_BOND_CONFIG = {
-  notifyApiBase: "https://api.bond.futarchy.ai/api/notify",
-  gnosisBondContract: "0xYourSimpleBondV5Address",
-  gnosisDeployBlock: 12345678,
-  gnosisJudgeProfileRegistry: "0xYourJudgeProfileRegistryAddress",
-  gnosisJudgeRegistry: "0xYourJudgeRegistryAddress",
-  gnosisOfficialDirectory: "0xYourOfficialBondDirectoryAddress",
-};
-```
+Hostname routing in `runtime-config.js` selects the chain: `bond.futarchy.ai`/`.fi` → mainnet only; `staging.bond.futarchy.*` → Sepolia only; localhost → both. The old Gnosis `v0.5` addresses (`0x7dF485…`) are no longer shipped. The frontend is hosted on Netlify and points `notifyApiBase` at the public API origin (`https://api.bond.futarchy.ai/api/notify`).
 
 ## Notification Deploy
 
@@ -201,13 +202,13 @@ For a split deployment, set:
 
 - `BOND_NOTIFY_BASE_URL` to the public API origin, for example `https://api.bond.futarchy.ai`
 - `SIMPLE_BOND_FRONTEND_URL` to the frontend origin, for example `https://bond.futarchy.ai`
-- `backend/config.mjs` `CHAINS[100].contract` to the deployed `SimpleBondV5` address
-- `backend/config.mjs` `CHAINS[100].startBlock` to the deployed `SimpleBondV5` block
+- `backend/config.mjs` `CHAINS[1].contract` to the deployed `SimpleBondV6` address
+- `backend/config.mjs` `CHAINS[1].startBlock` to the deployed `SimpleBondV6` block
 
-The current email worker target is Gnosis-only and watches:
+The live email/notification worker target is Ethereum mainnet and watches:
 
-- `CHAINS[100].contract = 0x7dF485C013f8671B656d585f1d1411640B1D2776`
-- `CHAINS[100].startBlock = 45569363`
+- `CHAINS[1].contract = 0x6B24380B1980db3e2DfDd2b62f5ed3E7E88DFA43`
+- `CHAINS[1].startBlock = 25139967`
 
 ### Current deployment (GCP)
 
@@ -237,9 +238,25 @@ Sample (legacy) systemd units also live in `deploy/systemd/`:
 
 ## Addresses
 
-Current canonical Gnosis deployment:
+**Live `v0.6` deployment — Ethereum mainnet (chainId 1).** These are what
+[bond.futarchy.ai](https://bond.futarchy.ai) uses; the authoritative copy lives in
+`frontend/runtime-config.js` `chains[1]`.
 
-`KlerosJudge` is available on Gnosis as a deployed judge adapter for `SimpleBondV4`.
+| Asset | Chain | Address |
+|-------|-------|---------|
+| SimpleBond v0.6 (`SimpleBondV6`) | Ethereum | `0x6B24380B1980db3e2DfDd2b62f5ed3E7E88DFA43` |
+| JudgeProfileRegistryV6 | Ethereum | `0x8fee829120b8823899372Ac3d39f77746192b407` |
+| PosterProfileRegistry | Ethereum | `0x4eF9cF61B2480B3D9474B767193B9E56bFE34813` |
+| ChallengerProfileRegistry | Ethereum | `0xf3cC75bDC99CfEa05De04C13F270B4D39423FE69` |
+| ManualJudgeV6 (default test judge) | Ethereum | `0xd5C580e86535C4D66238eB2B9C4270b9a129993e` |
+| OfficialBondDirectory | Ethereum | `0xAB3f30129c66c139ceBCD424359E7D953f4f7455` |
+| sUSDS (canonical bond token) | Ethereum | `0xa3931d71877C0E7a3148CB7Eb4463524FEc27fbD` |
+
+Deploy block: `25139967`. A parallel `v0.6` stack is deployed on Sepolia for staging
+(`staging.bond.futarchy.ai`); see `frontend/runtime-config.js` `chains[11155111]`.
+
+<details>
+<summary>Retired <code>v0.5</code> / legacy deployment (Gnosis — no longer served by the app)</summary>
 
 | Asset | Chain | Address |
 |-------|-------|---------|
@@ -248,10 +265,11 @@ Current canonical Gnosis deployment:
 | JudgeRegistry | Gnosis | `0xf2F50455D3E1956EF4DF8BBA9a93CeDaF4aE9A3D` |
 | OfficialBondDirectory | Gnosis | `0xb32263E363f668f97137D53baF69CF7Fb388c343` |
 | SimpleBondV4 | Gnosis | `0xCe8799303AeaEC861142470d754F74E09EfD1C45` |
-| SimpleBondV4 | Polygon | `0x6B24380B1980db3e2DfDd2b62f5ed3E7E88DFA43` |
-| KlerosJudge | Gnosis | `0x71e15D42bE15BAE117096E12C9dBA25E67d14C67` |
+| KlerosJudge (adapter for `SimpleBondV4`) | Gnosis | `0x71e15D42bE15BAE117096E12C9dBA25E67d14C67` |
 | sDAI | Gnosis | `0xaf204776c7245bF4147c2612BF6e5972Ee483701` |
 | WXDAI | Gnosis | `0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d` |
+
+</details>
 
 Judge profile registry control:
 
