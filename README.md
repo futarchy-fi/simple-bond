@@ -5,9 +5,9 @@ A truth-machine bond contract. Make a claim, back it with money, and let the wor
 
 ## Repository Status
 
-`v0.6` is being prepared on branch [`spec/v06`](https://github.com/futarchy-fi/simple-bond/tree/spec/v06): Ethereum mainnet, sUSDS, evolving claims, per-challenge concession, judge out-of-scope refunds, close/open, append-only profile registries. See `SPEC_V06.md`, `PLAN_V06.md`, `RELEASE_V06.md`, `CHANGELOG.md`. Code-complete with 608 tests passing; awaiting mainnet deploy.
+**`v0.6` is live on Ethereum mainnet and is what [bond.futarchy.ai](https://bond.futarchy.ai) serves.** It was merged to `main` and deployed in May 2026: sUSDS-collateralized bonds, evolving claims, per-challenge concession, judge out-of-scope refunds, close/open, append-only profile registries. The mainnet addresses ship in `frontend/runtime-config.js` (`chains[1]`). See `SPEC_V06.md`, `PLAN_V06.md`, `RELEASE_V06.md`, `CHANGELOG.md`.
 
-The live mainline still hosts the deployed `v0.5` audit target.
+The previous `v0.5` line (Gnosis Chain, the original audit target) has been **retired from the live UI** — bond.futarchy.ai no longer points at Gnosis. Its contracts remain deployed on Gnosis but are not surfaced by the app. The notes below about Gnosis deployment are historical, kept for reference.
 
 - current core line: `contracts/core/SimpleBondV5.sol`
 - current minimal judge wrapper: `contracts/judges/ManualJudge.sol`
@@ -154,22 +154,28 @@ All four scripts print the post-deploy runtime-config checklist you need for the
 
 ## Frontend Runtime Config
 
-The frontend is still a static site, but the notification API base is now configurable at runtime in `frontend/runtime-config.js`.
+The frontend is a static site; chain addresses and the notification API base are configured at runtime in `frontend/runtime-config.js`.
 
-Live config:
+**Live config (Ethereum mainnet, v0.6)** — see `frontend/runtime-config.js` `chains[1]` for the authoritative, current values:
 
 ```js
 window.SIMPLE_BOND_CONFIG = {
-  notifyApiBase: "/api/notify",
-  gnosisBondContract: "0x7dF485C013f8671B656d585f1d1411640B1D2776",
-  gnosisDeployBlock: 45569363,
-  gnosisJudgeProfileRegistry: "0x5f2000E438533662A689311672a41aca3EDC88DD",
-  gnosisJudgeRegistry: "0xf2F50455D3E1956EF4DF8BBA9a93CeDaF4aE9A3D",
-  gnosisOfficialDirectory: "0xb32263E363f668f97137D53baF69CF7Fb388c343",
+  notifyApiBase: "https://api.bond.futarchy.ai/api/notify",
+  chains: {
+    1: {                       // Ethereum mainnet — the live chain
+      name: "Ethereum",
+      bondContract: "0x6B24380B1980db3e2DfDd2b62f5ed3E7E88DFA43",
+      approvedToken: "0xa3931d71877C0E7a3148CB7Eb4463524FEc27fbD", // sUSDS
+      bondVersion: 6,
+      // judgeProfileRegistry / posterProfileRegistry / challengerProfileRegistry / rpcs …
+    },
+    11155111: { /* Sepolia testnet, also v0.6 */ },
+  },
+  defaultChainId: 1,
 };
 ```
 
-The current product deployment is Gnosis-only and ships those values in `frontend/runtime-config.js`.
+Hostname routing in `runtime-config.js` selects the chain: `bond.futarchy.ai`/`.fi` → mainnet only; `staging.bond.futarchy.*` → Sepolia only; localhost → both. The old Gnosis `v0.5` addresses (`0x7dF485…`) are no longer shipped.
 If the frontend moves to Netlify or any other static host, point `notifyApiBase` at the public API origin instead, for example:
 
 ```js
