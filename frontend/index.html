@@ -536,16 +536,84 @@
   }
 
   // ─── Defensive helpers (ported from v0.5) ─────────────────────────────
+  // ─── Global transaction status modal ──────────────────────────────────
+  // A single bottom-right card that tracks the in-flight write transaction:
+  // submitted (with hash + Etherscan link) → confirmed / failed. Driven by
+  // waitForTx so every write path gets it for free.
+  let _txModalTimer = null;
+  function txModalEl() {
+    let el = document.getElementById('txModal');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'txModal';
+      el.style.cssText = 'position:fixed;bottom:20px;right:20px;z-index:10000;max-width:360px;'
+        + 'background:#fff;border:1px solid var(--border,#e5e7eb);border-radius:10px;'
+        + 'box-shadow:0 10px 30px rgba(0,0,0,0.18);padding:14px 16px;font-size:14px;line-height:1.45;';
+      document.body.appendChild(el);
+    }
+    return el;
+  }
+  function renderTxModal({ state, label, hash }) {
+    clearTimeout(_txModalTimer);
+    const el = txModalEl();
+    const link = hash ? `<a href="${explorerTx(hash)}" target="_blank" rel="noopener" style="font-size:12px;">${short(hash)} ↗</a>` : '';
+    let icon, title, color;
+    if (state === 'pending') {
+      icon = '<span class="spinner"></span>'; title = label || 'Transaction pending…'; color = '#2563eb';
+    } else if (state === 'confirmed') {
+      icon = '✓'; title = label || 'Transaction confirmed'; color = '#10b981';
+    } else { // failed
+      icon = '✕'; title = label || 'Transaction failed'; color = '#dc2626';
+    }
+    el.innerHTML = `
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span style="font-size:18px;color:${color};width:20px;text-align:center;">${icon}</span>
+        <div style="flex:1;min-width:0;">
+          <div style="font-weight:600;">${escapeHtml(title)}</div>
+          ${state === 'pending' ? '<div style="font-size:12px;color:var(--muted,#6b7280);">Waiting for the network to confirm…</div>' : ''}
+          ${link ? `<div style="margin-top:2px;">${link}</div>` : ''}
+        </div>
+        ${state !== 'pending' ? '<button id="txModalClose" class="ghost" style="font-size:12px;padding:2px 8px;">Close</button>' : ''}
+      </div>`;
+    el.style.display = 'block';
+    const cb = document.getElementById('txModalClose');
+    if (cb) cb.addEventListener('click', hideTxModal);
+    if (state !== 'pending') _txModalTimer = setTimeout(hideTxModal, 10000);
+  }
+  function hideTxModal() {
+    clearTimeout(_txModalTimer);
+    const el = document.getElementById('txModal');
+    if (el) el.style.display = 'none';
+  }
+  // Expose for flows that manage their own tx (e.g. contract deploys).
+  window.__txModal = { pending: (label, hash) => renderTxModal({ state: 'pending', label, hash }),
+                       confirmed: (label, hash) => renderTxModal({ state: 'confirmed', label, hash }),
+                       failed: (label, hash) => renderTxModal({ state: 'failed', label, hash }),
+                       hide: hideTxModal };
+
   async function waitForTx(tx, retries = 5) {
+    const hash = tx?.hash || tx?.transactionHash || null;
+    renderTxModal({ state: 'pending', label: 'Transaction pending…', hash });
     for (let i = 0; i < retries; i++) {
       try {
         const receipt = await tx.wait();
-        if (receipt) return receipt;
+        if (receipt) {
+          if (receipt.status === 0) {
+            renderTxModal({ state: 'failed', label: 'Transaction reverted', hash: receipt.hash || hash });
+          } else {
+            renderTxModal({ state: 'confirmed', label: 'Transaction confirmed', hash: receipt.hash || hash });
+          }
+          return receipt;
+        }
       } catch (err) {
-        if (i === retries - 1) throw err;
+        if (i === retries - 1) {
+          renderTxModal({ state: 'failed', label: friendlyError(err), hash });
+          throw err;
+        }
         await new Promise(r => setTimeout(r, 3000 * (i + 1)));
       }
     }
+    renderTxModal({ state: 'failed', label: 'Transaction never confirmed', hash });
     throw new Error('Transaction never confirmed');
   }
   function withTimeout(promise, ms, fallback) {
@@ -1740,8 +1808,10 @@
       const judge = await factory.deploy(account);
       const deployTx = judge.deploymentTransaction();
       log(`Deploy tx sent: ${deployTx?.hash || '(hash pending)'} — waiting for confirmation…`);
+      window.__txModal.pending('Deploying judge contract…', deployTx?.hash);
       await judge.waitForDeployment();
       const addr = await judge.getAddress();
+      window.__txModal.confirmed('Judge contract deployed', deployTx?.hash);
       // Verify the contract code actually landed. MetaMask Smart Transactions
       // can report "done" while having dropped the tx — leaving no bytecode at
       // the predicted address. Don't advance the flow on a phantom deploy.

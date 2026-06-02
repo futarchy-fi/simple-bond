@@ -82,6 +82,10 @@ test.describe("E — judge flows", () => {
         await page.fill("#jp-addr", deployed.manualJudgeV6);
         await page.fill("#jp-content", "e2e canonical profile");
         await page.locator("#jp-go").click();
+        // The global tx modal appears while the registration tx is pending and
+        // flips to a confirmed state once mined.
+        await expect(page.locator("#txModal")).toBeVisible({ timeout: 30_000 });
+        await expect(page.locator("#txModal")).toContainText(/confirmed/i, { timeout: 60_000 });
         // The page renders the static heading "Registered judge profiles"
         // unconditionally, so wait specifically for the log line that
         // includes "entryId=" — that only appears after the tx confirms.
