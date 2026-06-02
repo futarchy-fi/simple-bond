@@ -566,6 +566,13 @@
     if (/could not coalesce/i.test(msg)) {
       return "Your wallet's RPC dropped or returned an unexpected response. Try: refresh the page, switch wallet (Rabby is the most reliable), or try again in a few seconds.";
     }
+    // MetaMask "Smart Transactions" pre-simulates via Flashbots/Blockaid and
+    // silently drops brand-new / unverified contract interactions — surfacing
+    // as a vague local "failed"/"cancelled" with nothing on-chain. Point the
+    // user straight at the toggle.
+    if (/smart transaction|stx |transaction was canceled|likely to fail|couldn't be completed/i.test(msg)) {
+      return "Your wallet's Smart Transactions feature blocked this before it was sent. Turn it off (MetaMask → Settings → Transactions or Experimental → Smart Transactions OFF) and try again.";
+    }
     return msg;
   }
   // sUSDS funding plumbing — addresses + state detection + path selection.
@@ -1692,14 +1699,36 @@
         window.SIMPLE_BOND_V6_MANUAL_JUDGE_BYTECODE,
         signer
       );
+      // Preflight the deploy via estimateGas so a reverting constructor or a
+      // bad bytecode surfaces with a reason BEFORE the wallet popup, instead
+      // of a vague "Contract deployment: failed".
+      try {
+        const deployTx = await factory.getDeployTransaction(account);
+        await readProvider().estimateGas({ from: account, data: deployTx.data });
+      } catch (simErr) {
+        const reason = simErr?.reason || simErr?.shortMessage || simErr?.message || String(simErr);
+        throw new Error(`Pre-check failed: ${reason}`);
+      }
       const judge = await factory.deploy(account);
+      const deployTx = judge.deploymentTransaction();
+      log(`Deploy tx sent: ${deployTx?.hash || '(hash pending)'} — waiting for confirmation…`);
       await judge.waitForDeployment();
       const addr = await judge.getAddress();
+      // Verify the contract code actually landed. MetaMask Smart Transactions
+      // can report "done" while having dropped the tx — leaving no bytecode at
+      // the predicted address. Don't advance the flow on a phantom deploy.
+      const deployedCode = await readProvider().getCode(addr);
+      if (!deployedCode || deployedCode === '0x') {
+        throw new Error(`Deploy did not land — no contract code at ${addr}. If you use MetaMask Smart Transactions, turn it off (Settings → Transactions/Experimental → Smart Transactions) and retry.`);
+      }
       log(`Deployed at ${addr}. Activating…`);
       msg && (msg.innerHTML = `<div class="msg msg-info"><span class="spinner"></span>Deployed at ${short(addr)}. Sending acceptOperatorRole…</div>`);
       const judgeC = manualJudgeContract(addr, true);
       const tx = await judgeC.acceptOperatorRole();
-      await waitForTx(tx);
+      const acceptReceipt = await waitForTx(tx);
+      if (acceptReceipt && acceptReceipt.status === 0) {
+        throw new Error(`acceptOperatorRole reverted (tx ${acceptReceipt.hash}). The judge contract is deployed at ${addr} but not yet activated — retry activation from "Your judge contract".`);
+      }
       log(`Activated. You are operator of ${addr}.`);
       setMyJudgeContract(addr);
       $('jp-addr').value = addr;
