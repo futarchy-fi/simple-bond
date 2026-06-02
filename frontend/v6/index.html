@@ -619,6 +619,28 @@
   function withTimeout(promise, ms, fallback) {
     return Promise.race([promise, new Promise(r => setTimeout(() => r(fallback), ms))]);
   }
+  // Free-tier public RPCs cap eth_getLogs block ranges (drpc rejects spans
+  // over ~10k blocks with a 400; publicnode errors too). Scanning from the
+  // contract's deploy block to head is well over that, so queryFilter was
+  // silently failing and returning [] — which is why "My Bonds" and
+  // "Bonds judged" showed 0. This walks the range in safe windows and
+  // concatenates. Newest-first so early results render fast.
+  const LOG_CHUNK = 9000;
+  async function queryFilterChunked(contract, filter, fromBlock) {
+    const provider = contract.runner?.provider || readProvider();
+    const latest = await provider.getBlockNumber();
+    const start = Math.max(0, fromBlock || 0);
+    const out = [];
+    for (let hi = latest; hi >= start; hi -= (LOG_CHUNK + 1)) {
+      const lo = Math.max(start, hi - LOG_CHUNK);
+      try {
+        const logs = await contract.queryFilter(filter, lo, hi);
+        if (logs.length) out.push(...logs);
+      } catch (_) { /* skip a bad window rather than abort the whole scan */ }
+      if (lo === start) break;
+    }
+    return out;
+  }
   function isUserRejection(err) {
     if (!err) return false;
     if (err.code === 4001 || err.code === 'ACTION_REJECTED') return true;
@@ -1443,7 +1465,7 @@
       try {
         const c = chain();
         const fromBlock = c?.deployBlock || 0;
-        const logs = await withTimeout(bc.queryFilter(bc.filters.BondCreated(), fromBlock), 8000, []);
+        const logs = await withTimeout(queryFilterChunked(bc, bc.filters.BondCreated(), fromBlock), 20000, []);
         const map = {};
         for (const ev of logs) {
           const bondId = Number(ev.args.bondId);
@@ -1451,7 +1473,7 @@
         }
         // Also pick up ClaimModified — use latest version content
         try {
-          const modLogs = await withTimeout(bc.queryFilter(bc.filters.ClaimModified(), fromBlock), 8000, []);
+          const modLogs = await withTimeout(queryFilterChunked(bc, bc.filters.ClaimModified(), fromBlock), 20000, []);
           for (const ev of modLogs) {
             const bondId = Number(ev.args.bondId);
             const newVersion = Number(ev.args.newVersion);
@@ -2617,20 +2639,20 @@
 
     try {
       const filter = bc.filters.BondCreated(null, account);
-      const logs = await withTimeout(bc.queryFilter(filter, fromBlock), 12000, []);
+      const logs = await withTimeout(queryFilterChunked(bc, filter, fromBlock), 25000, []);
       posterIds = logs.map(l => Number(l.args.bondId));
     } catch (err) { log(`Poster events failed: ${friendlyError(err)}`, 'err'); }
 
     try {
       const filter = bc.filters.Challenged(null, null, account);
-      const logs = await withTimeout(bc.queryFilter(filter, fromBlock), 12000, []);
+      const logs = await withTimeout(queryFilterChunked(bc, filter, fromBlock), 25000, []);
       challengerIds = [...new Set(logs.map(l => Number(l.args.bondId)))];
     } catch (err) { log(`Challenger events failed: ${friendlyError(err)}`, 'err'); }
 
     if (myJudge) {
       try {
         const filter = bc.filters.BondCreated(null, null, myJudge);
-        const logs = await withTimeout(bc.queryFilter(filter, fromBlock), 12000, []);
+        const logs = await withTimeout(queryFilterChunked(bc, filter, fromBlock), 25000, []);
         judgeIds = logs.map(l => Number(l.args.bondId));
       } catch (err) { log(`Judge events failed: ${friendlyError(err)}`, 'err'); }
     }
@@ -2729,12 +2751,12 @@
       try {
         const c = chain();
         const fromBlock = c?.deployBlock || 0;
-        const createdLogs = await withTimeout(bc.queryFilter(bc.filters.BondCreated(bondId), fromBlock), 8000, []);
+        const createdLogs = await withTimeout(queryFilterChunked(bc, bc.filters.BondCreated(bondId), fromBlock), 20000, []);
         if (createdLogs.length > 0) {
           claimContent = String(createdLogs[0].args.claimContent || '');
           claimContentVersion = 1;
         }
-        const modLogs = await withTimeout(bc.queryFilter(bc.filters.ClaimModified(bondId), fromBlock), 8000, []);
+        const modLogs = await withTimeout(queryFilterChunked(bc, bc.filters.ClaimModified(bondId), fromBlock), 20000, []);
         let latest = claimContentVersion;
         for (const ev of modLogs) {
           const v = Number(ev.args.newVersion);
@@ -2757,8 +2779,25 @@
       const beliefs = beliefThresholds(bondAmount, challengeAmount, judgeFee);
 
       const isPoster = signer && account && account.toLowerCase() === b.poster.toLowerCase();
-      const myJudgeAddr = getMyJudgeContract();
-      const isJudgeOperator = signer && account && myJudgeAddr && myJudgeAddr.toLowerCase() === b.judge.toLowerCase();
+      // Judge controls must show for whoever actually operates the bond's
+      // judge contract — determined ON-CHAIN, not from this browser's
+      // localStorage (which a different device / a cleared cache won't have).
+      // Fall back to the localStorage match if the operator() read fails.
+      let isJudgeOperator = false;
+      if (signer && account && b.judge && b.judge !== ethers.ZeroAddress) {
+        try {
+          const op = await manualJudgeContract(b.judge, false).operator();
+          isJudgeOperator = op && op.toLowerCase() === account.toLowerCase();
+        } catch (_) {
+          const myJudgeAddr = getMyJudgeContract();
+          isJudgeOperator = !!(myJudgeAddr && myJudgeAddr.toLowerCase() === b.judge.toLowerCase());
+        }
+        // If they operate this judge but the browser hasn't linked it, link
+        // it now so the rest of the app (My Judge panel, etc.) stays in sync.
+        if (isJudgeOperator && getMyJudgeContract()?.toLowerCase() !== b.judge.toLowerCase()) {
+          setMyJudgeContract(ethers.getAddress(b.judge));
+        }
+      }
       const isNonPoster = signer && account && account.toLowerCase() !== b.poster.toLowerCase();
       const bondOpen = !b.settled && !b.closed;
       const canChallenge = isNonPoster && bondOpen && Number(b.pendingCount) < Number(b.maxChallenges) && Number(b.pendingCount) <= 100;
@@ -3206,7 +3245,7 @@
       try {
         const bc = bondReadContract();
         const fromBlock = c?.deployBlock || 0;
-        const logs = await withTimeout(bc.queryFilter(bc.filters.BondCreated(null, null, entry.judgeContract), fromBlock), 10000, []);
+        const logs = await withTimeout(queryFilterChunked(bc, bc.filters.BondCreated(null, null, entry.judgeContract), fromBlock), 25000, []);
         bondsJudged = logs.map(l => ({ bondId: Number(l.args.bondId), claim: String(l.args.claimContent || '') }));
       } catch (_) {}
 
