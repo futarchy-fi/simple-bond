@@ -109,6 +109,12 @@ export const V6_CONTRACT_ABI = [
   "event BondWithdrawn(uint256 indexed bondId)",
   "event BondTimedOut(uint256 indexed bondId, uint256 challengeIndex)",
   "event ChallengeRefunded(uint256 indexed bondId, uint256 challengeIndex, address indexed challenger)",
+  // View functions — needed by the watcher to resolve recipients and by the
+  // indexing pass to snapshot current bond/challenge state. Must match the
+  // on-chain SimpleBondV6 + frontend ABI exactly.
+  "function bonds(uint256) view returns (address poster, address judge, address token, uint256 bondAmount, uint256 challengeAmount, uint256 judgeFee, uint256 acceptanceDelay, uint256 rulingBuffer, uint256 maxChallenges, bytes32 claimHash, uint256 claimVersion, uint256 judgeProfileId, uint256 pendingCount, bool settled, bool closed)",
+  "function getChallengeCount(uint256 bondId) view returns (uint256)",
+  "function getChallenge(uint256 bondId, uint256 index) view returns (tuple(address challenger, uint8 status, uint256 timestamp, uint256 challengeAtVersion, bytes32 claimHashAtChallenge, bytes32 metadataHash, bytes32 rulingMetadataHash))",
 ];
 
 /// Returns the ABI to use for a given chain id.

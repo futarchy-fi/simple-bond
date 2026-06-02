@@ -43,6 +43,56 @@ db.exec(`
     updated_at TEXT DEFAULT (datetime('now')),
     UNIQUE (wallet_address, chain_id)
   );
+
+  -- Indexed read-model of bonds, populated by the watcher's indexing pass.
+  -- Lets the frontend list/filter bonds via HTTP instead of scanning
+  -- eth_getLogs from the browser (free-tier RPCs cap log ranges).
+  CREATE TABLE IF NOT EXISTS bonds (
+    chain_id INTEGER NOT NULL,
+    bond_id INTEGER NOT NULL,
+    poster TEXT NOT NULL,
+    judge TEXT NOT NULL,
+    judge_profile_id INTEGER,
+    token TEXT,
+    bond_amount TEXT,
+    challenge_amount TEXT,
+    judge_fee TEXT,
+    acceptance_delay INTEGER,
+    ruling_buffer INTEGER,
+    max_challenges INTEGER,
+    claim_hash TEXT,
+    claim_content TEXT DEFAULT '',
+    claim_version INTEGER DEFAULT 0,
+    pending_count INTEGER DEFAULT 0,
+    challenge_count INTEGER DEFAULT 0,
+    settled INTEGER DEFAULT 0,
+    closed INTEGER DEFAULT 0,
+    created_block INTEGER,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    PRIMARY KEY (chain_id, bond_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_bonds_poster ON bonds(chain_id, poster);
+  CREATE INDEX IF NOT EXISTS idx_bonds_judge  ON bonds(chain_id, judge);
+
+  CREATE TABLE IF NOT EXISTS challenges (
+    chain_id INTEGER NOT NULL,
+    bond_id INTEGER NOT NULL,
+    idx INTEGER NOT NULL,
+    challenger TEXT NOT NULL,
+    status INTEGER DEFAULT 0,
+    content TEXT DEFAULT '',
+    updated_at TEXT DEFAULT (datetime('now')),
+    PRIMARY KEY (chain_id, bond_id, idx)
+  );
+  CREATE INDEX IF NOT EXISTS idx_challenges_challenger ON challenges(chain_id, challenger);
+
+  -- Separate cursor from the email 'checkpoints' table so indexing can
+  -- backfill from startBlock without re-sending notification emails.
+  CREATE TABLE IF NOT EXISTS index_checkpoints (
+    chain_id INTEGER PRIMARY KEY,
+    last_block INTEGER NOT NULL
+  );
 `);
 
 // --- Subscriptions ---
@@ -121,6 +171,58 @@ const getJudgeProfilesByAddresses = db.prepare(`
   WHERE chain_id=? AND wallet_address IN (SELECT value FROM json_each(?))
 `);
 
+// --- Index checkpoints (separate from email 'checkpoints') ---
+
+const getIndexCheckpoint = db.prepare(`SELECT last_block FROM index_checkpoints WHERE chain_id=?`);
+const upsertIndexCheckpoint = db.prepare(`
+  INSERT INTO index_checkpoints (chain_id, last_block) VALUES (?, ?)
+  ON CONFLICT(chain_id) DO UPDATE SET last_block=excluded.last_block
+`);
+
+// --- Bonds read-model ---
+
+const upsertBondStmt = db.prepare(`
+  INSERT INTO bonds (
+    chain_id, bond_id, poster, judge, judge_profile_id, token,
+    bond_amount, challenge_amount, judge_fee, acceptance_delay, ruling_buffer,
+    max_challenges, claim_hash, claim_content, claim_version, pending_count,
+    challenge_count, settled, closed, created_block, updated_at
+  ) VALUES (
+    @chain_id, @bond_id, @poster, @judge, @judge_profile_id, @token,
+    @bond_amount, @challenge_amount, @judge_fee, @acceptance_delay, @ruling_buffer,
+    @max_challenges, @claim_hash, @claim_content, @claim_version, @pending_count,
+    @challenge_count, @settled, @closed, @created_block, datetime('now')
+  )
+  ON CONFLICT(chain_id, bond_id) DO UPDATE SET
+    poster=excluded.poster, judge=excluded.judge, judge_profile_id=excluded.judge_profile_id,
+    token=excluded.token, bond_amount=excluded.bond_amount, challenge_amount=excluded.challenge_amount,
+    judge_fee=excluded.judge_fee, acceptance_delay=excluded.acceptance_delay, ruling_buffer=excluded.ruling_buffer,
+    max_challenges=excluded.max_challenges, claim_hash=excluded.claim_hash,
+    -- keep an existing non-empty claim_content if the update lacks one
+    claim_content=CASE WHEN excluded.claim_content != '' THEN excluded.claim_content ELSE bonds.claim_content END,
+    claim_version=excluded.claim_version, pending_count=excluded.pending_count,
+    challenge_count=excluded.challenge_count, settled=excluded.settled, closed=excluded.closed,
+    created_block=COALESCE(bonds.created_block, excluded.created_block), updated_at=datetime('now')
+`);
+const getBondStmt = db.prepare(`SELECT * FROM bonds WHERE chain_id=? AND bond_id=?`);
+const listBondsAll = db.prepare(`SELECT * FROM bonds WHERE chain_id=? ORDER BY bond_id DESC LIMIT ?`);
+const listBondsByPoster = db.prepare(`SELECT * FROM bonds WHERE chain_id=? AND poster=? ORDER BY bond_id DESC LIMIT ?`);
+const listBondsByJudge = db.prepare(`SELECT * FROM bonds WHERE chain_id=? AND judge=? ORDER BY bond_id DESC LIMIT ?`);
+const listBondIdsByChallenger = db.prepare(`SELECT DISTINCT bond_id FROM challenges WHERE chain_id=? AND challenger=?`);
+
+const upsertChallengeStmt = db.prepare(`
+  INSERT INTO challenges (chain_id, bond_id, idx, challenger, status, content, updated_at)
+  VALUES (@chain_id, @bond_id, @idx, @challenger, @status, @content, datetime('now'))
+  ON CONFLICT(chain_id, bond_id, idx) DO UPDATE SET
+    challenger=excluded.challenger, status=excluded.status,
+    content=CASE WHEN excluded.content != '' THEN excluded.content ELSE challenges.content END,
+    updated_at=datetime('now')
+`);
+const setChallengeStatusStmt = db.prepare(`
+  UPDATE challenges SET status=?, updated_at=datetime('now') WHERE chain_id=? AND bond_id=? AND idx=?
+`);
+const listChallengesStmt = db.prepare(`SELECT * FROM challenges WHERE chain_id=? AND bond_id=? ORDER BY idx ASC`);
+
 export default {
   upsertSubscription(address, email, chainId) {
     upsertSub.run(address.toLowerCase(), email.toLowerCase(), chainId);
@@ -175,5 +277,70 @@ export default {
   getJudgeProfiles(chainId, addresses) {
     const lower = addresses.map(a => a.toLowerCase());
     return getJudgeProfilesByAddresses.all(chainId, JSON.stringify(lower));
+  },
+
+  // --- Index checkpoints ---
+  getIndexCheckpoint(chainId) {
+    const row = getIndexCheckpoint.get(chainId);
+    return row ? row.last_block : null;
+  },
+  setIndexCheckpoint(chainId, block) {
+    upsertIndexCheckpoint.run(chainId, block);
+  },
+
+  // --- Bonds read-model ---
+  upsertBond(bond) {
+    upsertBondStmt.run({
+      chain_id: bond.chain_id,
+      bond_id: bond.bond_id,
+      poster: (bond.poster || '').toLowerCase(),
+      judge: (bond.judge || '').toLowerCase(),
+      judge_profile_id: bond.judge_profile_id ?? null,
+      token: (bond.token || '').toLowerCase(),
+      bond_amount: String(bond.bond_amount ?? ''),
+      challenge_amount: String(bond.challenge_amount ?? ''),
+      judge_fee: String(bond.judge_fee ?? ''),
+      acceptance_delay: bond.acceptance_delay ?? null,
+      ruling_buffer: bond.ruling_buffer ?? null,
+      max_challenges: bond.max_challenges ?? null,
+      claim_hash: bond.claim_hash ?? '',
+      claim_content: bond.claim_content ?? '',
+      claim_version: bond.claim_version ?? 0,
+      pending_count: bond.pending_count ?? 0,
+      challenge_count: bond.challenge_count ?? 0,
+      settled: bond.settled ? 1 : 0,
+      closed: bond.closed ? 1 : 0,
+      created_block: bond.created_block ?? null,
+    });
+  },
+  getBond(chainId, bondId) {
+    return getBondStmt.get(chainId, bondId);
+  },
+  listBonds(chainId, { poster, judge, challenger, limit = 200 } = {}) {
+    if (poster) return listBondsByPoster.all(chainId, poster.toLowerCase(), limit);
+    if (judge) return listBondsByJudge.all(chainId, judge.toLowerCase(), limit);
+    if (challenger) {
+      const ids = listBondIdsByChallenger.all(chainId, challenger.toLowerCase()).map(r => r.bond_id);
+      return ids.map(id => getBondStmt.get(chainId, id)).filter(Boolean).sort((a, b) => b.bond_id - a.bond_id);
+    }
+    return listBondsAll.all(chainId, limit);
+  },
+
+  // --- Challenges ---
+  upsertChallenge(ch) {
+    upsertChallengeStmt.run({
+      chain_id: ch.chain_id,
+      bond_id: ch.bond_id,
+      idx: ch.idx,
+      challenger: (ch.challenger || '').toLowerCase(),
+      status: ch.status ?? 0,
+      content: ch.content ?? '',
+    });
+  },
+  setChallengeStatus(chainId, bondId, idx, status) {
+    setChallengeStatusStmt.run(status, chainId, bondId, idx);
+  },
+  listChallenges(chainId, bondId) {
+    return listChallengesStmt.all(chainId, bondId);
   },
 };

@@ -336,6 +336,59 @@ async function handleJudgeProfileUpsert(req, res) {
   json(res, 200, { ok: true, profile });
 }
 
+// ─── Bonds read-model API ──────────────────────────────────────────────────
+// Serialize a DB bond row into the shape the frontend expects. Amounts stay
+// as decimal strings (wei) so the client keeps full BigInt precision.
+function serializeBond(row) {
+  if (!row) return null;
+  return {
+    chainId: row.chain_id,
+    bondId: row.bond_id,
+    poster: row.poster,
+    judge: row.judge,
+    judgeProfileId: row.judge_profile_id,
+    token: row.token,
+    bondAmount: row.bond_amount,
+    challengeAmount: row.challenge_amount,
+    judgeFee: row.judge_fee,
+    acceptanceDelay: row.acceptance_delay,
+    rulingBuffer: row.ruling_buffer,
+    maxChallenges: row.max_challenges,
+    claimHash: row.claim_hash,
+    claimContent: row.claim_content,
+    claimVersion: row.claim_version,
+    pendingCount: row.pending_count,
+    challengeCount: row.challenge_count,
+    settled: !!row.settled,
+    closed: !!row.closed,
+    updatedAt: row.updated_at,
+  };
+}
+
+function handleBondsList(req, res) {
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  const chainId = parseInt(url.searchParams.get('chainId') || '', 10);
+  if (!Number.isFinite(chainId)) return json(res, 400, { error: 'Missing or invalid chainId' });
+  const poster = url.searchParams.get('poster') || undefined;
+  const judge = url.searchParams.get('judge') || undefined;
+  const challenger = url.searchParams.get('challenger') || undefined;
+  const limit = Math.min(parseInt(url.searchParams.get('limit') || '200', 10) || 200, 500);
+  const rows = db.listBonds(chainId, { poster, judge, challenger, limit });
+  json(res, 200, { bonds: rows.map(serializeBond) });
+}
+
+function handleBondGet(req, res, bondId) {
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  const chainId = parseInt(url.searchParams.get('chainId') || '', 10);
+  if (!Number.isFinite(chainId)) return json(res, 400, { error: 'Missing or invalid chainId' });
+  const bond = serializeBond(db.getBond(chainId, bondId));
+  if (!bond) return json(res, 404, { error: 'Bond not found' });
+  const challenges = db.listChallenges(chainId, bondId).map(c => ({
+    idx: c.idx, challenger: c.challenger, status: c.status, content: c.content,
+  }));
+  json(res, 200, { bond, challenges });
+}
+
 export function createApiServer() {
   return http.createServer(async (req, res) => {
     if (req.method === 'OPTIONS') {
@@ -369,6 +422,10 @@ export function createApiServer() {
         handleJudgeProfilesGet(req, res);
       } else if ((req.method === 'POST' || req.method === 'PUT') && path === '/api/judges/profile') {
         await handleJudgeProfileUpsert(req, res);
+      } else if (req.method === 'GET' && path === '/api/bonds') {
+        handleBondsList(req, res);
+      } else if (req.method === 'GET' && /^\/api\/bonds\/\d+$/.test(path)) {
+        handleBondGet(req, res, parseInt(path.split('/').pop(), 10));
       } else {
         json(res, 404, { error: 'Not found' });
       }

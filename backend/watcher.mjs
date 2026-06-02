@@ -4,6 +4,123 @@ import db from './db.mjs';
 import { sendEmail } from './mailer.mjs';
 import { eventEmail } from './templates.mjs';
 
+// ─── Indexing (read-model) ────────────────────────────────────────────────
+// Separate from the email path: snapshots bond + challenge state into SQLite
+// so the frontend can list/filter via HTTP instead of scanning eth_getLogs.
+// Only runs for v0.6 chains (the v0.5 Gnosis struct shape differs and that
+// line is retired from the UI).
+
+// Snapshot one bond's current state from chain into the read-model. `claim`
+// carries claim text pulled from the triggering event (the struct only has a
+// hash); pass undefined to leave any stored text untouched.
+async function indexBondState(contract, chainId, bondId, claim) {
+  let b;
+  try {
+    b = await contract.bonds(bondId);
+  } catch (err) {
+    console.error(`[index] chain ${chainId} bond ${bondId} read failed:`, err.message);
+    return;
+  }
+  let challengeCount = 0;
+  try { challengeCount = Number(await contract.getChallengeCount(bondId)); } catch {}
+
+  db.upsertBond({
+    chain_id: chainId,
+    bond_id: bondId,
+    poster: b.poster,
+    judge: b.judge,
+    judge_profile_id: Number(b.judgeProfileId ?? 0),
+    token: b.token,
+    bond_amount: b.bondAmount?.toString(),
+    challenge_amount: b.challengeAmount?.toString(),
+    judge_fee: b.judgeFee?.toString(),
+    acceptance_delay: Number(b.acceptanceDelay ?? 0),
+    ruling_buffer: Number(b.rulingBuffer ?? 0),
+    max_challenges: Number(b.maxChallenges ?? 0),
+    claim_hash: b.claimHash,
+    claim_content: claim ?? '',
+    claim_version: Number(b.claimVersion ?? 0),
+    pending_count: Number(b.pendingCount ?? 0),
+    challenge_count: challengeCount,
+    settled: b.settled,
+    closed: b.closed,
+  });
+
+  // Refresh challenge rows + statuses from chain.
+  for (let i = 0; i < challengeCount; i++) {
+    try {
+      const c = await contract.getChallenge(bondId, i);
+      db.upsertChallenge({
+        chain_id: chainId,
+        bond_id: bondId,
+        idx: i,
+        challenger: c.challenger,
+        status: Number(c.status ?? 0),
+        content: '', // preserved if already stored from the Challenged event
+      });
+    } catch {}
+  }
+}
+
+// Index a batch of logs into the read-model (no emails). For each event we
+// re-snapshot the affected bond; the Challenged event additionally carries the
+// challenge's content, which we persist explicitly.
+async function indexLogs(contract, chainId, logs, iface) {
+  for (const log of logs) {
+    let parsed;
+    try { parsed = iface.parseLog({ topics: log.topics, data: log.data }); } catch { continue; }
+    if (!parsed || parsed.args.bondId == null) continue;
+    const bondId = Number(parsed.args.bondId);
+
+    // Claim text lives in events, not the struct.
+    let claim;
+    if (parsed.name === 'BondCreated') claim = String(parsed.args.claimContent || '');
+    else if (parsed.name === 'ClaimModified') claim = String(parsed.args.newContent || '');
+
+    await indexBondState(contract, chainId, bondId, claim);
+
+    if (parsed.name === 'Challenged') {
+      db.upsertChallenge({
+        chain_id: chainId,
+        bond_id: bondId,
+        idx: Number(parsed.args.challengeIndex),
+        challenger: parsed.args.challenger,
+        status: 0,
+        content: String(parsed.args.content || ''),
+      });
+    }
+  }
+}
+
+// Cursor-based indexing pass, mirroring pollChain but DB-only and using a
+// separate checkpoint so it can backfill from startBlock without re-emailing.
+async function indexChain(chainId, provider, contract, iface) {
+  if ((CHAINS[chainId] || {}).bondVersion !== 6) return; // v6 read-model only
+  const confirmations = CONFIRMATION_BLOCKS[chainId] || 12;
+  let latestBlock;
+  try { latestBlock = await provider.getBlockNumber(); }
+  catch (err) { console.error(`[index] chain ${chainId} block number failed:`, err.message); return; }
+
+  const safeBlock = latestBlock - confirmations;
+  const checkpoint = db.getIndexCheckpoint(chainId);
+  const fromBlock = checkpoint !== null ? checkpoint + 1 : CHAINS[chainId].startBlock;
+  if (fromBlock > safeBlock) return;
+
+  let cursor = fromBlock;
+  while (cursor <= safeBlock) {
+    const toBlock = Math.min(cursor + BLOCK_CHUNK - 1, safeBlock);
+    try {
+      const logs = await provider.getLogs({ address: CHAINS[chainId].contract, fromBlock: cursor, toBlock });
+      if (logs.length > 0) await indexLogs(contract, chainId, logs, iface);
+      db.setIndexCheckpoint(chainId, toBlock);
+    } catch (err) {
+      console.error(`[index] chain ${chainId} scan ${cursor}–${toBlock} failed:`, err.message);
+      break;
+    }
+    cursor = toBlock + 1;
+  }
+}
+
 /**
  * For a given event, resolve the set of wallet addresses that should be notified.
  */
@@ -159,6 +276,10 @@ export function startWatcher() {
 
   async function tick() {
     for (const { chainId, provider, contract, iface } of chainEntries) {
+      // Index first so the read-model is fresh, then emails. Index errors
+      // must not block the email path (and vice-versa).
+      try { await indexChain(chainId, provider, contract, iface); }
+      catch (err) { console.error(`[index] chain ${chainId} tick error:`, err.message); }
       await pollChain(chainId, provider, contract, iface);
     }
   }
