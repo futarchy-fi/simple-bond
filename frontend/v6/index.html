@@ -818,19 +818,21 @@
     try {
       if (!signer) throw new Error('Connect a wallet first');
       msg && (msg.innerHTML = `<div class="msg msg-info"><span class="spinner"></span>Approving USDS…</div>`);
-      const usds = new ethers.Contract(MAINNET_USDS, [
+      // Routed through the guarded writeContract factory so a wrong-chain
+      // wallet can't fire approve()/deposit() at the wrong address (I4).
+      const usds = writeContract(MAINNET_USDS, [
         'function allowance(address,address) view returns (uint256)',
         'function approve(address,uint256) returns (bool)',
-      ], signer);
+      ]);
       const cur = await usds.allowance(account, tokenAddr);
       if (cur < usdsAmount) {
         const tx = await usds.approve(tokenAddr, usdsAmount);
         await waitForTx(tx);
       }
       msg && (msg.innerHTML = `<div class="msg msg-info"><span class="spinner"></span>Depositing USDS…</div>`);
-      const susds = new ethers.Contract(tokenAddr, [
+      const susds = writeContract(tokenAddr, [
         'function deposit(uint256 assets, address receiver) returns (uint256)',
-      ], signer);
+      ]);
       const tx = await susds.deposit(usdsAmount, account);
       await waitForTx(tx);
       msg && (msg.innerHTML = `<div class="msg msg-success">Deposit complete. Click <strong>Create bond</strong> again.</div>`);
@@ -866,6 +868,17 @@
   const susdsRateCache = {}; // { addr: { sharesPerAsset, assetsPerShare, decimals, ts } }
   const SUSDS_RATE_TTL_MS = 5 * 60 * 1000;
 
+  // An error is "contract-level" (the token genuinely doesn't implement the
+  // 4626 surface → 1:1 is the correct answer) ONLY when the node decoded a
+  // response and it didn't match — BAD_DATA / CALL_EXCEPTION. Anything else
+  // (network drop, 5xx, timeout, batch/range rejection) is a TRANSPORT failure
+  // where we must NOT fabricate a rate, because a wrong rate is silently used
+  // to compute the real on-chain bond amount in submitCreate.
+  function isContractLevelMiss(err) {
+    const code = err && err.code;
+    return code === 'BAD_DATA' || code === 'CALL_EXCEPTION';
+  }
+
   async function susdsRate(tokenAddr) {
     const k = tokenAddr.toLowerCase();
     const cached = susdsRateCache[k];
@@ -884,10 +897,16 @@
       // a savings-rate token. We only use these as display estimates.
       sharesPerAsset = Number((shares * 1_000_000n) / unit) / 1_000_000;
       assetsPerShare = Number((assets * 1_000_000n) / unit) / 1_000_000;
-    } catch (_) {
-      // Token doesn't expose the 4626 surface → treat as 1:1.
+    } catch (err) {
+      if (!isContractLevelMiss(err)) {
+        // Transport/RPC failure. Do NOT cache and do NOT pretend it's 1:1 —
+        // return an explicit unavailable marker so callers refuse to compute
+        // amounts or render a fabricated number. (This is incident I1.)
+        return { unavailable: true, decimals: meta.decimals };
+      }
+      // Genuine 4626-less token (MockSUSDS, plain ERC-20) → 1:1 is correct.
     }
-    susdsRateCache[k] = { sharesPerAsset, assetsPerShare, decimals: meta.decimals, ts: Date.now() };
+    susdsRateCache[k] = { sharesPerAsset, assetsPerShare, decimals: meta.decimals, unavailable: false, ts: Date.now() };
     return susdsRateCache[k];
   }
 
@@ -897,6 +916,10 @@
     if (!usdStr || usdStr === '') return 0n;
     const usdNum = parseFloat(usdStr);
     if (!isFinite(usdNum) || usdNum < 0) return 0n;
+    // Refuse to convert against an unresolved rate — computing the on-chain
+    // amount with a fabricated 1:1 is exactly incident I1. Callers must check
+    // rate.unavailable before reaching a write.
+    if (!rate || rate.unavailable) throw new Error('sUSDS rate unavailable — cannot compute amount. Try again.');
     // shares = USDS * sharesPerAsset. Use 6-decimal multiplication for stability.
     const dec = rate.decimals;
     const usdUnits = ethers.parseUnits(usdStr, dec);
@@ -904,8 +927,11 @@
     return shares;
   }
 
-  // sUSDS BigInt → USD display string with 2-decimal formatting.
+  // sUSDS BigInt → USD display string with 2-decimal formatting. Shows an
+  // explicit placeholder rather than a fabricated number when the rate
+  // couldn't be fetched.
   function susdsBigIntToUsdString(susdsAmount, rate) {
+    if (!rate || rate.unavailable) return '—';
     if (!susdsAmount) return '0.00';
     const dec = rate.decimals;
     const usdUnits = (susdsAmount * BigInt(Math.round(rate.assetsPerShare * 1_000_000))) / 1_000_000n;
@@ -980,7 +1006,14 @@
   }
   function requireWalletOnActiveChain() {
     if (!signer) throw new Error('Connect a wallet first');
-    if (walletChainId != null && String(walletChainId) !== String(activeChainId)) {
+    // Fail CLOSED: if we can't confirm the wallet's chain, refuse the write
+    // rather than letting it fire at a same-address contract on the wrong
+    // chain (incident I4). walletChainId is set on connect + chainChanged and
+    // is no longer nulled on a transient RPC error.
+    if (walletChainId == null) {
+      throw new Error("Can't confirm your wallet's network. Reconnect your wallet and try again.");
+    }
+    if (String(walletChainId) !== String(activeChainId)) {
       const want = chain()?.name || `chain ${activeChainId}`;
       switchWalletNetwork().catch(() => {});
       _lastChainRejectedAt = Date.now();
@@ -1039,6 +1072,13 @@
       'function allowance(address,address) view returns (uint256)',
       'function approve(address,uint256) returns (bool)',
     ], withSigner ? signer : readProvider());
+  }
+  // Generic guarded write factory — the ONLY sanctioned way to bind a signer
+  // to an arbitrary contract+ABI. Every write path routes through one of these
+  // factories so the chain guard can never be skipped (incident I4).
+  function writeContract(addr, abi) {
+    requireWalletOnActiveChain();
+    return new ethers.Contract(addr, abi, signer);
   }
 
   // ─── My judge contract (localStorage) ──────────────────────────────────
@@ -1110,7 +1150,11 @@
     try {
       const net = await provider.getNetwork();
       walletChainId = Number(net.chainId);
-    } catch (_) { walletChainId = null; }
+    } catch (_) {
+      // Keep the last known chain id on a transient RPC error. Nulling it here
+      // used to make requireWalletOnActiveChain fail OPEN (skip the check).
+      // chainChanged events keep walletChainId authoritative.
+    }
     refreshNetworkBanner();
   }
 
@@ -1487,7 +1531,7 @@
         const cc = chain();
         let rate;
         try { rate = await susdsRate(cc.approvedToken); }
-        catch (_) { rate = { sharesPerAsset: 1, assetsPerShare: 1, decimals: 18 }; }
+        catch (_) { rate = { unavailable: true, decimals: 18 }; }
         bondListCache[bondListKey()] = { rows, rate, fetchedAt: Date.now() };
         return rows;
       }
@@ -1525,7 +1569,7 @@
       const cc = chain();
       let rate;
       try { rate = await susdsRate(cc.approvedToken); }
-      catch (_) { rate = { sharesPerAsset: 1, assetsPerShare: 1, decimals: 18 }; }
+      catch (_) { rate = { unavailable: true, decimals: 18 }; }
       bondListCache[bondListKey()] = { rows, rate, fetchedAt: Date.now() };
       // Best-effort: fetch claim previews via event logs (one batch)
       try {
@@ -1593,7 +1637,7 @@
     }
     // Cache the rate at render time. browseRowHtml reads from a module-scoped
     // _browseRenderRate so we don't have to thread the rate through the row.
-    _browseRenderRate = data.rate || { sharesPerAsset: 1, assetsPerShare: 1, decimals: 18 };
+    _browseRenderRate = data.rate || { unavailable: true, decimals: 18 };
     container.innerHTML = visible.map(r => browseRowHtml(r)).join('');
     container.querySelectorAll('.bond-list-item').forEach(item => {
       const bondId = item.dataset.bondid;
@@ -1605,7 +1649,7 @@
     });
   }
 
-  let _browseRenderRate = { sharesPerAsset: 1, assetsPerShare: 1, decimals: 18 };
+  let _browseRenderRate = { unavailable: true, decimals: 18 };
 
   function browseRowHtml(r) {
     const claim = r.claimPreview ? escapeHtml(r.claimPreview).split('\n')[0].slice(0, 220) : `<span class="mono">${r.claimHash.slice(0, 18)}…</span>`;
@@ -1724,12 +1768,11 @@
     const msg = $(`${kind === 'poster' ? 'pp' : 'cp'}-msg`);
     const setMsg = (html) => { if (msg) msg.innerHTML = html; };
     try {
-      requireWalletOnActiveChain();
       const c = chain();
       const addr = kind === 'poster' ? c.posterProfileRegistry : c.challengerProfileRegistry;
       if (!addr) throw new Error(`Missing ${kind}ProfileRegistry address in runtime-config`);
       const abi = window.SIMPLE_BOND_V6_REGISTRY_ABI;
-      const reg = new ethers.Contract(addr, abi, signer);
+      const reg = writeContract(addr, abi);
       setMsg(`<div class="msg msg-info"><span class="spinner"></span>Submitting registerProfile(content) to ${escapeHtml(kind === 'poster' ? 'PosterProfileRegistry' : 'ChallengerProfileRegistry')}…</div>`);
       // Preflight via eth_call so any contract revert surfaces with its
       // reason string before MetaMask pops up.
@@ -2341,13 +2384,14 @@
       // Live USD → sUSDS preview. The rate read is async; we render once
       // the helper resolves and then refresh on every keystroke off the
       // cached rate.
-      let stakeRate = { sharesPerAsset: 1, assetsPerShare: 1, decimals: 18 };
+      let stakeRate = { unavailable: true, decimals: 18 };
       const renderConv = () => {
         const fmt = (idVal, slotId) => {
           const n = parseFloat(idVal);
           const slot = $(slotId);
           if (!slot) return;
           if (!isFinite(n) || n <= 0) { slot.innerHTML = '&nbsp;'; return; }
+          if (!stakeRate || stakeRate.unavailable) { slot.innerHTML = 'sUSDS rate unavailable'; return; }
           const shares = stakeRate.sharesPerAsset * n;
           slot.innerHTML = `≈ ${shares.toFixed(stakeRate.sharesPerAsset === 1 ? 2 : 4)} sUSDS`;
         };
@@ -2563,6 +2607,9 @@
       // rate (or 1:1 for tokens without the 4626 surface). Stored on-chain
       // values are in sUSDS shares.
       const rate = await susdsRate(token);
+      if (!rate || rate.unavailable) {
+        throw new Error("Couldn't fetch the current sUSDS rate, so we won't guess the amount. Check your connection and try again.");
+      }
       const bondAmount = usdStringToSusdsBigInt(createState.bondAmount, rate);
       const challengeAmount = usdStringToSusdsBigInt(createState.challengeAmount, rate);
       const judgeFee = usdStringToSusdsBigInt(createState.judgeFee, rate);
@@ -2854,7 +2901,7 @@
 
       let tokenSym = '???', tokenDec = 18;
       try { const m = await tokenMeta(b.token); tokenSym = m.symbol; tokenDec = m.decimals; } catch (_) {}
-      let tokenRate = { sharesPerAsset: 1, assetsPerShare: 1, decimals: tokenDec };
+      let tokenRate = { unavailable: true, decimals: tokenDec };
       try { tokenRate = await susdsRate(b.token); } catch (_) {}
 
       const bondAmount = b.bondAmount;

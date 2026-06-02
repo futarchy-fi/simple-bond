@@ -14,7 +14,8 @@
     "e2e": "playwright test",
     "e2e:live": "playwright test --project live-mainnet --project live-sepolia",
     "e2e:local": "playwright test --project local",
-    "e2e:report": "playwright show-report"
+    "e2e:report": "playwright show-report",
+    "lint": "node scripts/lint-guardrails.mjs"
   },
   "repository": {
     "type": "git",
