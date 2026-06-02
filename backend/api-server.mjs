@@ -217,7 +217,11 @@ function handleUnsubscribe(req, res) {
 }
 
 function handleHealth(req, res) {
-  json(res, 200, { status: 'ok', uptime: process.uptime() });
+  // Per-chain indexer lag so a monitor can alert on a stalled read-model
+  // (a stalled indexer used to be served as a healthy HTTP 200).
+  let indexer = [];
+  try { indexer = db.indexerStatus(); } catch (_) { indexer = []; }
+  json(res, 200, { status: 'ok', uptime: process.uptime(), indexer });
 }
 
 function handleJudgeProfileGet(req, res) {
@@ -374,7 +378,12 @@ function handleBondsList(req, res) {
   const challenger = url.searchParams.get('challenger') || undefined;
   const limit = Math.min(parseInt(url.searchParams.get('limit') || '200', 10) || 200, 500);
   const rows = db.listBonds(chainId, { poster, judge, challenger, limit });
-  json(res, 200, { bonds: rows.map(serializeBond) });
+  // Attach indexer lag for this chain so the client can warn when the list
+  // may be stale and fall back to a direct read past a threshold.
+  let meta = null;
+  try { meta = (db.indexerStatus() || []).find((s) => s.chainId === chainId) || null; }
+  catch (e) { console.warn('[api] indexer meta unavailable:', e.message); }
+  json(res, 200, { bonds: rows.map(serializeBond), meta });
 }
 
 function handleBondGet(req, res, bondId) {

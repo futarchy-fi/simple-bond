@@ -93,6 +93,14 @@ db.exec(`
     chain_id INTEGER PRIMARY KEY,
     last_block INTEGER NOT NULL
   );
+
+  -- Latest chain head the indexer observed per chain, so /health can report
+  -- how far behind the read-model is (a stalled indexer must not look healthy).
+  CREATE TABLE IF NOT EXISTS chain_heads (
+    chain_id INTEGER PRIMARY KEY,
+    head_block INTEGER NOT NULL,
+    updated_at TEXT DEFAULT (datetime('now'))
+  );
 `);
 
 // --- Subscriptions ---
@@ -178,6 +186,13 @@ const upsertIndexCheckpoint = db.prepare(`
   INSERT INTO index_checkpoints (chain_id, last_block) VALUES (?, ?)
   ON CONFLICT(chain_id) DO UPDATE SET last_block=excluded.last_block
 `);
+
+const upsertChainHead = db.prepare(`
+  INSERT INTO chain_heads (chain_id, head_block, updated_at) VALUES (?, ?, datetime('now'))
+  ON CONFLICT(chain_id) DO UPDATE SET head_block=excluded.head_block, updated_at=datetime('now')
+`);
+const getAllChainHeads = db.prepare(`SELECT chain_id, head_block, updated_at FROM chain_heads`);
+const getAllIndexCheckpoints = db.prepare(`SELECT chain_id, last_block FROM index_checkpoints`);
 
 // --- Bonds read-model ---
 
@@ -288,6 +303,27 @@ export default {
   },
   setIndexCheckpoint(chainId, block) {
     upsertIndexCheckpoint.run(chainId, block);
+  },
+  setChainHead(chainId, headBlock) {
+    upsertChainHead.run(chainId, headBlock);
+  },
+  // Per-chain indexer status: { chainId, indexedThroughBlock, headBlock,
+  // blocksBehindHead, headUpdatedAt } for health reporting.
+  indexerStatus() {
+    const heads = {}; for (const r of getAllChainHeads.all()) heads[r.chain_id] = r;
+    const cps = {}; for (const r of getAllIndexCheckpoints.all()) cps[r.chain_id] = r.last_block;
+    const chainIds = new Set([...Object.keys(heads), ...Object.keys(cps)].map(Number));
+    return [...chainIds].sort((a, b) => a - b).map((chainId) => {
+      const head = heads[chainId] ? heads[chainId].head_block : null;
+      const indexed = cps[chainId] ?? null;
+      return {
+        chainId,
+        indexedThroughBlock: indexed,
+        headBlock: head,
+        blocksBehindHead: head != null && indexed != null ? Math.max(0, head - indexed) : null,
+        headUpdatedAt: heads[chainId] ? heads[chainId].updated_at : null,
+      };
+    });
   },
 
   // --- Bonds read-model ---

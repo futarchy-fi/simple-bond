@@ -123,6 +123,10 @@ async function indexChain(chainId, provider, contract, iface, opts = {}) {
   try { latestBlock = await provider.getBlockNumber(); }
   catch (err) { console.error(`[index] chain ${chainId} block number failed:`, err.message); return; }
 
+  // Record the observed head so /health can report indexer lag even when
+  // there's nothing new to scan.
+  db.setChainHead(chainId, latestBlock);
+
   const safeBlock = latestBlock - confirmations;
   const checkpoint = db.getIndexCheckpoint(chainId);
   const fromBlock = checkpoint !== null ? checkpoint + 1 : CHAINS[chainId].startBlock;

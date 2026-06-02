@@ -113,6 +113,28 @@ describe("indexer resilience", function () {
     expect(r.status, r.stdout + r.stderr).to.equal(0);
   });
 
+  it("reports indexer lag via indexerStatus + /health (stalled indexer is visible)", () => {
+    const src = `
+      import db from './backend/db.mjs';
+      import { startApiServer } from './backend/api-server.mjs';
+      db.setIndexCheckpoint(1, 1000);
+      db.setChainHead(1, 1500);
+      const s = db.indexerStatus().find(x => x.chainId === 1);
+      const assert = (c,m)=>{ if(!c){ console.error('FAIL', m); process.exit(2);} };
+      assert(s.indexedThroughBlock === 1000, 'indexed');
+      assert(s.headBlock === 1500, 'head');
+      assert(s.blocksBehindHead === 500, 'lag '+s.blocksBehindHead);
+      const srv = startApiServer({ port: 3392, host: '127.0.0.1', onListen: async () => {
+        const h = await (await fetch('http://127.0.0.1:3392/api/notify/health')).json();
+        assert(Array.isArray(h.indexer), 'health.indexer array');
+        assert(h.indexer.find(x=>x.chainId===1).blocksBehindHead === 500, 'health lag');
+        console.log('OK'); srv.close(); process.exit(0);
+      }});
+    `;
+    const r = runEsm(src);
+    expect(r.status, r.stdout + r.stderr).to.equal(0);
+  });
+
   it("does not clobber challenge_count to 0 when getChallengeCount fails", () => {
     const src = `
       import { indexBondState } from './backend/watcher.mjs';
