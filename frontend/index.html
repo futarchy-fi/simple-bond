@@ -1627,6 +1627,34 @@
       titleEl.textContent = 'No judge contract yet';
       hintEl.textContent = '';
       statusEl.textContent = '';
+      // Recovery path: if a previous deploy succeeded but activation failed
+      // (two separate txs), the contract exists on-chain but this browser may
+      // have lost the address. Let the user paste it back in to resume.
+      const wrap = document.createElement('div');
+      wrap.style.cssText = 'margin-top:10px;';
+      wrap.innerHTML = `
+        <details>
+          <summary style="cursor:pointer;font-size:13px;color:var(--muted);">Already deployed a judge? Link it here</summary>
+          <div class="row" style="gap:8px;margin-top:8px;align-items:center;">
+            <input id="linkJudgeAddr" placeholder="0x… your ManualJudgeV6 address" style="flex:1;min-width:0;">
+            <button id="linkJudgeBtn" class="secondary">Link</button>
+          </div>
+          <div id="linkJudgeMsg" class="hint" style="margin-top:6px;"></div>
+        </details>`;
+      actions.appendChild(wrap);
+      $('linkJudgeBtn').addEventListener('click', async () => {
+        const lm = $('linkJudgeMsg');
+        const a = $('linkJudgeAddr').value.trim();
+        if (!ethers.isAddress(a)) { lm.innerHTML = '<span class="msg-error">Not a valid address.</span>'; return; }
+        try {
+          const code = await readProvider().getCode(a);
+          if (!code || code === '0x') { lm.innerHTML = `<span class="msg-error">No contract code at ${short(a)} on ${chain()?.name}.</span>`; return; }
+          setMyJudgeContract(ethers.getAddress(a));
+          refreshOnboarding();
+        } catch (e) {
+          lm.innerHTML = `<span class="msg-error">${escapeHtml(friendlyError(e))}</span>`;
+        }
+      });
       return;
     }
 
@@ -1721,6 +1749,13 @@
       if (!deployedCode || deployedCode === '0x') {
         throw new Error(`Deploy did not land — no contract code at ${addr}. If you use MetaMask Smart Transactions, turn it off (Settings → Transactions/Experimental → Smart Transactions) and retry.`);
       }
+      // Persist the address NOW, before activation. The deploy and
+      // acceptOperatorRole are two separate transactions; if activation
+      // fails/stalls here we must not lose the deployed contract — otherwise
+      // the page forgets it and offers to deploy a second one, orphaning the
+      // first. With it saved, refreshOnboarding shows the "Activate judge"
+      // button so the user can finish step 2 later.
+      setMyJudgeContract(addr);
       log(`Deployed at ${addr}. Activating…`);
       msg && (msg.innerHTML = `<div class="msg msg-info"><span class="spinner"></span>Deployed at ${short(addr)}. Sending acceptOperatorRole…</div>`);
       const judgeC = manualJudgeContract(addr, true);

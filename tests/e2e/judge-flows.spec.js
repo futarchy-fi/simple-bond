@@ -72,7 +72,7 @@ test.describe("E — judge flows", () => {
         await page.reload();
         // The judge-offering UI lives inside a collapsed <details> so it
         // doesn't distract people who just want to browse profiles.
-        await page.locator("#judgeOfferDetails summary").click();
+        await page.locator("#judgeOfferDetails > summary").click();
         await page.waitForSelector("#jp-addr");
         // The "Use default judge" button on the judges side was removed —
         // pointing a profile at a judge you don't control is nonsense.
@@ -112,7 +112,7 @@ test.describe("E — judge flows", () => {
         await page.goto("/#judges");
         await switchAccount(KEYS.challenger2);
         await page.reload();
-        await page.locator("#judgeOfferDetails summary").click();
+        await page.locator("#judgeOfferDetails > summary").click();
         await page.waitForSelector("#jp-deploy-new");
         // Capture the post-deploy address from #jp-addr (the helper auto-fills it).
         await page.locator("#jp-deploy-new").click();
