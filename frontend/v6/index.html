@@ -1425,7 +1425,73 @@
   const bondListCache = {};
   function bondListKey() { return `chain:${activeChainId}`; }
 
+  // ─── Indexer read API ──────────────────────────────────────────────────
+  // List/history reads go through the backend indexer (same origin as the
+  // notify API) instead of scanning eth_getLogs from the browser, which
+  // free-tier RPCs reject. Returns null on any failure so callers fall back
+  // to the direct-RPC path.
+  function indexerBondsBase() {
+    const n = window.SIMPLE_BOND_CONFIG?.notifyApiBase || '';
+    try { return new URL(n).origin + '/api/bonds'; } catch (_) { return null; }
+  }
+  async function indexerBonds(params = {}) {
+    const base = indexerBondsBase();
+    if (!base) return null;
+    const qs = new URLSearchParams({ chainId: String(activeChainId), ...params });
+    try {
+      const r = await withTimeout(
+        fetch(`${base}?${qs.toString()}`).then(x => (x.ok ? x.json() : null)),
+        8000, null);
+      return r && Array.isArray(r.bonds) ? r.bonds : null;
+    } catch (_) { return null; }
+  }
+  async function indexerBond(bondId) {
+    const base = indexerBondsBase();
+    if (!base) return null;
+    try {
+      const r = await withTimeout(
+        fetch(`${base}/${bondId}?chainId=${activeChainId}`).then(x => (x.ok ? x.json() : null)),
+        8000, null);
+      return r && r.bond ? r : null;
+    } catch (_) { return null; }
+  }
+  // Map an indexer bond record into the row shape the list UI expects.
+  function rowFromIndexerBond(b) {
+    const pendingCount = Number(b.pendingCount || 0);
+    return {
+      bondId: b.bondId,
+      poster: b.poster,
+      judge: b.judge,
+      token: b.token,
+      bondAmount: BigInt(b.bondAmount || '0'),
+      challengeAmount: BigInt(b.challengeAmount || '0'),
+      claimHash: b.claimHash,
+      claimVersion: Number(b.claimVersion || 0),
+      judgeProfileId: Number(b.judgeProfileId || 0),
+      pendingCount,
+      status: b.settled ? 'settled' : (b.closed ? 'closed' : (pendingCount > 0 ? 'disputed' : 'open')),
+      settled: !!b.settled,
+      closed: !!b.closed,
+      claimPreview: b.claimContent || '',
+    };
+  }
+
   async function loadBrowseData() {
+    // Prefer the indexer: one HTTP call, claim previews included, no RPC
+    // range limits. Fall through to direct-RPC enumeration if it's empty
+    // or unreachable.
+    try {
+      const idx = await indexerBonds({ limit: '200' });
+      if (idx && idx.length) {
+        const rows = idx.map(rowFromIndexerBond);
+        const cc = chain();
+        let rate;
+        try { rate = await susdsRate(cc.approvedToken); }
+        catch (_) { rate = { sharesPerAsset: 1, assetsPerShare: 1, decimals: 18 }; }
+        bondListCache[bondListKey()] = { rows, rate, fetchedAt: Date.now() };
+        return rows;
+      }
+    } catch (_) { /* fall back to RPC enumeration */ }
     try {
       const bc = bondReadContract();
       const nextId = Number(await withTimeout(bc.nextBondId(), 10000, 0n));
@@ -2637,24 +2703,42 @@
     let challengerIds = [];
     let judgeIds = [];
 
-    try {
-      const filter = bc.filters.BondCreated(null, account);
-      const logs = await withTimeout(queryFilterChunked(bc, filter, fromBlock), 25000, []);
-      posterIds = logs.map(l => Number(l.args.bondId));
-    } catch (err) { log(`Poster events failed: ${friendlyError(err)}`, 'err'); }
+    // Indexer-first per role; fall back to chunked eth_getLogs if it's
+    // unreachable (returns null). The judge role keys off the on-chain judge
+    // contract address, which the indexer filters server-side.
+    const idxPoster = await indexerBonds({ poster: account });
+    if (idxPoster) {
+      posterIds = idxPoster.map(b => b.bondId);
+    } else {
+      try {
+        const filter = bc.filters.BondCreated(null, account);
+        const logs = await withTimeout(queryFilterChunked(bc, filter, fromBlock), 25000, []);
+        posterIds = logs.map(l => Number(l.args.bondId));
+      } catch (err) { log(`Poster events failed: ${friendlyError(err)}`, 'err'); }
+    }
 
-    try {
-      const filter = bc.filters.Challenged(null, null, account);
-      const logs = await withTimeout(queryFilterChunked(bc, filter, fromBlock), 25000, []);
-      challengerIds = [...new Set(logs.map(l => Number(l.args.bondId)))];
-    } catch (err) { log(`Challenger events failed: ${friendlyError(err)}`, 'err'); }
+    const idxChallenger = await indexerBonds({ challenger: account });
+    if (idxChallenger) {
+      challengerIds = idxChallenger.map(b => b.bondId);
+    } else {
+      try {
+        const filter = bc.filters.Challenged(null, null, account);
+        const logs = await withTimeout(queryFilterChunked(bc, filter, fromBlock), 25000, []);
+        challengerIds = [...new Set(logs.map(l => Number(l.args.bondId)))];
+      } catch (err) { log(`Challenger events failed: ${friendlyError(err)}`, 'err'); }
+    }
 
     if (myJudge) {
-      try {
-        const filter = bc.filters.BondCreated(null, null, myJudge);
-        const logs = await withTimeout(queryFilterChunked(bc, filter, fromBlock), 25000, []);
-        judgeIds = logs.map(l => Number(l.args.bondId));
-      } catch (err) { log(`Judge events failed: ${friendlyError(err)}`, 'err'); }
+      const idxJudge = await indexerBonds({ judge: myJudge });
+      if (idxJudge) {
+        judgeIds = idxJudge.map(b => b.bondId);
+      } else {
+        try {
+          const filter = bc.filters.BondCreated(null, null, myJudge);
+          const logs = await withTimeout(queryFilterChunked(bc, filter, fromBlock), 25000, []);
+          judgeIds = logs.map(l => Number(l.args.bondId));
+        } catch (err) { log(`Judge events failed: ${friendlyError(err)}`, 'err'); }
+      }
     }
 
     await Promise.all([
@@ -3242,12 +3326,17 @@
 
       // Bonds judged by this address
       let bondsJudged = [];
-      try {
-        const bc = bondReadContract();
-        const fromBlock = c?.deployBlock || 0;
-        const logs = await withTimeout(queryFilterChunked(bc, bc.filters.BondCreated(null, null, entry.judgeContract), fromBlock), 25000, []);
-        bondsJudged = logs.map(l => ({ bondId: Number(l.args.bondId), claim: String(l.args.claimContent || '') }));
-      } catch (_) {}
+      const idxJudged = await indexerBonds({ judge: entry.judgeContract });
+      if (idxJudged) {
+        bondsJudged = idxJudged.map(b => ({ bondId: b.bondId, claim: String(b.claimContent || '') }));
+      } else {
+        try {
+          const bc = bondReadContract();
+          const fromBlock = c?.deployBlock || 0;
+          const logs = await withTimeout(queryFilterChunked(bc, bc.filters.BondCreated(null, null, entry.judgeContract), fromBlock), 25000, []);
+          bondsJudged = logs.map(l => ({ bondId: Number(l.args.bondId), claim: String(l.args.claimContent || '') }));
+        } catch (_) {}
+      }
 
       view.innerHTML = `
         <div class="jp-header">
