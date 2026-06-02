@@ -201,7 +201,9 @@ const upsertBondStmt = db.prepare(`
     -- keep an existing non-empty claim_content if the update lacks one
     claim_content=CASE WHEN excluded.claim_content != '' THEN excluded.claim_content ELSE bonds.claim_content END,
     claim_version=excluded.claim_version, pending_count=excluded.pending_count,
-    challenge_count=excluded.challenge_count, settled=excluded.settled, closed=excluded.closed,
+    -- preserve prior count when this update couldn't read it (null)
+    challenge_count=CASE WHEN excluded.challenge_count IS NULL THEN bonds.challenge_count ELSE excluded.challenge_count END,
+    settled=excluded.settled, closed=excluded.closed,
     created_block=COALESCE(bonds.created_block, excluded.created_block), updated_at=datetime('now')
 `);
 const getBondStmt = db.prepare(`SELECT * FROM bonds WHERE chain_id=? AND bond_id=?`);
@@ -307,7 +309,7 @@ export default {
       claim_content: bond.claim_content ?? '',
       claim_version: bond.claim_version ?? 0,
       pending_count: bond.pending_count ?? 0,
-      challenge_count: bond.challenge_count ?? 0,
+      challenge_count: bond.challenge_count ?? null,
       settled: bond.settled ? 1 : 0,
       closed: bond.closed ? 1 : 0,
       created_block: bond.created_block ?? null,

@@ -28,7 +28,10 @@ function trimTrailingSlash(url) {
 export const NOTIFY_BASE_URL = trimTrailingSlash(process.env.BOND_NOTIFY_BASE_URL || 'https://bond.futarchy.ai');
 export const FRONTEND_BASE_URL = trimTrailingSlash(process.env.SIMPLE_BOND_FRONTEND_URL || 'https://bond.futarchy.ai');
 
-export const DB_PATH = resolve(__dirname, '..', 'data', 'bond-notify.db');
+// Override with BOND_NOTIFY_DB_PATH (tests use a temp file for isolation).
+export const DB_PATH = process.env.BOND_NOTIFY_DB_PATH
+  ? resolve(process.env.BOND_NOTIFY_DB_PATH)
+  : resolve(__dirname, '..', 'data', 'bond-notify.db');
 
 export const POLL_INTERVAL_MS = 30_000;
 export const CONFIRMATION_BLOCKS = { 100: 12, 1: 12, 11155111: 6 };

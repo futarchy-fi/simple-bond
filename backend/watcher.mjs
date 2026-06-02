@@ -21,7 +21,11 @@ async function indexBondState(contract, chainId, bondId, claim) {
     console.error(`[index] chain ${chainId} bond ${bondId} read failed:`, err.message);
     return;
   }
-  let challengeCount = 0;
+  // challenge_count is a SECONDARY read. If it fails, pass null so the upsert
+  // preserves the prior good value rather than clobbering an active bond's
+  // count to 0 (incident I9/I10 class — a failed read must not look like
+  // "zero challenges").
+  let challengeCount = null;
   try { challengeCount = Number(await contract.getChallengeCount(bondId)); } catch {}
 
   db.upsertBond({
@@ -46,8 +50,8 @@ async function indexBondState(contract, chainId, bondId, claim) {
     closed: b.closed,
   });
 
-  // Refresh challenge rows + statuses from chain.
-  for (let i = 0; i < challengeCount; i++) {
+  // Refresh challenge rows + statuses from chain (skip if count unknown).
+  for (let i = 0; i < (challengeCount || 0); i++) {
     try {
       const c = await contract.getChallenge(bondId, i);
       db.upsertChallenge({
@@ -92,10 +96,28 @@ async function indexLogs(contract, chainId, logs, iface) {
   }
 }
 
+const LOG_WINDOW_RETRIES = 3;
+
+// getLogs for one window with bounded retry/backoff. Absorbs a transient
+// free-tier blip (the 408/5xx that used to stall the whole tick) without
+// advancing the checkpoint past an unread window — so no events are ever
+// silently skipped (a skip-and-advance would lose data). `sleep` is injectable
+// for tests. Throws after the last attempt; the caller leaves the checkpoint
+// before the failed window so the next tick retries it.
+async function getLogsWithRetry(provider, params, sleep = ms => new Promise(r => setTimeout(r, ms))) {
+  let lastErr;
+  for (let attempt = 0; attempt < LOG_WINDOW_RETRIES; attempt++) {
+    try { return await provider.getLogs(params); }
+    catch (err) { lastErr = err; if (attempt < LOG_WINDOW_RETRIES - 1) await sleep(250 * (attempt + 1)); }
+  }
+  throw lastErr;
+}
+
 // Cursor-based indexing pass, mirroring pollChain but DB-only and using a
 // separate checkpoint so it can backfill from startBlock without re-emailing.
-async function indexChain(chainId, provider, contract, iface) {
+async function indexChain(chainId, provider, contract, iface, opts = {}) {
   if ((CHAINS[chainId] || {}).bondVersion !== 6) return; // v6 read-model only
+  const sleep = opts.sleep;
   const confirmations = CONFIRMATION_BLOCKS[chainId] || 12;
   let latestBlock;
   try { latestBlock = await provider.getBlockNumber(); }
@@ -110,16 +132,21 @@ async function indexChain(chainId, provider, contract, iface) {
   while (cursor <= safeBlock) {
     const toBlock = Math.min(cursor + BLOCK_CHUNK - 1, safeBlock);
     try {
-      const logs = await provider.getLogs({ address: CHAINS[chainId].contract, fromBlock: cursor, toBlock });
+      const logs = await getLogsWithRetry(provider, { address: CHAINS[chainId].contract, fromBlock: cursor, toBlock }, sleep);
       if (logs.length > 0) await indexLogs(contract, chainId, logs, iface);
       db.setIndexCheckpoint(chainId, toBlock);
     } catch (err) {
-      console.error(`[index] chain ${chainId} scan ${cursor}–${toBlock} failed:`, err.message);
+      // Window still failing after retries — stop this tick WITHOUT advancing
+      // the checkpoint so the next tick resumes from here. No data is skipped;
+      // a persistent stall is surfaced via the health lag signal (tier d).
+      console.error(`[index] chain ${chainId} scan ${cursor}–${toBlock} failed after retries:`, err.message);
       break;
     }
     cursor = toBlock + 1;
   }
 }
+
+export { indexChain, indexLogs, indexBondState, getLogsWithRetry };
 
 /**
  * For a given event, resolve the set of wallet addresses that should be notified.
