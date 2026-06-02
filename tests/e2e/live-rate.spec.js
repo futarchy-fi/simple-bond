@@ -9,20 +9,23 @@ test.describe("live sUSDS rate (I1)", () => {
     test.skip(({ baseURL }) => !/bond\.futarchy\.(fi|ai)/.test(baseURL || ""), "mainnet host only");
 
     test("$100 converts to a real sUSDS amount in [85, 96], not 100", async ({ page }) => {
-        test.setTimeout(45_000);
-        // Read the preview, retrying across reloads if the rate is transiently
-        // unavailable (a real RPC blip is infra, not a code bug). Fail only on
-        // a fabricated/wrong NUMBER — that's the I1 signal.
+        test.setTimeout(40_000);
+        // Same load path as the (reliable) judge-resolution smoke: one default
+        // goto, then reach the Stake step.
+        await page.goto("/#create");
+        await page.fill("#cb-claim", "live rate smoke");
+        await page.click("#wizNext");
+        await page.waitForSelector("#cb-bond");
+
+        // Read the preview; if the rate is transiently unavailable (infra, not
+        // a code bug) re-type to retrigger the read a couple of times.
         let amount = null;
         for (let attempt = 0; attempt < 3 && amount === null; attempt++) {
-            await page.goto("/#create");
-            await page.fill("#cb-claim", "live rate smoke");
-            await page.click("#wizNext");
-            await page.waitForSelector("#cb-bond");
+            await page.fill("#cb-bond", attempt % 2 === 0 ? "100" : "100 ");
             await page.fill("#cb-bond", "100");
-            await expect(page.locator("#cb-bond-conv")).toContainText(/sUSDS|unavailable/i, { timeout: 12_000 });
+            await expect(page.locator("#cb-bond-conv")).toContainText(/sUSDS|unavailable/i, { timeout: 10_000 });
             const txt = (await page.locator("#cb-bond-conv").textContent()) || "";
-            if (/unavailable/i.test(txt)) continue; // transient — retry
+            if (/unavailable/i.test(txt)) { await page.waitForTimeout(1500); continue; }
             const m = txt.match(/([\d,.]+)\s*sUSDS/);
             if (m) amount = parseFloat(m[1].replace(/,/g, ""));
         }
