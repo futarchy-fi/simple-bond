@@ -371,6 +371,29 @@ const test = base.extend({
             { deployed, defaultKey: KEYS.poster }
         );
 
+        // Fault injection: intercept the JSON-RPC endpoint the page reads from
+        // and return a transport error when an armed rule matches the request
+        // body. Lets tests reproduce the literal production failures (a 500/408
+        // on a specific eth_call selector or eth_getLogs) that free-tier RPCs
+        // throw — which the mock wallet + always-up Hardhat node never do.
+        const faultRef = { rule: null };
+        await page.route(deployed.rpc, async (route) => {
+            const rule = faultRef.rule;
+            if (rule) {
+                const body = route.request().postData() || "";
+                if (!rule.bodyIncludes || body.includes(rule.bodyIncludes)) {
+                    return route.fulfill({
+                        status: rule.status || 500,
+                        contentType: "application/json",
+                        body: JSON.stringify({ error: "injected RPC fault" }),
+                    });
+                }
+            }
+            return route.continue();
+        });
+        page.injectRpcFault = (rule) => { faultRef.rule = rule; };
+        page.clearRpcFault = () => { faultRef.rule = null; };
+
         await use(page);
     },
 
