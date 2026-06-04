@@ -52,6 +52,20 @@ describe("guardrail linter", function () {
       .to.not.include("G4");
   });
 
+  it("G5 — detects a keyed provider URL (would block a frontend key leak)", () => {
+    const src = `
+      import { detectKeyLeak } from ${JSON.stringify(LINTER)};
+      const leak = detectKeyLeak('rpc:"https://eth-mainnet.g.alchemy.com/v2/AbCdEf01234567"');
+      const clean = detectKeyLeak('rpc:"https://ethereum-rpc.publicnode.com"');
+      process.stdout.write(JSON.stringify({ leak, clean }));
+    `;
+    const r = spawnSync(process.execPath, ["--input-type=module", "-e", src], { cwd: ROOT, encoding: "utf8" });
+    expect(r.status, r.stderr).to.equal(0);
+    const out = JSON.parse(r.stdout);
+    expect(out.leak).to.equal(true);
+    expect(out.clean).to.equal(false);
+  });
+
   it("the live tree passes its own baseline (the gate is green)", () => {
     const r = spawnSync(process.execPath, [LINTER], { cwd: ROOT, encoding: "utf8" });
     expect(r.status, r.stdout + r.stderr).to.equal(0);

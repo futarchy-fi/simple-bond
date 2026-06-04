@@ -125,6 +125,32 @@ function check(file) {
   return lintSource(file, readFileSync(resolve(ROOT, file), 'utf8'));
 }
 
+// G5 — a keyed RPC/provider URL must NEVER appear in a publicly-served frontend
+// file (static bundle = exfiltratable key + billing-drain). Keyed RPCs live
+// backend-only. Scans the whole frontend/ surface, not just index.html.
+const FRONTEND_FILES = ['frontend/index.html', 'frontend/runtime-config.js', 'frontend/v6/index.html'];
+export function detectKeyLeak(text) {
+  const patterns = [
+    /[a-z0-9-]*\.g\.alchemy\.com\/v2\/[A-Za-z0-9_-]{8,}/i,
+    /[a-z0-9-]*\.infura\.io\/v3\/[A-Za-z0-9]{8,}/i,
+    /[a-z0-9-]+\.quiknode\.pro\/[A-Za-z0-9]{8,}/i,
+    /[a-z0-9-]*\.chainstack\.com\/[A-Za-z0-9]{8,}/i,
+  ];
+  return patterns.some((re) => re.test(text));
+}
+function checkKeyLeak() {
+  const v = [];
+  for (const f of FRONTEND_FILES) {
+    const abs = resolve(ROOT, f);
+    if (!existsSync(abs)) continue;
+    const raw = readFileSync(abs, 'utf8');
+    raw.split('\n').forEach((line, i) => {
+      if (detectKeyLeak(line)) v.push({ rule: 'G5', file: f, line: i + 1, text: '(keyed provider URL redacted)' });
+    });
+  }
+  return v;
+}
+
 function countsFrom(violations) {
   const c = {};
   for (const v of violations) {
@@ -136,7 +162,7 @@ function countsFrom(violations) {
 
 function main() {
 const files = [FRONTEND, ...BACKEND].filter(f => existsSync(resolve(ROOT, f)));
-const all = files.flatMap(check);
+const all = [...files.flatMap(check), ...checkKeyLeak()];
 const counts = countsFrom(all);
 
 if (process.argv.includes('--update-baseline')) {
@@ -153,6 +179,7 @@ const RULE_DESC = {
   G2: 'fabricated 1:1 sUSDS rate (RC1/I1) — return {unavailable:true} on transport failure',
   G3: 'signer bound outside a write factory (RC4/I4) — route through writeContract/*WriteContract',
   G4: 'direct getLogs/queryFilter in frontend (RC2/I9) — use queryFilterChunked or the indexer',
+  G5: 'keyed RPC/provider URL in a public frontend file — keep keyed RPCs backend-only',
 };
 
 // Report regressions (count over baseline).

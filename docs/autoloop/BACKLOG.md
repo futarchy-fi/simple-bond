@@ -18,7 +18,9 @@ concrete, sequenced, testable items. The RCA gaps below are ready to pick up now
 ## B. Backend reliability (RPC-independent, on the GCP box)
 - Promote the indexer to the authoritative read+point-read backend; reduce browser→RPC to near-zero.
 - FallbackProvider/keyed-RPC, reorg handling, dead-letter for permanently-failed windows, health SLOs.
-- (S1) wire the keyed RPC backend-only when the owner provides it; until then, harden free-RPC failover.
+- (S1) DONE 2026-06-04: keyed Alchemy RPC wired backend-only on the VM (MAINNET_RPC); preflight
+  warning cleared for chain 1; lint G5 now blocks any keyed URL leaking into frontend/. Sepolia
+  still on free publicnode (provide a Sepolia key to close).
 
 ## C. v0.7 mechanism (grounded in SPEC_V06.md, motivated by UX)
 - To be designed by iteration 1: identify the smallest mechanism changes that most improve UX
