@@ -343,3 +343,24 @@
 - Sepolia deployer 0x693E…b43d still ≈ 0.0338 ETH (< 0.05) → live journey still parked.
 - Next (BACKLOG.md): #3 README Contract Interface -> deployed V6 ABI (docs) → #4 docs-as-test ABI-signature assertion →
   optionally #5-#8 (backend crash-guard, Sepolia monitor, email copy, alert->inline) → then wind down.
+
+## Iteration 27 — 2026-06-05 — backlog #3+#4: README interface -> compiled ABI + signature docs-as-test (PROGRESS)
+- Closed the signature-drift class that survived 24 iterations. #3: the README "## Contract Interface" documented RETIRED
+  v0.5 signatures under a "v0.6 is live" banner (createBond had a removed `deadline` + omitted maxChallenges/judgeProfileId/
+  claimContent; concede/ruleFor*/claimTimeout/getChallenge/ruling*Deadline omitted the per-challenge index `i`). Rewrote it
+  into two grouped solidity blocks — SimpleBond core (SimpleBondV6) and the ManualJudgeV6 ruling wrapper (bondContract-first
+  args) — with signatures matching the COMPILED ABIs exactly, plus a V7-only note (claim(token)/credits(recipient,token),
+  pending-set maxChallenges). Anti-overclaim/"mainnet stays v0.6" framing kept intact.
+- #4: extended test/tooling/docsAccuracy.test.js — parses the README Contract Interface solidity fences, routes ruleFor*/
+  reject* to the ManualJudgeV6 ABI and the rest to SimpleBondV6, and asserts each documented function EXISTS and its param
+  COUNT matches the compiled ABI input count (ABI read via hardhat artifacts.readArtifact, the authoritative source — not
+  prose/abi.js). Non-vacuity proven: dropping `i` from concede in the README -> RED "concede: README documents 2 arg(s) but
+  SimpleBondV6 ABI has 3"; restored -> green.
+- Adversarial panel 3/3 PASS. A transient TS diagnostic flagged a verifier scratch file (_verify_abis.js) — checked git
+  status myself: already cleaned, tree is only README.md + docsAccuracy.test.js.
+- Gates re-run MYSELF (sequential): full `npx hardhat test` 999 passing / 0 failing (×2 stable); docsAccuracy 15 passing
+  (12 original + 3 new); lint EXIT=0 (g1 40). No docker e2e (docs+test only, no frontend change). docDrift now also guards
+  signatures, not just version/address. Burn-down: docDrift stays 0 but its coverage widened.
+- Sepolia deployer 0x693E…b43d still ≈ 0.0338 ETH (< 0.05) → live journey still parked.
+- All 4 HIGH-value backlog items (#1-#4) now DONE. Next: optional medium items #5 (backend crash-guard) → #6 (Sepolia
+  monitor) → #7 (templates email copy) → #8 (alert->inline), then WIND DOWN to funding/main-green checks until 2026-06-09.

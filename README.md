@@ -114,32 +114,67 @@ If the judge doesn't rule by the ruling deadline, anyone can call `claimTimeout(
 
 ## Contract Interface
 
+These signatures match the deployed `SimpleBondV6` ABI on Ethereum mainnet
+(`0x6B24380B1980db3e2DfDd2b62f5ed3E7E88DFA43`). Challenges live in a per-bond
+FIFO list, so every per-challenge entrypoint and view takes the challenge index
+`i` (0-based). Argument order and arity below are verified against the compiled
+ABIs by `test/tooling/docsAccuracy.test.js`.
+
+### SimpleBond core (`SimpleBondV6`)
+
 ```solidity
-// Create a bond asserting a claim
-createBond(token, bondAmount, challengeAmount, judgeFee, judge, deadline, acceptanceDelay, rulingBuffer, metadata) → bondId
+// Create a bond asserting a claim. Returns the new bondId.
+// (No `deadline` arg — V6 derives the ruling window from acceptanceDelay + rulingBuffer.)
+createBond(token, bondAmount, challengeAmount, judgeFee, judge, acceptanceDelay, rulingBuffer, maxChallenges, judgeProfileId, claimContent) -> bondId
 
-// Challenge a bond (deposit challengeAmount)
-challenge(bondId, metadata)
+// Challenge a bond (deposit challengeAmount). expectedVersion guards against the
+// claim evolving under you; content is the challenger's reasoning. Returns the index.
+challenge(bondId, expectedVersion, content) -> challengeIndex
 
-// Poster concedes the claim is wrong (everyone refunded)
-concede(bondId, metadata)
+// Poster concedes a specific challenge `i` is right (that party is refunded/paid).
+concede(bondId, i, content)
 
-// Judge rules (feeCharged = 0..judgeFee for fee waiver)
-ruleForChallenger(bondId, feeCharged)
-ruleForPoster(bondId, feeCharged)
-
-// Poster withdraws when no pending challenges
+// Poster withdraws the bond when it has no pending challenges.
 withdrawBond(bondId)
 
-// Anyone triggers timeout if judge missed deadline
-claimTimeout(bondId)
+// Anyone triggers a per-challenge timeout if the judge missed the ruling deadline.
+claimTimeout(bondId, i)
 
 // Views
-rulingWindowStart(bondId) → timestamp
-rulingDeadline(bondId) → timestamp
-getChallengeCount(bondId) → count
-getChallenge(bondId, index) → (challenger, status, metadata)
+getChallengeCount(bondId) -> count
+getChallenge(bondId, index) -> challenge  // (challenger, status, timestamp, challengeAtVersion, claimHashAtChallenge, metadataHash, rulingMetadataHash)
+rulingWindowStart(bondId, i) -> timestamp
+rulingDeadline(bondId, i) -> timestamp
+concessionDeadline(bondId, i) -> timestamp
 ```
+
+### Ruling via the `ManualJudgeV6` wrapper
+
+Rulings are NOT called on the bond contract directly by the UI — they go through
+the `ManualJudgeV6` wrapper (`0xd5C580e86535C4D66238eB2B9C4270b9a129993e`), which
+takes the target `bondContract` as its first argument and forwards to the bond.
+`feeCharged` may be `0..judgeFee` (fee waiver). `i` is the challenge index.
+
+```solidity
+// Judge rules for the poster on challenge `i` (poster keeps the claim).
+ruleForPoster(bondContract, bondId, i, feeCharged, content)
+
+// Judge rules for the challenger on challenge `i` (bond settles, others refunded).
+ruleForChallenger(bondContract, bondId, i, feeCharged, content)
+
+// Judge rejects a single challenge `i` as out-of-scope (that challenger refunded).
+rejectChallenge(bondContract, bondId, i, content)
+
+// Judge voids the whole bond before settlement (everyone refunded).
+rejectBond(bondContract, bondId, content)
+```
+
+> **Sepolia / staging runs `SimpleBondV7`**, which is `SimpleBondV6` plus a
+> per-address pull-payment credit ledger: it ADDS `claim(token) -> amount`
+> (withdraw your accrued refund credits for a token) and the view
+> `credits(recipient, token) -> amount`. V7 also redefines the `maxChallenges`
+> cap to bound the **currently-pending** challenge set (vs V6's total-ever count).
+> All the V6 signatures above carry over unchanged. Mainnet stays on `v0.6`.
 
 ## Deploy
 

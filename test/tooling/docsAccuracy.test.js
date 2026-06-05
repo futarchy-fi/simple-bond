@@ -193,3 +193,143 @@ describe("docs accuracy (doc-as-test, RCA gap #7 / I11 prose-drift)", function (
     ).to.match(/testnet-first|separate later gate|before any\s*\n?\s*mainnet cutover|later gate/);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Backlog #4: the README "Contract Interface" solidity block must EXACTLY match
+// the deployed ABIs. This is the costliest recurring doc-error class (retired-
+// version signatures shown under a "v0.6 is live" banner) — it survived 24
+// iterations as prose. Here we PARSE the documented signatures and assert, per
+// function, that it EXISTS in the right compiled ABI AND its documented param
+// COUNT matches the ABI input count. The compiled ABI (not abi.js / prose) is
+// the source of truth, read via hardhat artifacts.
+// ---------------------------------------------------------------------------
+
+// Ruling/voiding goes through the ManualJudgeV6 wrapper (frontend calls
+// manualJudgeContract(...).ruleForPoster/ruleForChallenger/rejectChallenge/
+// rejectBond, which take bondContract as the first arg). Everything else is on
+// the SimpleBond core contract.
+const JUDGE_WRAPPER_FNS = new Set([
+  "ruleForPoster",
+  "ruleForChallenger",
+  "rejectChallenge",
+  "rejectBond",
+]);
+
+// Pull the solidity-fenced code blocks out of the "## Contract Interface"
+// section only (between that heading and the next "## " heading). We restrict
+// to ```solidity fences so prose / blockquotes (e.g. the V7 claim(token) note)
+// can't masquerade as documented core signatures.
+function extractContractInterfaceSolidity(md) {
+  const start = md.indexOf("## Contract Interface");
+  if (start === -1) throw new Error('README is missing the "## Contract Interface" section');
+  const rest = md.slice(start + "## Contract Interface".length);
+  const nextHeading = rest.search(/\n## /);
+  const section = nextHeading === -1 ? rest : rest.slice(0, nextHeading);
+  const blocks = [];
+  const fence = /```solidity\s*([\s\S]*?)```/g;
+  let m;
+  while ((m = fence.exec(section)) !== null) blocks.push(m[1]);
+  if (blocks.length === 0) {
+    throw new Error('No ```solidity blocks found under "## Contract Interface"');
+  }
+  return blocks.join("\n");
+}
+
+// Parse `name(arg1, arg2, ...)` entries, tolerating `-> ret` / `→ ret`
+// annotations, multi-line arg lists, and `//` comment lines. Returns
+// [{ name, argCount }]. Empty parens => 0 args.
+function parseDocumentedSignatures(solidity) {
+  // Strip // line comments so commented-out prose can't be parsed as a call.
+  const code = solidity
+    .split("\n")
+    .map((line) => line.replace(/\/\/.*$/, ""))
+    .join("\n");
+  const sigs = [];
+  // identifier immediately followed by a (possibly multi-line) parenthesised
+  // arg list. [^()] keeps it to a single, non-nested arg list (none of our
+  // documented signatures nest parens in their args).
+  const re = /\b([A-Za-z_]\w*)\s*\(([^()]*)\)/g;
+  let m;
+  while ((m = re.exec(code)) !== null) {
+    const name = m[1];
+    const inner = m[2].trim();
+    const argCount = inner === "" ? 0 : inner.split(",").map((s) => s.trim()).filter(Boolean).length;
+    sigs.push({ name, argCount });
+  }
+  return sigs;
+}
+
+describe("docs accuracy — README Contract Interface matches the compiled ABIs (backlog #4)", function () {
+  let coreAbi; // SimpleBondV6
+  let judgeAbi; // ManualJudgeV6
+  let documented;
+
+  before(async function () {
+    // hardhat is available because this runs under `npx hardhat test`.
+    const { artifacts } = require("hardhat");
+    coreAbi = (await artifacts.readArtifact("SimpleBondV6")).abi;
+    judgeAbi = (await artifacts.readArtifact("ManualJudgeV6")).abi;
+    documented = parseDocumentedSignatures(extractContractInterfaceSolidity(readme));
+  });
+
+  const abiInputCount = (abi, name) => {
+    const fn = abi.find((f) => f.type === "function" && f.name === name);
+    return fn ? fn.inputs.length : null; // null => not present in ABI
+  };
+
+  it("parses at least the core entrypoints + views from the README (parser sanity)", function () {
+    const names = new Set(documented.map((s) => s.name));
+    // Non-vacuity: if the parser silently matched nothing, this guards it.
+    for (const required of [
+      "createBond",
+      "challenge",
+      "concede",
+      "withdrawBond",
+      "claimTimeout",
+      "getChallengeCount",
+      "getChallenge",
+      "rulingWindowStart",
+      "rulingDeadline",
+      "concessionDeadline",
+      "ruleForPoster",
+      "ruleForChallenger",
+      "rejectChallenge",
+      "rejectBond",
+    ]) {
+      expect(names.has(required), `README Contract Interface should document ${required}()`).to.equal(true);
+    }
+  });
+
+  it("every documented function EXISTS in the right compiled ABI (core vs ManualJudgeV6 wrapper)", function () {
+    const missing = [];
+    for (const { name } of documented) {
+      const isJudge = JUDGE_WRAPPER_FNS.has(name);
+      const abi = isJudge ? judgeAbi : coreAbi;
+      const which = isJudge ? "ManualJudgeV6" : "SimpleBondV6";
+      if (abiInputCount(abi, name) === null) {
+        missing.push(`${name}() documented but NOT found in ${which} ABI`);
+      }
+    }
+    expect(missing, `Documented functions absent from the compiled ABI:\n${missing.join("\n")}`).to.deep.equal([]);
+  });
+
+  it("every documented function's param COUNT matches the compiled ABI input count", function () {
+    const mismatches = [];
+    for (const { name, argCount } of documented) {
+      const isJudge = JUDGE_WRAPPER_FNS.has(name);
+      const abi = isJudge ? judgeAbi : coreAbi;
+      const which = isJudge ? "ManualJudgeV6" : "SimpleBondV6";
+      const abiCount = abiInputCount(abi, name);
+      if (abiCount === null) continue; // existence covered by the prior test
+      if (abiCount !== argCount) {
+        mismatches.push(
+          `${name}: README documents ${argCount} arg(s) but ${which} ABI has ${abiCount}`
+        );
+      }
+    }
+    expect(
+      mismatches,
+      `README Contract Interface arity drift vs compiled ABI:\n${mismatches.join("\n")}`
+    ).to.deep.equal([]);
+  });
+});
