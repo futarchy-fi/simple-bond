@@ -415,3 +415,57 @@
 - Gates re-run MYSELF (sequential): full `npx hardhat test` 1025 passing / 0 failing (×2 stable; was 1021 + 4 new);
   lint EXIT=0 (g1 40). BACKEND change -> VM deploy below.
 - Sepolia deployer 0x693E…b43d still ≈ 0.0338 ETH (< 0.05) → live journey still parked.
+
+## Iteration 31 — 2026-06-05 — backlog #6: monitor Sepolia-safety + pure evaluator (repo-side) (PROGRESS)
+- FINDING (recorded): scripts/monitor.mjs (M1-M6) is NOT scheduled anywhere on the VM (no cron/timer) — neither chain has
+  synthetic monitoring. Wiring it needs an operator decision on the ALERT SINK (email is stubbed). So #6 was done REPO-SIDE
+  ONLY (no logs-to-nowhere cron): made the monitor correct + testable for the chain the loop kept changing.
+- Extracted a PURE evaluateHealth(health, {chainId,lagThreshold,tickThreshold}) -> {alerts,oks} covering M1 lag / M5
+  dead-letters / M6 tick-age from an injected /health payload (no network); folded the 3 fetch-based probes into one
+  checkIndexerHealth() that fetches once and delegates. Added Sepolia-safety env flags: MIN_BONDS (default 1; set 0 for a
+  chain that may legitimately be empty) and SKIP_RATE_CHECK (skip the sUSDS-rate probe for a mock-token chain). Documented
+  the Sepolia invocation (CHAIN_ID=11155111 MIN_BONDS=0 SKIP_RATE_CHECK=1) in the header. isTickStale kept exported
+  (readModelAndIndexer.test.js still green).
+- NEW test/backend/monitor.test.js (first monitor coverage): proves a STALE Sepolia entry alerts on lag/dead-letters/tick
+  even when mainnet (chain 1) in the same payload is green; missing chain alerts; never-ticked flagged. Done DIRECTLY (small
+  refactor + test) with my own gates; non-vacuity is inherent (the test asserts exact alert strings per axis).
+- Gates re-run MYSELF (sequential): full `npx hardhat test` 1030 passing / 0 failing (×2 stable; was 1025 + 5 new);
+  readModelAndIndexer 15 passing; lint EXIT=0 (g1 40). NO VM deploy (monitor.mjs is not in the container runtime and is
+  unscheduled — repo-only until an operator wires it).
+- Sepolia deployer 0x693E…b43d still ≈ 0.0338 ETH (< 0.05) → live journey still parked.
+
+## WIND-DOWN — 2026-06-05 — autonomous run complete (backlog exhausted)
+
+The autonomous loop has shipped its entire vetted backlog. Switching to a low-frequency caretaker cadence (Sepolia-funding
++ main-green checks) until the runDeadline 2026-06-09. Summary of the full run (iterations 0-31, all on `main`, never left red,
+mainnet v0.6 contract byte-for-byte untouched throughout):
+
+RELIABILITY / RCA (iterations 0-19): 5-tier validation harness + guardrail linter (G1-G5); backend multi-RPC FallbackProvider
+failover (gap #1), dead-letter recovery + liveness/health, IndexLayerError checkpoint-hold; capability-journey e2e harness
+(7/7 green) as the headline metric; staleness banner + indexer-first reads (gap #2); honest EMAIL_ENABLED=false messaging.
+
+v0.7 MECHANISM (iterations 14-18): SimpleBondV7 (C1 pending-cap maxChallenges + ceiling; C2 per-address pull-payment credit
+ledger with claim(), O(pendingCount) settle — an adversarial panel caught + fixed a CRITICAL fund-stranding gas-bomb before
+merge). Deployed to Sepolia + full STAGING cutover (staging.bond.futarchy.* = v0.7); mainnet stays v0.6.
+
+UX / CORRECTNESS (iterations 20-31, this session): docs-as-test for prose+ABI-signature drift (gaps #7); getCode page-chain
+probe (gap #6); allowance-cache account-keying (gap #5); timeout-vs-empty distinction (gap #3); phaseFor timing-unavailable
+(A2-followup); version-aware challenge-capacity gate (a LIVE MAINNET money-waster — backlog #1); global v0.7 claimable-credits
+indicator (#2); README interface -> compiled ABI + signature CI gate (#3+#4); process crash-guard for the combined
+API+watcher, DEPLOYED (#5); friendly email copy for all notified events + first templates test, DEPLOYED (#7); dispute
+actions use inline messages instead of alert() (#8); monitor Sepolia-safety + pure evaluator + first monitor test (#6 repo-side).
+
+FINAL STATE: all invariant gates green; hardhat 1030 passing / 0 failing; lint baseline G1 40 (was 42); capabilities 7/7;
+RCA open gaps 10 -> 3 (the remaining 3 are large-effort/low-probability, explicitly deferred in BACKLOG.md). Backend changes
+deployed to the VM (futarchy-indexers, /api/notify/health verified ok, 0 dead-letters); frontend auto-deploys via Netlify.
+
+OWNER-GATED (NOT autonomous — these are the real remaining work):
+  (a) Fund the Sepolia deployer 0x693E3FB46Bb36eE43C702FE94f9463df0691b43d to > 0.05 ETH -> the loop will auto-run the live
+      V7 capability journey on staging on its next tick (currently ~0.0338 ETH, parked).
+  (b) Give the go on the mainnet v0.7 cutover (kept non-autonomous by design; staging has been on v0.7 and exercised).
+  (c) Decide the monitoring alert channel (Slack/email/pager) so scripts/monitor.mjs can be scheduled (cron, both chains) —
+      it is correct + Sepolia-safe + tested but currently runs nowhere.
+  (d) Wire a real email provider (Resend/SMTP/SES) to un-stub notifications (backend/mailer.mjs; copy is now correct).
+
+CADENCE FROM HERE: long-interval (hourly) caretaker checks — confirm main stays green and watch the Sepolia balance; if it
+crosses 0.05 ETH, run the live V7 capability journey; otherwise no new code changes. Self-stops at 2026-06-09.

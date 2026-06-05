@@ -4,10 +4,18 @@
 // empty read-model, or a fabricated 1:1 sUSDS rate served live. Prints one
 // ALERT line per breach and exits non-zero so the cron wrapper can page.
 //
-//   node scripts/monitor.mjs                         # defaults to prod
+//   node scripts/monitor.mjs                         # defaults to prod (chain 1)
 //   API=https://api.bond.futarchy.ai SITE=https://bond.futarchy.ai \
 //     RPC=https://eth.drpc.org LAG_THRESHOLD=200 node scripts/monitor.mjs
 //
+//   # Sepolia / v0.7 staging (mock token, may legitimately have no bonds yet):
+//   CHAIN_ID=11155111 RPC=https://ethereum-sepolia-rpc.publicnode.com \
+//     MIN_BONDS=0 SKIP_RATE_CHECK=1 node scripts/monitor.mjs
+//
+// monitor.mjs is single-chain per run (CHAIN_ID) — run it once per served chain.
+// NOTE: not yet scheduled in deploy. Wiring it to a cron + a real alert sink
+// (email/Slack) is an operator decision — the email path is currently stubbed
+// (EMAIL_ENABLED=false), so there is no destination yet. See docs/autoloop.
 // Each probe is independent; one failing probe doesn't mask the others.
 
 import { ethers } from 'ethers';
@@ -23,6 +31,12 @@ const LAG_THRESHOLD = Number(process.env.LAG_THRESHOLD || 200);
 // 180s = 6 missed polls is a comfortable margin that pages a crashed/wedged
 // watcher within minutes rather than waiting for block-lag to creep up.
 const TICK_AGE_THRESHOLD = Number(process.env.TICK_AGE_THRESHOLD || 180);
+// Per-chain safety knobs so a staging/Sepolia run won't false-alarm: MIN_BONDS is
+// the minimum non-empty read-model size (set 0 for a chain that may legitimately
+// have no bonds yet); SKIP_RATE_CHECK=1 skips the sUSDS-rate probe for chains whose
+// approved token is a mock without a real convertToShares vault.
+const MIN_BONDS = Number(process.env.MIN_BONDS ?? 1);
+const SKIP_RATE_CHECK = process.env.SKIP_RATE_CHECK === '1' || process.env.SKIP_RATE_CHECK === 'true';
 
 // Pure staleness decision, unit-testable without a server. A null/undefined age
 // (the indexer never ticked, or no timestamp) is stale; otherwise stale when the
@@ -46,56 +60,38 @@ async function getJson(url, ms = 10000) {
   } finally { clearTimeout(t); }
 }
 
-// M1 — indexer lag: a stalled read-model is the silent-regression risk.
-async function checkIndexerLag() {
-  try {
-    const h = await getJson(`${API}/api/notify/health`);
-    const s = (h.indexer || []).find((x) => x.chainId === CHAIN_ID);
-    if (!s) return alert(`health has no indexer status for chain ${CHAIN_ID}`);
-    if (s.blocksBehindHead == null) return alert(`chain ${CHAIN_ID} lag unknown (head/checkpoint missing)`);
-    if (s.blocksBehindHead > LAG_THRESHOLD) {
-      alert(`indexer lag ${s.blocksBehindHead} blocks > ${LAG_THRESHOLD} (chain ${CHAIN_ID})`);
-    } else {
-      ok(`indexer lag ${s.blocksBehindHead} blocks (chain ${CHAIN_ID})`);
-    }
-  } catch (e) { alert(`health probe failed: ${e.message}`); }
+// Pure evaluation of ONE chain's indexer health (M1 lag, M5 dead-letters, M6 tick
+// freshness) from an injected /health payload — no network, unit-testable. Returns
+// the alert + ok lines so e.g. a stale Sepolia entry alerts even when mainnet (a
+// different chainId in the same payload) is green.
+export function evaluateHealth(health, { chainId, lagThreshold, tickThreshold }) {
+  const out = { alerts: [], oks: [] };
+  const s = ((health && health.indexer) || []).find((x) => x.chainId === chainId);
+  if (!s) { out.alerts.push(`health has no indexer status for chain ${chainId}`); return out; }
+  // M1 — indexer lag (a stalled read-model is the silent-regression risk).
+  if (s.blocksBehindHead == null) out.alerts.push(`chain ${chainId} lag unknown (head/checkpoint missing)`);
+  else if (s.blocksBehindHead > lagThreshold) out.alerts.push(`indexer lag ${s.blocksBehindHead} blocks > ${lagThreshold} (chain ${chainId})`);
+  else out.oks.push(`indexer lag ${s.blocksBehindHead} blocks (chain ${chainId})`);
+  // M5 — dead-lettered (poison-block) ranges freeze the read-model behind them.
+  const n = s.deadLetters || 0;
+  if (n > 0) out.alerts.push(`indexer has ${n} dead-lettered range(s), blocked from block ${s.blockedFromBlock} (chain ${chainId})`);
+  else out.oks.push(`no dead-lettered ranges (chain ${chainId})`);
+  // M6 — tick freshness/liveness: a wedged watcher still serves stale HTTP 200s.
+  const age = s.headAgeSeconds;
+  if (isTickStale(age, tickThreshold)) {
+    if (age == null) out.alerts.push(`indexer never ticked (no head timestamp) for chain ${chainId}`);
+    else out.alerts.push(`indexer tick age ${age}s > ${tickThreshold}s (chain ${chainId}) — watcher stalled?`);
+  } else out.oks.push(`indexer tick age ${age}s (chain ${chainId})`);
+  return out;
 }
 
-// M5 — dead-lettered (poison-block) ranges: the indexer holds the checkpoint
-// before a window that fails even at the 1-block floor (no-skip), so the
-// read-model freezes behind it. A non-zero dead-letter count means a human
-// must look — page on it.
-async function checkDeadLetters() {
-  try {
-    const h = await getJson(`${API}/api/notify/health`);
-    const s = (h.indexer || []).find((x) => x.chainId === CHAIN_ID);
-    if (!s) return; // M1 already alerts on a missing indexer status.
-    const n = s.deadLetters || 0;
-    if (n > 0) {
-      alert(`indexer has ${n} dead-lettered range(s), blocked from block ${s.blockedFromBlock} (chain ${CHAIN_ID})`);
-    } else {
-      ok(`no dead-lettered ranges (chain ${CHAIN_ID})`);
-    }
-  } catch (e) { alert(`dead-letter probe failed: ${e.message}`); }
-}
-
-// M6 — tick freshness/liveness: a fully-stopped watcher whose block-lag happens
-// to look small still serves stale HTTP 200s. The last-tick age (now -
-// chain_heads.updated_at) catches it: alert when the active chain hasn't ticked
-// within TICK_AGE_THRESHOLD, or when it never ticked (no head timestamp).
-async function checkTickAge() {
-  try {
-    const h = await getJson(`${API}/api/notify/health`);
-    const s = (h.indexer || []).find((x) => x.chainId === CHAIN_ID);
-    if (!s) return; // M1 already alerts on a missing indexer status.
-    const age = s.headAgeSeconds;
-    if (isTickStale(age, TICK_AGE_THRESHOLD)) {
-      if (age == null) alert(`indexer never ticked (no head timestamp) for chain ${CHAIN_ID}`);
-      else alert(`indexer tick age ${age}s > ${TICK_AGE_THRESHOLD}s (chain ${CHAIN_ID}) — watcher stalled?`);
-    } else {
-      ok(`indexer tick age ${age}s (chain ${CHAIN_ID})`);
-    }
-  } catch (e) { alert(`tick-age probe failed: ${e.message}`); }
+// M1+M5+M6 live: fetch /health once and evaluate the active chain.
+async function checkIndexerHealth() {
+  let h;
+  try { h = await getJson(`${API}/api/notify/health`); }
+  catch (e) { return alert(`health probe failed: ${e.message}`); }
+  const { alerts: a, oks: o } = evaluateHealth(h, { chainId: CHAIN_ID, lagThreshold: LAG_THRESHOLD, tickThreshold: TICK_AGE_THRESHOLD });
+  a.forEach(alert); o.forEach(ok);
 }
 
 // M2 — read-model non-empty (lists silently showing 0 was I9).
@@ -103,13 +99,14 @@ async function checkBondsNonEmpty() {
   try {
     const j = await getJson(`${API}/api/bonds?chainId=${CHAIN_ID}`);
     if (!Array.isArray(j.bonds)) return alert('bonds response malformed');
-    if (j.bonds.length === 0) alert(`/api/bonds returned 0 bonds for chain ${CHAIN_ID}`);
+    if (j.bonds.length < MIN_BONDS) alert(`/api/bonds returned ${j.bonds.length} bonds (< MIN_BONDS=${MIN_BONDS}) for chain ${CHAIN_ID}`);
     else ok(`/api/bonds returned ${j.bonds.length} bonds`);
   } catch (e) { alert(`/api/bonds probe failed: ${e.message}`); }
 }
 
 // M4 — live sUSDS rate must not be a 1:1 fabrication (I1).
 async function checkRateNotFabricated() {
+  if (SKIP_RATE_CHECK) { ok('sUSDS rate check skipped (SKIP_RATE_CHECK)'); return; }
   try {
     const p = new ethers.JsonRpcProvider(RPC, ethers.Network.from(CHAIN_ID), { staticNetwork: true });
     const c = new ethers.Contract(SUSDS, ['function convertToShares(uint256) view returns (uint256)'], p);
@@ -127,9 +124,7 @@ async function checkRateNotFabricated() {
 // (importing must not fire network probes or exit the process).
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   await Promise.all([
-    checkIndexerLag(),
-    checkTickAge(),
-    checkDeadLetters(),
+    checkIndexerHealth(),
     checkBondsNonEmpty(),
     checkRateNotFabricated(),
   ]);
