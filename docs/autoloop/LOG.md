@@ -382,3 +382,22 @@
 - Sepolia deployer 0x693E…b43d still ≈ 0.0338 ETH (< 0.05) → live journey still parked.
 - DEPLOYED to VM futarchy-indexers (/opt/simple-bond → dcaeb8a, `docker compose -p bond-notify up -d --build`):
   /api/notify/health "ok", chain 1 lag 12 / Sepolia lag 6, headAgeSeconds 10, 0 dead-letters, guard registered at boot.
+
+## Iteration 29 — 2026-06-05 — backlog #8: dispute actions use inline #posterMsg/#judgeMsg (PROGRESS)
+- Replaced the jarring native alert() failure UX in all 8 dispute handlers (doConcede/doCloseBond/doOpenBond/
+  doWithdrawBond/doClaimTimeout -> #posterMsg; doRule/doRejectChallenge/doRejectBond -> #judgeMsg) with the established
+  inline-slot pattern (msg-info spinner on start, msg-success on done, msg-error w/ escapeHtml(friendlyError) on failure),
+  matching every other write path (doChallenge/doClaimCredit). Slot chosen by where each button renders; defensive `if (msg)`
+  for the anyone-callable claimTimeout. On-chain calls/args/confirm() gates UNCHANGED; log() calls kept. grep -c "alert(" =
+  0 in BOTH index.html and v6 mirror (was 8 each). Bodies in sync (only head script-src differs).
+- Surface test extended: parity loop over both files asserts NO alert( remains and each handler binds its contextual slot +
+  msg-error catch. Non-vacuous (revert one handler to alert() -> 2 RED). e2e spec assertion deliberately skipped (success
+  re-renders the slot, would race -> flaky); existing poster/judge/challenger journeys cover the happy paths.
+- Adversarial panel 3/3 PASS (contextual-msgs, no-regression, test-quality). A transient first-run doRule surface failure
+  did NOT reproduce (stale-read artifact; on-disk source correct).
+- Gates re-run MYSELF (sequential): full `npx hardhat test` 1021 passing / 0 failing (×2 stable); lint EXIT=0 (g1 40);
+  docker e2e 60 passed / 4 skipped, all 7 capabilities true. Restored 3 e2e-churned screenshots. FRONTEND -> Netlify
+  auto-deploys on push (no VM deploy). Burn-down unchanged (UX polish).
+- Sepolia deployer 0x693E…b43d still ≈ 0.0338 ETH (< 0.05) → live journey still parked.
+- Next: #7 (templates.mjs friendly email copy + first test; backend -> VM deploy) → #6 (repo-side monitor Sepolia-safety
+  only; scheduling/alert-sink is owner-gated) → WIND DOWN with full-run completion summary.

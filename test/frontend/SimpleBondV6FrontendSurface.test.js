@@ -627,4 +627,90 @@ describe("SimpleBond v0.6 frontend surface", function () {
             }
         });
     });
+
+    // backlog #8 — dispute actions used a jarring native alert() on failure and
+    // gave no in-context success. EVERY dispute handler now surfaces start /
+    // success / failure through the inline message slot CONTEXTUALLY ADJACENT to
+    // its button on the bond-detail card — poster-card actions (concede,
+    // closeBond, openBond, withdrawBond, claimTimeout) route to #posterMsg; judge
+    // -card actions (rule, rejectChallenge, rejectBond) route to #judgeMsg — using
+    // the same `msg.innerHTML = msg-info|msg-success|msg-error` pattern the working
+    // write paths use (doChallenge / doClaimCredit). The on-chain calls are
+    // unchanged. These assertions lock the wiring in BOTH the canonical
+    // frontend/index.html and the mirror frontend/v6/index.html, and are written so
+    // reverting ANY single handler back to alert() turns the test RED.
+    describe("dispute-action inline messaging (no native alert) (backlog #8) wiring", function () {
+        // Map each dispute handler -> the inline slot it MUST write to (the slot
+        // adjacent to where its button renders on the bond-detail card).
+        const POSTER = "posterMsg";
+        const JUDGE = "judgeMsg";
+        const HANDLERS = [
+            { fn: "doConcede", slot: POSTER },
+            { fn: "doCloseBond", slot: POSTER },
+            { fn: "doOpenBond", slot: POSTER },
+            { fn: "doWithdrawBond", slot: POSTER },
+            { fn: "doClaimTimeout", slot: POSTER },
+            { fn: "doRule", slot: JUDGE },
+            { fn: "doRejectChallenge", slot: JUDGE },
+            { fn: "doRejectBond", slot: JUDGE },
+        ];
+
+        // Extract one handler's body: from `async function <fn>(` up to (but not
+        // including) the next `async function ` (handlers are declared
+        // back-to-back). Returns "" if not found so the assertions fail loudly.
+        function handlerBody(html, fn) {
+            const start = html.indexOf(`async function ${fn}(`);
+            if (start === -1) return "";
+            const after = html.indexOf("async function ", start + 1);
+            return html.slice(start, after === -1 ? html.length : after);
+        }
+
+        for (const [label, getHtml] of [
+            ["frontend/index.html", () => mainHtml],
+            ["frontend/v6/index.html", () => v6html],
+        ]) {
+            describe(label, function () {
+                it("contains NO native alert( anywhere (the bug)", function () {
+                    // Reverting ANY single handler's failure branch back to
+                    // alert(friendlyError(err)) re-introduces this token and fails.
+                    expect(getHtml(), "found a native alert( call").to.not.match(/\balert\(/);
+                });
+
+                for (const { fn, slot } of HANDLERS) {
+                    describe(fn, function () {
+                        it(`binds its inline slot via $('${slot}') and writes a msg-error on the failure path`, function () {
+                            const body = handlerBody(getHtml(), fn);
+                            expect(body, `handler ${fn} not found`).to.not.equal("");
+                            // The handler captures the contextually-correct slot.
+                            expect(body, `${fn} must read const msg = $('${slot}')`).to.include(
+                                `const msg = $('${slot}')`
+                            );
+                            // The catch block writes the friendly error to that slot
+                            // as a msg-error (the OLD behaviour was alert(...)).
+                            expect(body, `${fn} must NOT call alert(`).to.not.match(/\balert\(/);
+                            expect(
+                                body,
+                                `${fn} must write a msg-error with friendlyError(err) to the inline slot on failure`
+                            ).to.match(
+                                /catch \(err\) \{[\s\S]*msg\.innerHTML = `<div class="msg msg-error">\$\{escapeHtml\(friendlyError\(err\)\)\}<\/div>`/
+                            );
+                            // It also surfaces start + success inline (same pattern
+                            // as the working write paths) — non-vacuous proof the
+                            // slot is actually wired, not just declared.
+                            expect(body, `${fn} must show an inline msg-info start line`).to.match(
+                                /msg\.innerHTML = `<div class="msg msg-info"><span class="spinner"><\/span>/
+                            );
+                            expect(body, `${fn} must show an inline msg-success confirmation`).to.match(
+                                /msg\.innerHTML = `<div class="msg msg-success">/
+                            );
+                            // The existing log(...) call on the error path is kept.
+                            expect(body, `${fn} must keep its log(... 'err') call`).to.match(
+                                /log\(`[^`]*failed: \$\{friendlyError\(err\)\}`, 'err'\)/
+                            );
+                        });
+                    });
+                }
+            });
+        }
+    });
 });

@@ -3989,18 +3989,21 @@
   }
 
   async function doConcede(bondId, i) {
+    const msg = $('posterMsg');
     try {
       if (!signer) { await connectWallet(); if (!signer) return; }
       const content = $(`conc-${i}`)?.value || '';
       const bc = bondWriteContract();
+      if (msg) msg.innerHTML = `<div class="msg msg-info"><span class="spinner"></span>Conceding challenge ${i}…</div>`;
       log(`Conceding challenge ${i} on bond #${bondId}…`);
       const tx = await bc.concede(bondId, i, content);
       await waitForTx(tx);
       log(`Conceded challenge ${i}.`);
+      if (msg) msg.innerHTML = `<div class="msg msg-success">Challenge ${i} conceded.</div>`;
       renderBondDetail(String(bondId));
     } catch (err) {
       log(`Concede failed: ${friendlyError(err)}`, 'err');
-      alert(friendlyError(err));
+      if (msg) msg.innerHTML = `<div class="msg msg-error">${escapeHtml(friendlyError(err))}</div>`;
     }
   }
 
@@ -4022,41 +4025,53 @@
   }
 
   async function doCloseBond(bondId) {
+    const msg = $('posterMsg');
     try {
       if (!signer) { await connectWallet(); if (!signer) return; }
+      if (msg) msg.innerHTML = `<div class="msg msg-info"><span class="spinner"></span>Closing bond…</div>`;
       const tx = await bondWriteContract().closeBond(bondId);
       await waitForTx(tx);
       log(`Bond #${bondId} closed.`);
+      if (msg) msg.innerHTML = `<div class="msg msg-success">Bond closed.</div>`;
       renderBondDetail(String(bondId));
-    } catch (err) { alert(friendlyError(err)); log(`Close failed: ${friendlyError(err)}`, 'err'); }
+    } catch (err) { if (msg) msg.innerHTML = `<div class="msg msg-error">${escapeHtml(friendlyError(err))}</div>`; log(`Close failed: ${friendlyError(err)}`, 'err'); }
   }
   async function doOpenBond(bondId) {
+    const msg = $('posterMsg');
     try {
       if (!signer) { await connectWallet(); if (!signer) return; }
+      if (msg) msg.innerHTML = `<div class="msg msg-info"><span class="spinner"></span>Re-opening bond…</div>`;
       const tx = await bondWriteContract().openBond(bondId);
       await waitForTx(tx);
       log(`Bond #${bondId} re-opened.`);
+      if (msg) msg.innerHTML = `<div class="msg msg-success">Bond re-opened.</div>`;
       renderBondDetail(String(bondId));
-    } catch (err) { alert(friendlyError(err)); log(`Open failed: ${friendlyError(err)}`, 'err'); }
+    } catch (err) { if (msg) msg.innerHTML = `<div class="msg msg-error">${escapeHtml(friendlyError(err))}</div>`; log(`Open failed: ${friendlyError(err)}`, 'err'); }
   }
   async function doWithdrawBond(bondId) {
+    const msg = $('posterMsg');
     try {
       if (!signer) { await connectWallet(); if (!signer) return; }
       if (!confirm('Withdraw the entire bond? This settles the bond permanently.')) return;
+      if (msg) msg.innerHTML = `<div class="msg msg-info"><span class="spinner"></span>Withdrawing bond…</div>`;
       const tx = await bondWriteContract().withdrawBond(bondId);
       await waitForTx(tx);
       log(`Bond #${bondId} withdrawn.`);
+      if (msg) msg.innerHTML = `<div class="msg msg-success">Bond withdrawn.</div>`;
       renderBondDetail(String(bondId));
-    } catch (err) { alert(friendlyError(err)); log(`Withdraw failed: ${friendlyError(err)}`, 'err'); }
+    } catch (err) { if (msg) msg.innerHTML = `<div class="msg msg-error">${escapeHtml(friendlyError(err))}</div>`; log(`Withdraw failed: ${friendlyError(err)}`, 'err'); }
   }
   async function doClaimTimeout(bondId, i) {
+    const msg = $('posterMsg');
     try {
       if (!signer) { await connectWallet(); if (!signer) return; }
+      if (msg) msg.innerHTML = `<div class="msg msg-info"><span class="spinner"></span>Claiming timeout for challenge ${i}…</div>`;
       const tx = await bondWriteContract().claimTimeout(bondId, i);
       await waitForTx(tx);
       log(`Timeout claimed for bond #${bondId}, challenge ${i}.`);
+      if (msg) msg.innerHTML = `<div class="msg msg-success">Timeout claimed for challenge ${i}.</div>`;
       renderBondDetail(String(bondId));
-    } catch (err) { alert(friendlyError(err)); log(`Timeout failed: ${friendlyError(err)}`, 'err'); }
+    } catch (err) { if (msg) msg.innerHTML = `<div class="msg msg-error">${escapeHtml(friendlyError(err))}</div>`; log(`Timeout failed: ${friendlyError(err)}`, 'err'); }
   }
   async function doDrainRefunds(bondId) {
     const msg = $('refundMsg');
@@ -4097,6 +4112,7 @@
   }
 
   async function doRule(side, bondId, i, b) {
+    const msg = $('judgeMsg');
     try {
       if (!signer) { await connectWallet(); if (!signer) return; }
       const c = chain();
@@ -4106,38 +4122,46 @@
       if (fee > b.judgeFee) fee = b.judgeFee;
       const judge = manualJudgeContract(b.judge, true);
       const fn = side === 'poster' ? 'ruleForPoster' : 'ruleForChallenger';
+      if (msg) msg.innerHTML = `<div class="msg msg-info"><span class="spinner"></span>Submitting ${fn} for challenge ${i}…</div>`;
       log(`${fn} on bond #${bondId} challenge ${i}…`);
       const tx = await judge[fn](c.bondContract, bondId, i, fee, content);
       await waitForTx(tx);
       log(`${fn} confirmed.`);
+      if (msg) msg.innerHTML = `<div class="msg msg-success">${fn} confirmed for challenge ${i}.</div>`;
       renderBondDetail(String(bondId));
-    } catch (err) { alert(friendlyError(err)); log(`Rule failed: ${friendlyError(err)}`, 'err'); }
+    } catch (err) { if (msg) msg.innerHTML = `<div class="msg msg-error">${escapeHtml(friendlyError(err))}</div>`; log(`Rule failed: ${friendlyError(err)}`, 'err'); }
   }
   async function doRejectChallenge(bondId, i, b) {
+    const msg = $('judgeMsg');
     try {
       if (!signer) { await connectWallet(); if (!signer) return; }
       const c = chain();
       const content = $(`reject-${i}`)?.value || $(`rule-${i}`)?.value || '';
       const judge = manualJudgeContract(b.judge, true);
+      if (msg) msg.innerHTML = `<div class="msg msg-info"><span class="spinner"></span>Rejecting challenge ${i}…</div>`;
       log(`rejectChallenge on bond #${bondId} challenge ${i}…`);
       const tx = await judge.rejectChallenge(c.bondContract, bondId, i, content);
       await waitForTx(tx);
       log(`Challenge rejected.`);
+      if (msg) msg.innerHTML = `<div class="msg msg-success">Challenge ${i} rejected as out-of-scope.</div>`;
       renderBondDetail(String(bondId));
-    } catch (err) { alert(friendlyError(err)); log(`Reject failed: ${friendlyError(err)}`, 'err'); }
+    } catch (err) { if (msg) msg.innerHTML = `<div class="msg msg-error">${escapeHtml(friendlyError(err))}</div>`; log(`Reject failed: ${friendlyError(err)}`, 'err'); }
   }
   async function doRejectBond(bondId, b) {
+    const msg = $('judgeMsg');
     try {
       if (!signer) { await connectWallet(); if (!signer) return; }
       const c = chain();
       const content = $('voidContent')?.value || '';
       if (!confirm('Void this bond entirely? The poster is refunded and all pending challenges become refundable.')) return;
       const judge = manualJudgeContract(b.judge, true);
+      if (msg) msg.innerHTML = `<div class="msg msg-info"><span class="spinner"></span>Voiding bond…</div>`;
       const tx = await judge.rejectBond(c.bondContract, bondId, content);
       await waitForTx(tx);
       log(`Bond #${bondId} voided by judge.`);
+      if (msg) msg.innerHTML = `<div class="msg msg-success">Bond voided.</div>`;
       renderBondDetail(String(bondId));
-    } catch (err) { alert(friendlyError(err)); log(`Void failed: ${friendlyError(err)}`, 'err'); }
+    } catch (err) { if (msg) msg.innerHTML = `<div class="msg msg-error">${escapeHtml(friendlyError(err))}</div>`; log(`Void failed: ${friendlyError(err)}`, 'err'); }
   }
 
   // ─── JUDGE PROFILE PAGE ────────────────────────────────────────────────
