@@ -92,3 +92,15 @@
   judge-of-closed-with-pending). Independently re-ran docker e2e: 5/5 banner + full local 54 passed; v6 in sync.
 - This run has now caught 2 subtle contract-semantics bugs (A2 phantom gap, A5 closed+pending) that green tests alone would have shipped.
 - Next: iteration 10 = A6 wire the opt-in notification flow (reuse /api/notify; honest copy, EMAIL_ENABLED=false).
+
+## Iteration 10 — 2026-06-04 — A6 opt-in notifications (PROGRESS)
+- Dead notify bell → working subscribe control wired to the real /api/notify contract (register: signed
+  fixed message {address,email,chainId,signature,timestamp}; status reflection; graceful degrade when
+  notifyApiBase unreachable). HONEST copy — email is stubbed (EMAIL_ENABLED=false) so UI never promises a
+  sent email (says "recorded / delivery coming soon"); deliberately does NOT echo the backend's misleading
+  "Verification email sent" 200 message.
+- New frontend/notify.js (pure helpers) + notifyHelpers.test.js (10) + notify-bell.spec.js (4 e2e).
+  3/3 verdicts pass; independently re-ran docker e2e: full local 58 passed; v6 in sync; lint G1=41.
+- Backend follow-up logged: handleRegister returns "Verification email sent" while EMAIL_ENABLED=false —
+  backend copy itself should be honest (the UI already compensates). Non-blocking.
+- Next: iteration 11 = B2 indexer dead-letter + sub-chunk recovery for poison log windows.

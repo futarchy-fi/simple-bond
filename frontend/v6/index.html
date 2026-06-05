@@ -11,6 +11,7 @@
 <script src="../phase.js"></script>
 <script src="../refunds.js"></script>
 <script src="../banner.js"></script>
+<script src="../notify.js"></script>
 <style>
   :root {
     --bg: #ffffff;
@@ -67,7 +68,35 @@
     border: 1px solid var(--border);
   }
   .wallet-info .address:hover { border-color: var(--accent); }
-  .notify-bell { display: none; }
+  /* Notify bell — opt-in subscription control. Inline, unobtrusive, only shown
+     when a notify backend is configured (else it stays .hidden, no crash). */
+  .notify-bell { position: relative; display: inline-flex; }
+  .notify-bell-btn {
+    background: var(--surface-2); color: var(--muted); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 9px; font-size: 14px; line-height: 1; cursor: pointer;
+    transition: border-color 0.15s, color 0.15s, background 0.15s; font-weight: 500;
+  }
+  .notify-bell-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--surface-2); }
+  .notify-bell-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+  .notify-bell-btn.subscribed { color: var(--green); border-color: var(--green); }
+  .notify-bell-dot {
+    display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+    background: var(--green); margin-left: 5px; vertical-align: middle;
+  }
+  .notify-pop {
+    position: absolute; top: calc(100% + 8px); right: 0; z-index: 9998;
+    width: 300px; background: #fff; border: 1px solid var(--border);
+    border-radius: 8px; box-shadow: 0 12px 32px rgba(0,0,0,0.16); padding: 14px;
+  }
+  .notify-pop h4 { font-size: 14px; margin-bottom: 6px; }
+  .notify-pop .hint { margin-top: 0; margin-bottom: 10px; }
+  .notify-pop input { font-size: 13px; padding: 8px 10px; margin-bottom: 8px; }
+  .notify-pop .btn-row { margin-top: 4px; }
+  .notify-pop button { font-size: 13px; padding: 8px 12px; }
+  .notify-msg { font-size: 12px; line-height: 1.45; margin-top: 8px; }
+  .notify-msg.ok { color: var(--green); }
+  .notify-msg.err { color: var(--red); }
+  .notify-msg.info { color: var(--muted); }
 
   button {
     background: var(--accent); color: #fff; border: none; padding: 10px 16px;
@@ -1266,6 +1295,7 @@
       log(`Connected ${account}`);
       attachWalletListeners();
       render();
+      refreshNotifyBell();
     } catch (err) {
       if (!isUserRejection(err)) log(`Connect failed: ${friendlyError(err)}`, 'err');
     }
@@ -1278,8 +1308,224 @@
     $('walletInfo').classList.add('hidden');
     $('connectBtn').classList.remove('hidden');
     refreshNetworkBanner();
+    refreshNotifyBell();
     log('Disconnected');
     render();
+  }
+
+  // ─── Notify bell (opt-in email subscription) ───────────────────────────
+  // Wires the previously-dead bell to the EXISTING backend at
+  //   POST /api/notify/register   GET /api/notify/status
+  // (contract derived in frontend/notify.js, mirrored from
+  // backend/api-server.mjs handleRegister/handleStatus). Email delivery is
+  // STUBBED today (backend/mailer.mjs EMAIL_ENABLED=false), so every line of
+  // user-facing copy here is HONEST: we say the subscription is recorded and
+  // that email delivery isn't live yet — we never promise a delivered email.
+  const NotifyHelpers = window.SimpleBondNotify || null;
+  let _notifyState = { state: 'none', registered: false, verified: false, email: '' };
+  let _notifyOpen = false;
+  let _notifyBusy = false;
+
+  // The notify backend base. runtime-config's notifyApiBase already ends in
+  // /api/notify; we normalise so register/status hang off it cleanly. Returns
+  // null when unconfigured so the bell can degrade to an "unavailable" state.
+  function notifyBase() {
+    const raw = window.SIMPLE_BOND_CONFIG?.notifyApiBase || '';
+    if (!raw) return null;
+    return String(raw).replace(/\/+$/, '');
+  }
+
+  async function fetchNotifyStatus() {
+    const base = notifyBase();
+    if (!base || !account || !NotifyHelpers) return null;
+    const qs = new URLSearchParams({ address: account, chain: String(activeChainId) });
+    try {
+      const r = await withTimeout(
+        fetch(`${base}/status?${qs.toString()}`).then(x => (x.ok ? x.json() : null)),
+        8000, null);
+      return r ? NotifyHelpers.interpretNotifyStatus(r) : null;
+    } catch (_) {
+      // Network/transport failure — return null so the caller renders an
+      // honest "couldn't reach the service" state rather than a false status.
+      return null;
+    }
+  }
+
+  // Render the bell button. Hidden entirely when no notify backend is
+  // configured OR the helper module failed to load (no dead control).
+  function renderNotifyBell() {
+    const host = $('notifyBell');
+    if (!host) return;
+    if (!notifyBase() || !NotifyHelpers) { host.classList.add('hidden'); host.innerHTML = ''; return; }
+    host.classList.remove('hidden');
+    const subscribed = _notifyState.registered;
+    const title = subscribed
+      ? 'Notifications: subscription recorded (email delivery coming soon)'
+      : 'Get notified about your bonds (email delivery coming soon)';
+    host.innerHTML = `
+      <button id="notifyBellBtn" class="notify-bell-btn${subscribed ? ' subscribed' : ''}"
+              title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}" aria-expanded="${_notifyOpen}">
+        🔔${subscribed ? '<span class="notify-bell-dot"></span>' : ''}
+      </button>
+      ${_notifyOpen ? renderNotifyPop() : ''}`;
+    $('notifyBellBtn').addEventListener('click', (e) => { e.stopPropagation(); toggleNotifyPop(); });
+    if (_notifyOpen) wireNotifyPop();
+  }
+
+  function renderNotifyPop() {
+    if (_notifyState.registered) {
+      const masked = _notifyState.email ? ` (${escapeHtml(_notifyState.email)})` : '';
+      return `
+        <div class="notify-pop" id="notifyPop">
+          <h4>You're subscribed${masked}</h4>
+          <p class="notify-msg ok">Your subscription is recorded for this wallet on ${escapeHtml(chain()?.name || ('chain ' + activeChainId))}.</p>
+          <p class="notify-msg info">Email delivery isn't enabled yet — it's coming soon. Until then, nothing is emailed; your subscription is saved so you'll be in the list the moment delivery goes live.</p>
+          <div class="btn-row"><button class="ghost" id="notifyClose">Close</button></div>
+        </div>`;
+    }
+    if (!account) {
+      return `
+        <div class="notify-pop" id="notifyPop">
+          <h4>Get notified about your bonds</h4>
+          <p class="hint">Subscribe to be told when your bond is challenged, your window opens, or a ruling lands — so a multi-day dispute doesn't need manual re-checking.</p>
+          <div class="btn-row"><button id="notifyConnect">Connect wallet</button><button class="ghost" id="notifyClose">Close</button></div>
+        </div>`;
+    }
+    return `
+      <div class="notify-pop" id="notifyPop">
+        <h4>Get notified about your bonds</h4>
+        <p class="hint">We'll record your email against this wallet so you can be told when your bond is challenged, your window opens, or a ruling lands.</p>
+        <input id="notifyEmail" type="email" placeholder="you@example.com" autocomplete="email">
+        <div class="btn-row">
+          <button id="notifySubmit"${_notifyBusy ? ' disabled' : ''}>${_notifyBusy ? 'Signing…' : 'Subscribe'}</button>
+          <button class="ghost" id="notifyClose">Close</button>
+        </div>
+        <p class="notify-msg info" id="notifyMsg">Subscribing asks your wallet to sign a short message (no gas, no transaction). Email delivery isn't live yet — it's coming soon; for now your subscription is just recorded.</p>
+      </div>`;
+  }
+
+  function setNotifyMsg(text, kind) {
+    const el = $('notifyMsg');
+    if (el) { el.textContent = text; el.className = `notify-msg ${kind || 'info'}`; }
+  }
+
+  function wireNotifyPop() {
+    const close = $('notifyClose');
+    if (close) close.addEventListener('click', () => { _notifyOpen = false; renderNotifyBell(); });
+    const connect = $('notifyConnect');
+    if (connect) connect.addEventListener('click', async () => { await connectWallet(); });
+    const submit = $('notifySubmit');
+    if (submit) submit.addEventListener('click', () => submitNotifySubscribe());
+    const email = $('notifyEmail');
+    if (email) email.addEventListener('keydown', (e) => { if (e.key === 'Enter') submitNotifySubscribe(); });
+  }
+
+  function toggleNotifyPop() {
+    _notifyOpen = !_notifyOpen;
+    renderNotifyBell();
+    if (_notifyOpen) {
+      // Refresh status on open so an already-subscribed wallet sees its state.
+      refreshNotifyBell();
+      setTimeout(() => { const i = $('notifyEmail'); if (i) i.focus(); }, 0);
+    }
+  }
+
+  async function submitNotifySubscribe() {
+    if (_notifyBusy) return;
+    const base = notifyBase();
+    if (!base || !NotifyHelpers) { setNotifyMsg('Notifications service is unavailable right now.', 'err'); return; }
+    if (!signer || !account) { setNotifyMsg('Connect a wallet first.', 'err'); return; }
+    const email = ($('notifyEmail')?.value || '').trim();
+    if (!NotifyHelpers.isValidEmail(email)) { setNotifyMsg('Enter a valid email address.', 'err'); return; }
+
+    const chainId = Number(activeChainId);
+    const timestamp = Math.floor(Date.now() / 1000);
+    _notifyBusy = true; renderNotifyBell();
+    setNotifyMsg('Check your wallet to sign the subscription message…', 'info');
+
+    let signature;
+    try {
+      const message = NotifyHelpers.notifyRegisterMessage(email, chainId, timestamp);
+      signature = await signer.signMessage(message);
+    } catch (err) {
+      _notifyBusy = false; renderNotifyBell();
+      setNotifyMsg(isUserRejection(err) ? 'Signature cancelled — not subscribed.' : `Could not sign: ${friendlyError(err)}`, 'err');
+      return;
+    }
+
+    let payload;
+    try {
+      payload = NotifyHelpers.buildNotifyRegisterPayload({ address: account, email, chainId, signature, timestamp });
+    } catch (err) {
+      _notifyBusy = false; renderNotifyBell();
+      setNotifyMsg(`Could not build request: ${err.message}`, 'err');
+      return;
+    }
+
+    try {
+      const resp = await fetch(`${base}/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      let data = null;
+      try {
+        data = await resp.json();
+      } catch (parseErr) {
+        // Non-JSON body (e.g. a proxy error page). Surface it honestly rather
+        // than pretending the subscribe succeeded.
+        _notifyBusy = false; renderNotifyBell();
+        setNotifyMsg(`Subscription failed: server returned an unreadable response (HTTP ${resp.status}).`, 'err');
+        return;
+      }
+      if (!resp.ok || !data || data.ok !== true) {
+        const reason = (data && data.error) ? data.error : `HTTP ${resp.status}`;
+        _notifyBusy = false; renderNotifyBell();
+        setNotifyMsg(`Subscription failed: ${reason}`, 'err');
+        return;
+      }
+      // Success. Reflect "subscribed" optimistically, then confirm from status.
+      // HONEST copy: the backend's message says an email was "sent", but email
+      // is stubbed — we deliberately do NOT echo it. We say it's recorded.
+      _notifyState = NotifyHelpers.interpretNotifyStatus({ registered: true, verified: false, email });
+      _notifyBusy = false;
+      renderNotifyBell();
+      setNotifyMsg('Subscription recorded. Email delivery isn\'t live yet — it\'s coming soon; nothing has been emailed.', 'ok');
+      log(`Notify subscription recorded for ${account} on chain ${chainId}`);
+      // Reconcile with the server's view (masked email / verified flag).
+      const fresh = await fetchNotifyStatus();
+      if (fresh) { _notifyState = fresh; if (_notifyOpen) renderNotifyBell(); }
+    } catch (err) {
+      _notifyBusy = false; renderNotifyBell();
+      setNotifyMsg(`Subscription failed: ${friendlyError(err)}`, 'err');
+    }
+  }
+
+  // Pull status from the backend and repaint. Safe to call anytime; degrades to
+  // a not-subscribed view if the service is unreachable (no crash).
+  async function refreshNotifyBell() {
+    if (!notifyBase() || !NotifyHelpers) { renderNotifyBell(); return; }
+    if (!account) { _notifyState = { state: 'none', registered: false, verified: false, email: '' }; renderNotifyBell(); return; }
+    const fresh = await fetchNotifyStatus();
+    if (fresh) _notifyState = fresh;
+    renderNotifyBell();
+  }
+
+  // Close the popover on an outside click / Escape.
+  if (typeof document !== 'undefined') {
+    document.addEventListener('click', (e) => {
+      if (!_notifyOpen) return;
+      // Ignore clicks whose target was detached during an in-popover re-render
+      // (e.g. clicking Subscribe rebuilds the pop, detaching the button before
+      // this bubbles up). Treating that as an "outside" click would wrongly
+      // slam the popover shut mid-flow.
+      if (e.target && !e.target.isConnected) return;
+      const host = $('notifyBell');
+      if (host && !host.contains(e.target)) { _notifyOpen = false; renderNotifyBell(); }
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && _notifyOpen) { _notifyOpen = false; renderNotifyBell(); }
+    });
   }
 
   let _accountsHandler = null, _chainHandler = null;
@@ -1292,6 +1538,7 @@
       account = ethers.getAddress(accounts[0]);
       $('walletAddr').textContent = short(account);
       render();
+      refreshNotifyBell();
     };
     _chainHandler = async (hexChainId) => {
       walletChainId = parseInt(hexChainId, 16);
@@ -1349,6 +1596,7 @@
     refreshNetworkBanner();
     log(`Switched view to ${chain() ? chain().name : 'unknown chain'}`);
     render();
+    refreshNotifyBell();
   });
   $('connectBtn').addEventListener('click', () => connectWallet());
   $('walletAddr').addEventListener('click', () => {
@@ -3687,6 +3935,9 @@
   // ─── Boot ──────────────────────────────────────────────────────────────
   function boot() {
     buildChainSelect();
+    // Paint the notify bell immediately (unconnected state) so the control is
+    // live on first load when a notify backend is configured.
+    refreshNotifyBell();
     // Silent reconnect: if wallet exposes an already-permitted account, restore it.
     if (window.ethereum && window.ethereum.request) {
       window.ethereum.request({ method: 'eth_accounts' }).then(async (accs) => {
@@ -3702,6 +3953,7 @@
             attachWalletListeners();
             log(`Silent reconnect: ${account}`);
             render();
+            refreshNotifyBell();
           } catch (_) {}
         }
       }).catch(() => {});
