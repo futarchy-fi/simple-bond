@@ -12,6 +12,7 @@
 <script src="./refunds.js"></script>
 <script src="./banner.js"></script>
 <script src="./notify.js"></script>
+<script src="./contract-probe.js"></script>
 <style>
   :root {
     --bg: #ffffff;
@@ -520,6 +521,19 @@
 
   // Browse auto-refresh handle
   let browseRefreshTimer = null;
+
+  // ─── Contract-presence probe (RCA gap #6) ───────────────────────────────
+  // Verdict cache keyed by `${chainId}:${lowercased bondContract}` so the
+  // getCode probe runs at most ONCE per chain+address per session. Values are
+  // the classifyContractCode() states: 'present' | 'absent' | 'unknown'.
+  // 'unknown' (getCode threw) is transient — it is NOT cached as a hard verdict
+  // so a flaky RPC can be retried on the next read; only 'present'/'absent' are
+  // sticky. _contractAbsent records confirmed-absent keys, which fail closed:
+  // they suppress the bond list AND block every signer-bound write for that
+  // chain (incident — cryptic empty reads / "No contract code at 0x…").
+  const _contractProbeVerdict = {};   // key -> 'present' | 'absent'
+  const _contractAbsentMsg = {};      // key -> user-facing absent message
+  let _contractTransportMsg = null;   // last 'unknown' transport message (non-sticky)
 
   const STATUS_NAMES = ["Pending", "Won", "Lost", "Conceded", "RejectedByJudge", "Refunded"];
   const STATUS_CLASSES = ["pending", "won", "lost", "conceded", "rejectedbyjudge", "refunded"];
@@ -1080,6 +1094,15 @@
   }
   function requireWalletOnActiveChain() {
     if (!signer) throw new Error('Connect a wallet first');
+    // Fail CLOSED on a confirmed-absent contract (RCA gap #6): if the LIST-read
+    // probe found NO bytecode at the configured bondContract on this chain, every
+    // write would hit a cryptic low-level revert. Block it here — the central
+    // write choke-point — with the same clear message the browse area shows.
+    // 'unknown'/transport never sets this verdict, so a flaky RPC won't block.
+    if (isContractConfirmedAbsent()) {
+      throw new Error(_contractAbsentMsg[contractProbeKey()]
+        || window.contractPresenceMessage({ state: 'absent', address: chain()?.bondContract, chainName: chain()?.name || `chain ${activeChainId}` }));
+    }
     // Fail CLOSED: if we can't confirm the wallet's chain, refuse the write
     // rather than letting it fire at a same-address contract on the wrong
     // chain (incident I4). walletChainId is set on connect + chainChanged and
@@ -1164,6 +1187,66 @@
   function writeContract(addr, abi) {
     requireWalletOnActiveChain();
     return new ethers.Contract(addr, abi, signer);
+  }
+
+  // ─── Contract-presence probe (RCA gap #6) ──────────────────────────────
+  // Verify the configured bondContract actually has bytecode on the active
+  // chain BEFORE the first LIST read, using the EXISTING FallbackProvider
+  // (readProvider() — never a new keyed provider, respecting G5). getCode is a
+  // plain eth_getCode and is NOT a getLogs/queryFilter call (G4 allows it).
+  //
+  // Runs at most once per (chainId, lowercased address) per session via the
+  // verdict cache. On genuine absence ('0x') we fail CLOSED: cache the verdict,
+  // stash the message for the browse render, and block writes via
+  // requireWalletOnActiveChain(). If getCode itself THREW (classify => 'unknown')
+  // we treat it as a transient transport problem — show a soft message but do
+  // NOT cache or hard-block, so a flaky RPC can't brick a real deployment; the
+  // next read re-probes. 'present' clears any prior transport message.
+  function contractProbeKey() {
+    const c = chain();
+    const addr = c && c.bondContract ? String(c.bondContract).toLowerCase() : '';
+    return `${activeChainId}:${addr}`;
+  }
+  // Returns the sticky verdict for the active chain, or null if not yet probed.
+  function contractProbeVerdict() {
+    return _contractProbeVerdict[contractProbeKey()] || null;
+  }
+  // True only when the active chain's contract is CONFIRMED absent — the
+  // fail-closed signal consumed by requireWalletOnActiveChain() and the browse
+  // render. 'unknown'/transport never sets this, so flaky RPCs don't hard-block.
+  function isContractConfirmedAbsent() {
+    return contractProbeVerdict() === 'absent';
+  }
+  async function probeContractPresence() {
+    const c = chain();
+    if (!c || !c.bondContract) return null; // misconfig handled elsewhere
+    const key = contractProbeKey();
+    // Sticky verdict already known ('present' or 'absent') — never re-probe.
+    if (_contractProbeVerdict[key]) return _contractProbeVerdict[key];
+    let code;
+    try {
+      code = await withTimeout(readProvider().getCode(c.bondContract), 10000, '__probe_timeout__');
+    } catch (err) {
+      // getCode rejected — hand the thrown sentinel to the classifier so it
+      // resolves to 'unknown' (transport), not a confirmed absence.
+      code = err;
+    }
+    // A timed-out probe is a transport problem, not a confirmed absence: feed a
+    // non-string sentinel so classifyContractCode() returns 'unknown'.
+    if (code === '__probe_timeout__') code = new Error('getCode timed out');
+    const state = window.classifyContractCode(code);
+    const msg = window.contractPresenceMessage({ state, address: c.bondContract, chainName: c.name || `chain ${activeChainId}` });
+    if (state === 'unknown') {
+      // Transient — DO NOT cache as a sticky verdict; remember the soft message
+      // so the browse render can surface it, and allow a retry next read.
+      _contractTransportMsg = msg;
+      return state;
+    }
+    // 'present' or 'absent' — sticky for the session.
+    _contractTransportMsg = null;
+    _contractProbeVerdict[key] = state;
+    if (state === 'absent') _contractAbsentMsg[key] = msg;
+    return state;
   }
 
   // ─── My judge contract (localStorage) ──────────────────────────────────
@@ -1850,6 +1933,19 @@
   let browseStaleMeta = null;
 
   async function loadBrowseData() {
+    // RCA gap #6 — verify the configured bondContract actually has bytecode on
+    // this chain BEFORE attempting any bond LIST read. classifyContractCode() on
+    // the getCode result drives a fail-closed verdict: on confirmed absence we
+    // skip the reads entirely and surface contractPresenceMessage() (a wrong
+    // network / stale address would otherwise read empty and revert cryptically).
+    // 'unknown' (getCode threw) is transient — fall through to the normal read
+    // and only show a soft transport note; never hard-block a flaky RPC.
+    const presence = await probeContractPresence();
+    if (presence === 'absent') {
+      const key = contractProbeKey();
+      bondListCache[bondListKey()] = { rows: [], contractAbsent: true, error: _contractAbsentMsg[key] };
+      return [];
+    }
     // Prefer the indexer: one HTTP call, claim previews included, no RPC
     // range limits. Fall through to direct-RPC enumeration if it's empty
     // or unreachable — or if its self-reported lag exceeds STALE_THRESHOLD.
@@ -1965,8 +2061,23 @@
     const container = $('browseBonds');
     if (!container) return; // browse tab not active
     if (!data) return;
+    // RCA gap #6 — confirmed-absent contract: a prominent, fail-closed error.
+    // Writes are already blocked at requireWalletOnActiveChain(); this explains
+    // why and points at the wrong-network / misconfig cause. No list is shown.
+    if (data.contractAbsent) {
+      container.innerHTML = `<div class="msg msg-error" id="contractAbsentBanner" style="font-weight:600;">
+        ${escapeHtml(data.error || window.contractPresenceMessage({ state: 'absent', address: c?.bondContract, chainName: c?.name }))}
+      </div>`;
+      return;
+    }
     if (data.error) { container.innerHTML = `<div class="msg msg-error">${escapeHtml(data.error)}</div>`; return; }
-    const banner = browseStaleBannerHtml(data);
+    // RCA gap #6 — getCode threw (transport/RPC): a SOFT, non-blocking note.
+    // We still attempted the read below; this only explains a possible blip and
+    // never blocks writes, so a flaky RPC can't brick a real deployment.
+    const probeTransport = (!contractProbeVerdict() && _contractTransportMsg)
+      ? `<div class="msg msg-info" id="contractProbeTransportBanner" style="margin-bottom:10px;">${escapeHtml(_contractTransportMsg)}</div>`
+      : '';
+    const banner = probeTransport + browseStaleBannerHtml(data);
     const rows = data.rows || [];
     let visible = rows;
     if (browseState.filter !== 'all') {

@@ -6,12 +6,16 @@ const V6_HTML = resolve(__dirname, "..", "..", "frontend", "v6", "index.html");
 const V6_ABI = resolve(__dirname, "..", "..", "frontend", "v6", "abi.js");
 const V6_SMOKE = resolve(__dirname, "..", "..", "frontend", "v6", "smoke.html");
 const RUNTIME_CONFIG = resolve(__dirname, "..", "..", "frontend", "runtime-config.js");
+const MAIN_HTML = resolve(__dirname, "..", "..", "frontend", "index.html");
+const CONTRACT_PROBE = resolve(__dirname, "..", "..", "frontend", "contract-probe.js");
 
 describe("SimpleBond v0.6 frontend surface", function () {
     const v6html = readFileSync(V6_HTML, "utf8");
     const v6abi = readFileSync(V6_ABI, "utf8");
     const v6smoke = readFileSync(V6_SMOKE, "utf8");
     const runtimeConfig = readFileSync(RUNTIME_CONFIG, "utf8");
+    const mainHtml = readFileSync(MAIN_HTML, "utf8");
+    const contractProbe = readFileSync(CONTRACT_PROBE, "utf8");
 
     it("v6/abi.js exports every v0.6 entrypoint the UI calls", function () {
         // Reads
@@ -124,5 +128,73 @@ describe("SimpleBond v0.6 frontend surface", function () {
         // Gnosis legacy entry + gnosis* keys retired at v0.6 cutover.
         expect(runtimeConfig).to.not.include("gnosisBondContract:");
         expect(runtimeConfig).to.not.match(/100:\s*\{/);
+    });
+
+    // RCA gap #6 — getCode page-chain probe. The frontend must verify the
+    // configured bondContract actually has bytecode on the active chain BEFORE
+    // the first bond LIST read, classify the result, and fail CLOSED on genuine
+    // absence (block writes + surface a clear message) while staying soft on a
+    // flaky-RPC 'unknown'. These assertions lock the wiring so it can't silently
+    // regress. We assert it in BOTH the canonical frontend/index.html and the
+    // mirror frontend/v6/index.html (their existing tests keep them in sync).
+    describe("contract-presence probe (getCode fail-closed) wiring", function () {
+        it("frontend/contract-probe.js exports the pure helpers with the dual-export idiom", function () {
+            // Dual export (window + module.exports), mirroring phase.js.
+            expect(contractProbe).to.include("module.exports");
+            expect(contractProbe).to.include("root.classifyContractCode");
+            expect(contractProbe).to.include("root.contractPresenceMessage");
+            // Both exported functions are defined.
+            expect(contractProbe).to.match(/function classifyContractCode\s*\(/);
+            expect(contractProbe).to.match(/function contractPresenceMessage\s*\(/);
+            // The three presence states exist.
+            for (const s of ["present", "absent", "unknown"]) {
+                expect(contractProbe, `missing state ${s}`).to.include(`'${s}'`);
+            }
+        });
+
+        // Run the same wiring assertions against each index.html so neither the
+        // canonical file nor the v6 mirror can drift out of sync.
+        for (const [label, html] of [["frontend/index.html", () => mainHtml], ["frontend/v6/index.html", () => v6html]]) {
+            describe(label, function () {
+                it("loads contract-probe.js as a script", function () {
+                    expect(html()).to.match(/<script src="\.{1,2}\/contract-probe\.js"><\/script>/);
+                });
+                it("calls getCode on the read path and uses the pure classifier + message", function () {
+                    // getCode probe via the EXISTING read provider, bound INSIDE
+                    // probeContractPresence so a pre-existing getCode elsewhere
+                    // (linkJudge / deploy-verify / judge-code probe) can't satisfy
+                    // this — deleting the new probe's getCode line fails it.
+                    expect(html()).to.match(/async function probeContractPresence\(\)[\s\S]{0,700}readProvider\(\)\.getCode\(/);
+                    // References the pure helpers from contract-probe.js.
+                    expect(html()).to.include("classifyContractCode");
+                    expect(html()).to.include("contractPresenceMessage");
+                    // The probe is actually INVOKED (awaited call, distinct from its
+                    // `async function` definition) on the LIST read path, and an
+                    // 'absent' verdict short-circuits the reads. Deleting the call
+                    // site in loadBrowseData fails both of these.
+                    expect(html()).to.match(/async function loadBrowseData\(\)[\s\S]{0,1500}await probeContractPresence\(\)/);
+                    expect(html()).to.match(/await probeContractPresence\(\)[\s\S]{0,200}=== 'absent'/);
+                });
+                it("fails CLOSED on absence: blocks writes at the wallet-chain guard and surfaces the message in browse", function () {
+                    // Write choke-point blocks when the contract is confirmed absent.
+                    expect(html()).to.include("isContractConfirmedAbsent");
+                    expect(html()).to.match(/function requireWalletOnActiveChain\(\)[\s\S]{0,900}isContractConfirmedAbsent\(\)/);
+                    // Browse render shows a prominent fail-closed banner on absence.
+                    expect(html()).to.include("contractAbsent");
+                });
+                it("stays SOFT on 'unknown' transport: does not set a sticky absent verdict (flaky RPC must not brick a real deployment)", function () {
+                    // The 'unknown' branch must assign the transient transport
+                    // message (= msg, NOT = null) and then early-return BEFORE the
+                    // sticky verdict cache write. Requiring `= msg;` then `return
+                    // state;` excludes the later `_contractTransportMsg = null;`
+                    // reset, so deleting the real assignment or the early return
+                    // (which would let 'unknown' fall through to the sticky cache)
+                    // fails this assertion.
+                    expect(html()).to.match(/state === 'unknown'[\s\S]{0,300}_contractTransportMsg = msg;[\s\S]{0,80}return state;/);
+                    // Sticky verdict cache exists and is keyed per chain+address.
+                    expect(html()).to.include("_contractProbeVerdict");
+                });
+            });
+        }
     });
 });

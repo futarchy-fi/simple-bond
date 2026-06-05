@@ -220,3 +220,25 @@
 - Sepolia deployer 0x693E…b43d ≈ 0.0338 ETH (< 0.05 gate) → live capability journey still parked.
 - Next: funded → live V7 capability journey; else next polish (RCA gap #3 withTimeout empty-vs-error,
   #5 allowanceCache account-keying, #6 getCode page-chain probe, or A2-followup all-zero-timing state).
+
+## Iteration 21 — 2026-06-05 — A6/gap #6: getCode page-chain probe (PROGRESS)
+- Closed RCA gap #6 (the "No contract code at 0x… on Ethereum" incident class TGGP hit). New pure helper
+  frontend/contract-probe.js (dual-export like phase.js): classifyContractCode(code) → 'absent' for resolved
+  empty code (null/''/'0x'/'0X'/'0x0', trimmed/case-insensitive), 'present' for real bytecode, 'unknown' ONLY for
+  a non-string (the thrown/timeout sentinel); contractPresenceMessage({state,address,chainName}) → fail-closed
+  "No SimpleBond contract found at <addr> on <chain>…" / transport note / "".
+- Wired into frontend/index.html + frontend/v6/index.html (kept in sync): probeContractPresence() calls the EXISTING
+  readProvider().getCode (no new keyed provider — G5 safe; getCode ≠ getLogs — G4 safe) at the top of loadBrowseData,
+  cached per (chainId,address). 'absent' → short-circuits reads, renders #contractAbsantBanner, and blocks writes via
+  isContractConfirmedAbsent() inside requireWalletOnActiveChain() (the central write choke-point). 'unknown' (getCode
+  threw / 10s timeout) → soft transient note, NOT sticky, never blocks (a flaky RPC can't brick a real deployment).
+  Mainnet v6 + Sepolia v7 both have code → 'present' → no banner, all actions enabled (happy path untouched).
+- Adversarial panel 3/3 PASS (no-regression, probe-correct, test-quality). The test-quality lens flagged two VACUOUS
+  surface assertions (W1: getCode/probe-invocation not uniquely tied to the new code since 3 pre-existing getCode calls
+  exist; W2: the 'unknown'-soft window also caught the later `= null` reset). I TIGHTENED both myself: bound getCode
+  inside probeContractPresence, bound the awaited call to loadBrowseData + the `=== 'absent'` short-circuit, and made
+  the unknown assertion require `= msg;` then `return state;`. Negative-tested all three perturbations → NOMATCH.
+- Gates re-run MYSELF: full `npx hardhat test` 864 passing / 0 failing; lint EXIT=0; docker e2e 59 passed / 4 skipped,
+  all 7 capabilities re-confirmed true. Burn-down: rcaOpenGaps 6 → 5.
+- Sepolia deployer 0x693E…b43d still ≈ 0.0338 ETH (< 0.05) → live journey still parked.
+- Next: funded → live V7 journey; else RCA gap #5 (allowanceCache not keyed by account) or #3 (withTimeout empty-vs-error).
