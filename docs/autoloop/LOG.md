@@ -203,3 +203,20 @@
   bondVersion:6). I had run only a surface subset after 5c and missed it (full hardhat went red on push). Fixed the
   assertion to expect Sepolia v7 (intended cutover). Full hardhat now 818 passing / 0 failing — main green again.
 - Process note: run the FULL `npx hardhat test` (not a subset) after any runtime-config/contract change.
+
+## Iteration 20 — 2026-06-05 — docs accuracy post-v0.7 cutover + doc-as-test (PROGRESS)
+- Closed RCA gap #7 (I11 prose-drift): the README implied v0.6 everywhere and was stale after the
+  Sepolia v0.7 cutover. Rewrote Repository Status + addresses to the true state — mainnet=v0.6
+  (what bond.futarchy.ai serves), staging/Sepolia=v0.7 (SimpleBondV7, bondVersion 7) with a one-line
+  C1 (pending-cap) + C2 (pull-payment credit ledger) summary; mainnet v0.7 cutover explicitly NOT done
+  (separate later gate). Dated CHANGELOG v0.7 staging entry (states mainnet stays v0.6).
+- NEW doc-as-test test/tooling/docsAccuracy.test.js (12 assertions): docs must agree with BOTH
+  frontend/runtime-config.js (loaded in a vm sandbox) AND deployments/*.json — bondVersion per chain,
+  bondContract === deployment record address; anti-overclaim guard FAILS on any premature v0.7-on-mainnet
+  claim; address/version-drift guard. Both required failure modes negative-tested (perturb → fail → restore).
+- 3/3 verdicts pass (docs-accurate, test-catches-drift, no-regress). Gates re-run MYSELF (per the iter-19
+  process rule): full `npx hardhat test` 830 passing / 0 failing; lint EXIT=0 (g1 baseline 41).
+- Burn-down: rcaOpenGaps 7 → 6; docDrift 0 (now actually enforced by a test, not assumed). Committed 3bb2b1e.
+- Sepolia deployer 0x693E…b43d ≈ 0.0338 ETH (< 0.05 gate) → live capability journey still parked.
+- Next: funded → live V7 capability journey; else next polish (RCA gap #3 withTimeout empty-vs-error,
+  #5 allowanceCache account-keying, #6 getCode page-chain probe, or A2-followup all-zero-timing state).
