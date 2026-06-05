@@ -41,3 +41,10 @@
   (2 tests) + full local e2e 40 passed; mirrored to v6.
 - Bonus: refactor removed an empty catch → G1 baseline 42 → 41 (locked). rcaOpenGaps 9 → 8 (gap #2 closed).
 - Next: iteration 5 = B3 (bond detail loads from indexer point-read; depends B1 ✓).
+
+## Iteration 5 — 2026-06-04 — B3 bond-detail indexer-first paint (PROGRESS)
+- renderBondDetail now paints claim text + per-challenge rows instantly from GET /api/bonds/:id, then
+  enriches live timing/roles via eth_call; removed the detail-page claim-text getLogs (gap #9). Indexer
+  unavailable → graceful RPC fallback. 3/3 verdicts pass (paint proven by racing a 1.5s-delayed RPC; getLogs=0).
+- New bond-detail-indexer-first.spec.js (2 branches) + full local e2e 42 passed; mirrored to v6; lint G1=41.
+- rcaOpenGaps 8 → 7 (gap #9 closed). Next: iteration 6 = A2 per-challenge status timeline (why-no-action sentences).

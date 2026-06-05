@@ -2893,12 +2893,106 @@
   }
 
   // ─── BOND DETAIL ───────────────────────────────────────────────────────
+  // Indexer-first paint (RCA gap #9): the most-shared page must show claim text
+  // and each challenge's status instantly from the indexer point-read, with no
+  // browser getLogs and no multi-second "Loading bond #…" spinner. We then
+  // enrich in the background via direct eth_call reads (live struct timing/flags,
+  // token meta, susdsRate, judge-operator check) so action-gating stays accurate,
+  // re-rendering the view in place when the enrich completes. If the indexer
+  // point-read is unavailable we fall back to the pure-RPC render (no dead-end).
   async function renderBondDetail(bondIdStr) {
     const view = $('view');
+    const bondId = parseInt(bondIdStr, 10);
+    if (!Number.isFinite(bondId) || bondId < 0) {
+      view.innerHTML = `<div class="msg msg-error">${escapeHtml('Invalid bond id')}</div>
+        <p style="margin-top:10px;"><a href="#browse">← Back to browse</a></p>`;
+      return;
+    }
     view.innerHTML = `<div class="loading"><span class="spinner"></span>Loading bond #${escapeHtml(bondIdStr)}…</div>`;
+
+    // 1) FIRST paint from the indexer point-read when available — claim text +
+    //    each challenge (idx/challenger/status/content) render immediately with
+    //    no getLogs. Then 2) enrich live via eth_call. On indexer-null,
+    //    3) fall back to the pure-RPC render unchanged.
+    let painted = false;
+    let claimHint = undefined; // indexer's claim text, carried into the enrich render
     try {
-      const bondId = parseInt(bondIdStr, 10);
-      if (!Number.isFinite(bondId) || bondId < 0) throw new Error('Invalid bond id');
+      const idx = await indexerBond(bondId);
+      if (idx && idx.bond) {
+        renderBondDetailPaint(bondId, idx);
+        painted = true;
+        claimHint = String(idx.bond.claimContent || '');
+      }
+    } catch (_) { /* fall through to RPC */ }
+
+    try {
+      await renderBondDetailRpc(bondId, { claimHint });
+    } catch (err) {
+      // The enrich/RPC read failed. If we already painted from the indexer,
+      // keep that view (no dead-end); otherwise surface the error.
+      if (!painted) {
+        view.innerHTML = `<div class="msg msg-error">${escapeHtml(friendlyError(err))}</div>
+          <p style="margin-top:10px;"><a href="#browse">← Back to browse</a></p>`;
+      }
+    }
+  }
+
+  // Instant render from the indexer point-read ({ bond, challenges }). No RPC,
+  // no getLogs — claim text and each challenge's status/content show right away.
+  // Action affordances (challenge/concede/rule/etc.) intentionally stay off here;
+  // they appear once the background eth_call enrich resolves live timing + roles.
+  function renderBondDetailPaint(bondId, idx) {
+    const b = idx.bond;
+    const challenges = (idx.challenges || []).map((c) => ({
+      i: Number(c.idx),
+      ch: {
+        challenger: c.challenger,
+        status: Number(c.status),
+        timestamp: 0n,
+        challengeAtVersion: 0,
+        metadataHash: '0x' + '0'.repeat(64),
+        rulingMetadataHash: '0x' + '0'.repeat(64),
+      },
+      timing: null,
+    }));
+    const claimContent = String(b.claimContent || '');
+    const claimVersion = Number(b.claimVersion || 0);
+    const challengeCount = challenges.length;
+    const statusName = b.settled ? 'settled' : (b.closed ? 'closed' : (Number(b.pendingCount) > 0 ? 'disputed' : 'open'));
+
+    $('view').innerHTML = `
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
+        <h2 style="margin:0;">Bond #${bondId}</h2>
+        <span class="status-badge status-${statusName}">${statusName}</span>
+        <span style="color:var(--muted);font-size:13px;">claim v${claimVersion}</span>
+      </div>
+
+      <div class="card">
+        <h3>Claim content <span style="font-size:12px;color:var(--muted);font-weight:normal;font-family:system-ui;">v${claimVersion}</span></h3>
+        ${claimContent
+          ? `<div style="white-space:pre-wrap;background:#fff;padding:12px;border-radius:6px;border:1px solid var(--border);">${escapeHtml(claimContent)}</div>`
+          : `<div class="hint">Claim content not recorded yet${b.claimHash ? ` (hash: <code>${b.claimHash}</code>)` : ''}.</div>`}
+      </div>
+
+      <div class="card">
+        <h3>Challenges (${challengeCount})</h3>
+        <div id="challengeList">${challenges.length === 0 ? '<div class="hint">No challenges yet.</div>' : challenges.map(c => challengeHtml(bondId, c, b, '', 18, false, false)).join('')}</div>
+      </div>
+
+      <div class="hint" style="margin-top:8px;"><span class="spinner"></span> Loading live timing &amp; actions…</div>
+    `;
+  }
+
+  // Pure-RPC render of the bond detail: live struct via eth_call (timing/flags
+  // for accurate action-gating), per-challenge reads, token meta, susdsRate.
+  // Doubles as the background ENRICH after an indexer-first paint and as the
+  // graceful fallback when the indexer point-read is unavailable. Note: claim
+  // text is NOT re-derived from getLogs here (gap #9) — `opts.claimHint` carries
+  // the indexer's claim text into the enrich render; the pure fallback shows the
+  // existing "not recorded" hint.
+  async function renderBondDetailRpc(bondId, opts = {}) {
+    const view = $('view');
+    {
       const bc = bondReadContract();
       const nextId = Number(await bc.nextBondId());
       if (bondId >= nextId) throw new Error(`Bond #${bondId} does not exist yet (next id is ${nextId}).`);
@@ -2922,28 +3016,10 @@
           challenges.push({ i, ch, timing });
         } catch (_) {}
       }
-      // Fetch latest claim content via events
-      let claimContent = '';
-      let claimContentVersion = null;
-      try {
-        const c = chain();
-        const fromBlock = c?.deployBlock || 0;
-        const createdLogs = await withTimeout(queryFilterChunked(bc, bc.filters.BondCreated(bondId), fromBlock), 20000, []);
-        if (createdLogs.length > 0) {
-          claimContent = String(createdLogs[0].args.claimContent || '');
-          claimContentVersion = 1;
-        }
-        const modLogs = await withTimeout(queryFilterChunked(bc, bc.filters.ClaimModified(bondId), fromBlock), 20000, []);
-        let latest = claimContentVersion;
-        for (const ev of modLogs) {
-          const v = Number(ev.args.newVersion);
-          if (latest == null || v > latest) {
-            latest = v;
-            claimContent = String(ev.args.newContent || '');
-          }
-        }
-        if (latest != null) claimContentVersion = latest;
-      } catch (_) {}
+      // Claim text comes from the indexer (gap #9 — no browser getLogs here).
+      // `opts.claimHint` is the indexer's claim content on the enrich path;
+      // on the pure RPC fallback it is undefined and the view shows the hint.
+      const claimContent = opts.claimHint != null ? String(opts.claimHint) : '';
 
       let tokenSym = '???', tokenDec = 18;
       try { const m = await tokenMeta(b.token); tokenSym = m.symbol; tokenDec = m.decimals; } catch (_) {}
@@ -3027,7 +3103,7 @@
           <h3>Claim content <span style="font-size:12px;color:var(--muted);font-weight:normal;font-family:system-ui;">v${b.claimVersion}</span></h3>
           ${claimContent
             ? `<div style="white-space:pre-wrap;background:#fff;padding:12px;border-radius:6px;border:1px solid var(--border);">${escapeHtml(claimContent)}</div>`
-            : `<div class="hint">Claim content not found in events (hash: <code>${b.claimHash}</code>).</div>`}
+            : `<div class="hint">Claim content not available from the indexer (hash: <code>${b.claimHash}</code>).</div>`}
           ${isPoster && !b.settled ? `
             <div style="margin-top:10px;">
               ${Number(b.pendingCount) === 0 ? `
@@ -3096,9 +3172,6 @@
       `;
 
       wireBondDetail(bondId, b);
-    } catch (err) {
-      view.innerHTML = `<div class="msg msg-error">${escapeHtml(friendlyError(err))}</div>
-        <p style="margin-top:10px;"><a href="#browse">← Back to browse</a></p>`;
     }
   }
 
