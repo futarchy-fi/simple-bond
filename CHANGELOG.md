@@ -1,5 +1,37 @@
 # Changelog
 
+## v0.7 — Sepolia staging cutover (2026-06-05)
+
+**Status:** deployed and cut over on **Sepolia / staging only** (chain id 11155111).
+Mainnet (chain id 1) stays on `v0.6`; the mainnet `v0.7` cutover is a separate later
+gate. `SimpleBondV7` is a NEW contract (`contracts/core/SimpleBondV7.sol`) — `v0.6`
+plus two UX-motivated mechanism changes. See `SPEC_V07.md` for the full spec.
+
+### Mechanism changes (from v0.6)
+
+- **C1 — pending-cap `maxChallenges`.** `challenge()` now gates on the number of
+  *currently-pending* challenges, not total-ever, so spam-then-reject can no longer
+  permanently lock out legitimate challengers. The `challenges[]` array stays
+  append-only (per-index events/indexer snapshots unchanged); only the cap semantics
+  change. Adds a hard `MAX_CHALLENGES_CEILING = 100` ceiling in `createBond` (the
+  safety lock for C2's bounded settle loop).
+- **C2 — per-address pull-payment credit ledger.** Replaces the shared
+  `claimRefunds(bondId, maxCount)` drain with `mapping[recipient][token]` credits and
+  a `claim(token)` pull (strict CEI + `ReentrancyGuard`). Outbound value to untrusted
+  recipients becomes a claimable credit; inbound `transferFrom`, the `claim()` payout,
+  and the judge fee stay direct transfers. New `Credited` / `Claimed` events;
+  `ChallengeRefunded` removed.
+
+### Deploy / cutover
+
+- Fresh isolated `SimpleBondV7` stack deployed on **Sepolia** at
+  `0x71e15D42bE15BAE117096E12C9dBA25E67d14C67` (deploy block `10992602`); registries,
+  judge, directory and the `MockSUSDS` token reused from the earlier Sepolia `v0.6`
+  stack. Recorded in `deployments/sepolia-v7.json`.
+- `frontend/runtime-config.js` `chains[11155111]` updated to the V7 address with
+  `bondVersion: 7`; `staging.bond.futarchy.*` now serves V7. `chains[1]` (mainnet)
+  unchanged at `bondVersion: 6`.
+
 ## v0.6 — Ethereum mainnet (sUSDS)
 
 **Status:** code complete on `spec/v06`, awaiting mainnet deploy. See `RELEASE_V06.md` for the operator runbook.

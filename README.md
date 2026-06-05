@@ -5,7 +5,9 @@ A truth-machine bond contract. Make a claim, back it with money, and let the wor
 
 ## Repository Status
 
-**`v0.6` is live on Ethereum mainnet and is what [bond.futarchy.ai](https://bond.futarchy.ai) serves.** It was merged to `main` and deployed in May 2026: sUSDS-collateralized bonds, evolving claims, per-challenge concession, judge out-of-scope refunds, close/open, append-only profile registries. The mainnet addresses ship in `frontend/runtime-config.js` (`chains[1]`). See `SPEC_V06.md`, `PLAN_V06.md`, `RELEASE_V06.md`, `CHANGELOG.md`.
+**`v0.6` is live on Ethereum mainnet and is what [bond.futarchy.ai](https://bond.futarchy.ai) serves.** It was merged to `main` and deployed in May 2026: sUSDS-collateralized bonds, evolving claims, per-challenge concession, judge out-of-scope refunds, close/open, append-only profile registries. The mainnet addresses ship in `frontend/runtime-config.js` (`chains[1]`, `bondVersion: 6`). See `SPEC_V06.md`, `PLAN_V06.md`, `RELEASE_V06.md`, `CHANGELOG.md`.
+
+**Staging / Sepolia (chain 11155111) has been cut over to `v0.7` (`SimpleBondV7`, `bondVersion: 7`)** — this is what `staging.bond.futarchy.*` serves. `SimpleBondV7` is `v0.6` plus two UX-motivated mechanism changes: **C1** a pending-cap `maxChallenges` (the cap now bounds the live, currently-pending set instead of lifetime filings, so spam-then-reject can no longer permanently lock out challengers, with a hard `MAX_CHALLENGES_CEILING`) and **C2** a per-address pull-payment credit ledger with `claim(token)` (refunds become claimable credits instead of pushed transfers). The staging addresses ship in `frontend/runtime-config.js` (`chains[11155111]`) and `deployments/sepolia-v7.json`. See `SPEC_V07.md` for the full spec. **The mainnet `v0.7` cutover is NOT done** — it is a separate later gate; mainnet stays on `v0.6` until then.
 
 The previous `v0.5` line (Gnosis Chain, the original audit target) has been **retired from the live UI** — bond.futarchy.ai no longer points at Gnosis. Its contracts remain deployed on Gnosis but are not surfaced by the app. The notes below about Gnosis deployment are historical, kept for reference.
 
@@ -13,6 +15,7 @@ The previous `v0.5` line (Gnosis Chain, the original audit target) has been **re
 - current judge wrapper: `contracts/judges/ManualJudgeV6.sol`
 - current profile registries: `contracts/profiles/JudgeProfileRegistryV6.sol`, `PosterProfileRegistry.sol`, `ChallengerProfileRegistry.sol`
 - current `v0.6` docs: `SPEC_V06.md`, `AUDIT_SCOPE_V06.md`, `RELEASE_V06.md`, `CHANGELOG.md`
+- staging-only `v0.7` line (Sepolia, not yet on mainnet): `contracts/core/SimpleBondV7.sol`, docs `SPEC_V07.md`
 - previous `v0.5` line (Gnosis, retired from UI): `contracts/core/SimpleBondV5.sol`, `contracts/judges/ManualJudge.sol`, docs `SPEC.md` / `AUDIT_SCOPE.md`
 - legacy contract lines and the Kleros adapter: `contracts/legacy/`
 
@@ -182,7 +185,7 @@ window.SIMPLE_BOND_CONFIG = {
       bondVersion: 6,
       // judgeProfileRegistry / posterProfileRegistry / challengerProfileRegistry / rpcs …
     },
-    11155111: { /* Sepolia testnet, also v0.6 */ },
+    11155111: { /* Sepolia testnet (staging) — cut over to v0.7 (SimpleBondV7), bondVersion 7 */ },
   },
   defaultChainId: 1,
 };
@@ -252,8 +255,27 @@ Sample (legacy) systemd units also live in `deploy/systemd/`:
 | OfficialBondDirectory | Ethereum | `0xAB3f30129c66c139ceBCD424359E7D953f4f7455` |
 | sUSDS (canonical bond token) | Ethereum | `0xa3931d71877C0E7a3148CB7Eb4463524FEc27fbD` |
 
-Deploy block: `25139967`. A parallel `v0.6` stack is deployed on Sepolia for staging
-(`staging.bond.futarchy.ai`); see `frontend/runtime-config.js` `chains[11155111]`.
+Deploy block: `25139967`.
+
+**Staging `v0.7` deployment — Sepolia (chainId 11155111).** This is what
+`staging.bond.futarchy.*` serves; the authoritative copy lives in
+`frontend/runtime-config.js` `chains[11155111]` and `deployments/sepolia-v7.json`.
+Sepolia was cut over to `SimpleBondV7` (`bondVersion: 7`); the registries, judge,
+directory and `MockSUSDS` token were reused from the earlier Sepolia `v0.6` stack.
+Mainnet (chain 1) stays on `v0.6` — its `v0.7` cutover is a separate later gate.
+
+| Asset | Chain | Address |
+|-------|-------|---------|
+| SimpleBond v0.7 (`SimpleBondV7`) | Sepolia | `0x71e15D42bE15BAE117096E12C9dBA25E67d14C67` |
+| JudgeProfileRegistryV6 (reused) | Sepolia | `0x5C182867862c061a32C7621c0e3529FF682bbF22` |
+| PosterProfileRegistry (reused) | Sepolia | `0x7644dfE83B1e1e9E466644557606Ff28916fCc15` |
+| ChallengerProfileRegistry (reused) | Sepolia | `0xA6c22430CB34AC5403D6f2a01BecD90c91e09C23` |
+| ManualJudgeV6 (reused) | Sepolia | `0x25E749d42EE4AD0afBEF5c92Bede672784AbDBa9` |
+| OfficialBondDirectory (reused) | Sepolia | `0xe93B0E8fd59FA1dbfa3441559616ADBD3344395F` |
+| MockSUSDS (staging bond token) | Sepolia | `0x8983aebdA1D5f2b406144D7AAa4f50df4ec8A837` |
+
+SimpleBondV7 deploy block: `10992602`. See `SPEC_V07.md` for the C1 + C2 mechanism
+changes.
 
 <details>
 <summary>Retired <code>v0.5</code> / legacy deployment (Gnosis — no longer served by the app)</summary>
