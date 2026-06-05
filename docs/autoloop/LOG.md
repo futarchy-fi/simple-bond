@@ -121,3 +121,11 @@
 - BACKEND-RELIABILITY LAYER COMPLETE: B1 failover + B2 dead-letter recovery + B4 liveness + B3 indexer-first FE.
 - Next phase: v0.7 CONTRACTS (C1 pending-cap maxChallenges, C2 pull-payment credit ledger) — design first,
   then implement+test, then SEPOLIA deploy, then capability-verify, then (only after) cutover.
+
+## v0.7 design — 2026-06-05 — SimpleBondV7 spec + sequenced plan
+- 7-agent design pass (contract/security/migration lenses → scored → plan). Wrote SPEC_V07.md + docs/autoloop/v07-plan.md.
+- Locked safety calls: hard MAX_CHALLENGES_CEILING=100 in core createBond (prevents settle-loop gas-bomb DoS);
+  [recipient][token] credit ledger; claim() CEI + nonReentrant; judge fee stays inline (crediting strands it);
+  abiForChain must be restructured before bondVersion:7 (else V5-ABI fallthrough drops Credited).
+- Plan order: C1 (pending-cap, smallest) → C2 (credit ledger) → Sepolia deploy → capability-verify → cutover. V6 stays live.
+- Next: STEP 0+1 = scaffold SimpleBondV7.sol from V6 + implement C1 + tests (test/core/v7/).
