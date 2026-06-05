@@ -80,3 +80,15 @@
   (3 e2e: no-refundable→no-control; conceded→no-control; settled+pending→owed→drain→gone+balance moved).
   3/3 verdicts pass; full hardhat 703 + local e2e 49 passed; v6 in sync; lint G1=41.
 - Next: iteration 9 = A5 one-line lifecycle/role banner on bond detail.
+
+## Iteration 9 (+9b) — 2026-06-04 — A5 lifecycle/role banner (PROGRESS, with a fix sub-iteration)
+- One-line banner at top of bond detail, derived from the SAME isPoster/isJudgeOperator/canChallenge/
+  settled/closed/pendingCount the cards use (single source of truth — can't contradict the buttons).
+- Adversarial panel CAUGHT a real bug (again from contract truth): closeBond only blocks NEW challenges;
+  a closed bond with pending challenges still lets the judge rule/reject — but the banner said "no challenges
+  pending to rule on". 9b fixed it (next-move clause derives from actual actionability, not the state label;
+  tests parametrize pendingCount independently). 3/3 verdicts pass.
+- New frontend/banner.js (pure bondBanner) + bondBanner.test.js (43) + bond-banner.spec.js (5 e2e incl.
+  judge-of-closed-with-pending). Independently re-ran docker e2e: 5/5 banner + full local 54 passed; v6 in sync.
+- This run has now caught 2 subtle contract-semantics bugs (A2 phantom gap, A5 closed+pending) that green tests alone would have shipped.
+- Next: iteration 10 = A6 wire the opt-in notification flow (reuse /api/notify; honest copy, EMAIL_ENABLED=false).

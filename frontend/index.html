@@ -10,6 +10,7 @@
 <script src="./v6/manualJudgeV6.bytecode.js"></script>
 <script src="./phase.js"></script>
 <script src="./refunds.js"></script>
+<script src="./banner.js"></script>
 <style>
   :root {
     --bg: #ffffff;
@@ -141,6 +142,19 @@
   .status-refunded { background: #f3f4f6; color: #4b5563; border-color: #d1d5db; }
   .status-timedout { background: #fef3c7; color: #92400e; border-color: #fde68a; }
   .status-expired { background: #fef3c7; color: #92400e; border-color: #fde68a; }
+
+  /* Bond-level lifecycle/role banner (A5). One plain-language sentence at the
+     top of the detail page; reuses the per-state palette of the status badges so
+     it reads as the same vocabulary as the badge and the cards below it. */
+  .bond-banner {
+    border: 1px solid transparent; border-radius: 8px;
+    padding: 12px 16px; margin-bottom: 16px;
+    font-size: 14px; line-height: 1.45; font-weight: 500;
+  }
+  .bond-banner[data-state="open"] { background: #ecfdf5; color: #065f46; border-color: #a7f3d0; }
+  .bond-banner[data-state="disputed"] { background: #fef3c7; color: #92400e; border-color: #fde68a; }
+  .bond-banner[data-state="closed"] { background: #f3f4f6; color: #374151; border-color: #d1d5db; }
+  .bond-banner[data-state="settled"] { background: #eef2ff; color: #3730a3; border-color: #c7d2fe; }
 
   /* Message styles */
   .msg { padding: 10px 14px; border-radius: 6px; margin-top: 10px; font-size: 13px; }
@@ -3107,7 +3121,25 @@
         ? computeRefunds(challenges, b, account)
         : { refundableSlots: 0, viewerOwedSlots: 0, viewerOwedShares: 0n };
 
+      // BOND-level lifecycle/role banner (A5). bondBanner (frontend/banner.js) is
+      // a pure summary derived from the SAME gating flags the action cards use —
+      // isPoster/isJudgeOperator/canChallenge + settled/closed/pendingCount — so
+      // its one-line headline can never contradict the buttons rendered below it.
+      // It SUMMARIZES; the cards remain the actionable controls.
+      const banner = (typeof bondBanner === 'function')
+        ? bondBanner({
+            settled: b.settled,
+            closed: b.closed,
+            pendingCount: Number(b.pendingCount),
+            isPoster,
+            isJudgeOperator,
+            canChallenge,
+          })
+        : null;
+
       view.innerHTML = `
+        ${banner ? `<div class="bond-banner" data-state="${banner.state}" data-role="${banner.viewerRole}">${escapeHtml(banner.headline)}</div>` : ''}
+
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
           <h2 style="margin:0;">Bond #${bondId}</h2>
           <span class="status-badge status-${statusName}">${statusName}</span>
