@@ -161,7 +161,14 @@ async function handleRegister(req, res) {
     db.logEmail(address, chainId, null, 'verification', msgId);
   }
 
-  json(res, 200, { ok: true, message: 'Verification email sent. Check your inbox.' });
+  // Be honest about delivery: sendEmail returns null when email is disabled or
+  // the send failed (no message id). Don't claim an email was sent in that case
+  // — say the subscription was recorded and delivery isn't enabled yet. When a
+  // real message id comes back, the verification-email copy is accurate.
+  const responseMessage = msgId
+    ? 'Verification email sent. Check your inbox.'
+    : 'Subscription recorded. Email delivery is not yet enabled, so no verification email was sent.';
+  json(res, 200, { ok: true, message: responseMessage });
 }
 
 function handleVerify(req, res) {

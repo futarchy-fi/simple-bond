@@ -10,6 +10,20 @@ import { eventEmail } from './templates.mjs';
 // Only runs for v0.6 chains (the v0.5 Gnosis struct shape differs and that
 // line is retired from the UI).
 
+// Marker for a failure in the indexLogs/DB layer (a bonds() read or a SQLite
+// write) as distinct from a getLogs-layer failure. Sub-chunking a block range
+// only helps a getLogs "too large / transient on a big range" failure; halving
+// will never fix a contract.bonds() RPC miss or a DB error, so these must
+// surface and break the tick (no-skip: checkpoint held, retried next tick)
+// rather than being misclassified as a poison block and dead-lettered (B2).
+class IndexLayerError extends Error {
+  constructor(cause) {
+    super(cause?.message || String(cause));
+    this.name = 'IndexLayerError';
+    this.cause = cause;
+  }
+}
+
 // Snapshot one bond's current state from chain into the read-model. `claim`
 // carries claim text pulled from the triggering event (the struct only has a
 // hash); pass undefined to leave any stored text untouched.
@@ -18,8 +32,13 @@ async function indexBondState(contract, chainId, bondId, claim) {
   try {
     b = await contract.bonds(bondId);
   } catch (err) {
+    // A transient bonds() miss must NOT be silently dropped (it would leave the
+    // bond unindexed until a later event re-triggers it — a latent RC1-class
+    // gap). Surface it AND throw so the scan breaks WITHOUT advancing the
+    // checkpoint past this window: the next tick re-reads the same range and
+    // retries this bond. Tagged IndexLayerError so it is not sub-chunked.
     console.error(`[index] chain ${chainId} bond ${bondId} read failed:`, err.message);
-    return;
+    throw new IndexLayerError(err);
   }
   // challenge_count is a SECONDARY read. If it fails, pass null so the upsert
   // preserves the prior good value rather than clobbering an active bond's
@@ -144,21 +163,38 @@ class PoisonBlockError extends Error {
 // A range that fails even at the 1-block floor is a true poison block and is
 // re-thrown as a PoisonBlockError so the caller can dead-letter it (no-skip).
 async function scanWindowRecovering(provider, contract, chainId, iface, fromBlock, toBlock, sleep) {
+  let logs;
   try {
-    const logs = await getLogsWithRetry(provider, { address: CHAINS[chainId].contract, fromBlock, toBlock }, sleep);
-    if (logs.length > 0) await indexLogs(contract, chainId, logs, iface);
-    return;
+    // ONLY the getLogs layer is eligible for sub-chunk/dead-letter recovery: a
+    // "too large / transient on a big range" failure is what halving fixes.
+    logs = await getLogsWithRetry(provider, { address: CHAINS[chainId].contract, fromBlock, toBlock }, sleep);
   } catch (err) {
     if (fromBlock >= toBlock) {
       // 1-block floor reached and still failing — a genuine poison block.
       throw new PoisonBlockError(fromBlock, toBlock, err);
     }
     console.warn(`[index] chain ${chainId} window ${fromBlock}-${toBlock} failed after retries; sub-chunking:`, err.message);
+    const mid = Math.floor((fromBlock + toBlock) / 2);
+    // Process lower half first to preserve event ordering, then the upper half.
+    await scanWindowRecovering(provider, contract, chainId, iface, fromBlock, mid, sleep);
+    await scanWindowRecovering(provider, contract, chainId, iface, mid + 1, toBlock, sleep);
+    return;
   }
-  const mid = Math.floor((fromBlock + toBlock) / 2);
-  // Process lower half first to preserve event ordering, then the upper half.
-  await scanWindowRecovering(provider, contract, chainId, iface, fromBlock, mid, sleep);
-  await scanWindowRecovering(provider, contract, chainId, iface, mid + 1, toBlock, sleep);
+
+  // indexLogs is the DB/RPC-read layer. A failure here (a contract.bonds() miss
+  // or a SQLite write error) is NOT helped by halving the block range, so it
+  // must NOT be sub-chunked or dead-lettered as a poison block. Surface it as an
+  // IndexLayerError so the caller breaks the tick WITHOUT advancing the
+  // checkpoint (no-skip: the next tick re-reads this window) (B2).
+  if (logs.length > 0) {
+    try {
+      await indexLogs(contract, chainId, logs, iface);
+    } catch (err) {
+      if (err instanceof IndexLayerError) throw err;
+      throw new IndexLayerError(err);
+    }
+  }
+  return;
 }
 
 // Cursor-based indexing pass, mirroring pollChain but DB-only and using a
@@ -219,6 +255,12 @@ async function indexChain(chainId, provider, contract, iface, opts = {}) {
         // and is re-attempted on a later tick (poison is often transient infra).
         db.recordDeadLetter(chainId, err.fromBlock, err.toBlock, err.cause?.message || String(err.cause));
         console.error(`[index] chain ${chainId} poison block ${err.fromBlock}-${err.toBlock} dead-lettered (checkpoint held):`, err.cause?.message || err.message);
+      } else if (err instanceof IndexLayerError) {
+        // A DB/read-layer failure (e.g. a transient contract.bonds() miss or a
+        // SQLite write error). Halving the range would not help, so it is NOT
+        // dead-lettered as a poison block. Surface it and hold the checkpoint —
+        // the next tick re-reads this same window and retries (no-skip).
+        console.error(`[index] chain ${chainId} index/DB layer error scanning ${cursor}–${toBlock} (checkpoint held, will retry):`, err.message);
       } else {
         console.error(`[index] chain ${chainId} scan ${cursor}–${toBlock} failed:`, err.message);
       }

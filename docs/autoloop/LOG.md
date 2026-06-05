@@ -193,3 +193,13 @@
 - Verified: config flip → Sepolia v7 + Credited/Claimed ABI; mainnet entry untouched. Gates green (16 surface tests).
 - Deploying to VM with SEPOLIA_V7_CONTRACT set; reset Sepolia index cursor to the V7 deploy; cleared stale v6-Sepolia rows.
 - v0.7 cutover on STAGING (staging.bond.futarchy.ai) COMPLETE. Mainnet stays v6 pending the owner's go + the live capability journey.
+
+## Iteration 19 — 2026-06-05 — backend follow-ups burn-down + 5c regression repair (PROGRESS)
+- 3 follow-ups done: (1) handleRegister honest message when EMAIL_ENABLED=false ("Subscription recorded… not yet
+  enabled"); (2) indexBondState bonds() failure now throws IndexLayerError → holds checkpoint + retries next tick
+  (no silent loss); (3) indexChain distinguishes a getLogs failure (sub-chunk/dead-letter) from an indexLogs/DB
+  error (IndexLayerError, surfaced, checkpoint held — not misclassified as poison). 3/3 verdicts pass; 15 backend tests.
+- SELF-CAUGHT REGRESSION: STEP 5c (Sepolia→v7) made SimpleBondV6FrontendSurface.test.js fail (it asserted Sepolia
+  bondVersion:6). I had run only a surface subset after 5c and missed it (full hardhat went red on push). Fixed the
+  assertion to expect Sepolia v7 (intended cutover). Full hardhat now 818 passing / 0 failing — main green again.
+- Process note: run the FULL `npx hardhat test` (not a subset) after any runtime-config/contract change.

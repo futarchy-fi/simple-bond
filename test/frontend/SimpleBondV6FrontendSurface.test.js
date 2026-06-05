@@ -118,7 +118,9 @@ describe("SimpleBond v0.6 frontend surface", function () {
         expect(runtimeConfig).to.include("chains:");
         expect(runtimeConfig).to.include("defaultChainId: 1");
         expect(runtimeConfig).to.match(/1:\s*\{[\s\S]*bondVersion:\s*6/);
-        expect(runtimeConfig).to.match(/11155111:\s*\{[\s\S]*bondVersion:\s*6/);
+        // Sepolia (staging) was cut over to SimpleBondV7 (bondVersion 7);
+        // mainnet (chain 1) stays on v0.6 above.
+        expect(runtimeConfig).to.match(/11155111:\s*\{[\s\S]*bondVersion:\s*7/);
         // Gnosis legacy entry + gnosis* keys retired at v0.6 cutover.
         expect(runtimeConfig).to.not.include("gnosisBondContract:");
         expect(runtimeConfig).to.not.match(/100:\s*\{/);

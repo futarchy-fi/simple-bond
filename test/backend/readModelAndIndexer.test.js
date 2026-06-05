@@ -59,6 +59,49 @@ describe("bonds read-model API", function () {
   });
 });
 
+describe("notify register (email-honesty)", function () {
+  this.timeout(20000);
+
+  it("does NOT claim an email was sent when email delivery is disabled (mailer no-op)", () => {
+    // EMAIL_ENABLED is false in backend/mailer.mjs, so sendEmail returns null and
+    // no message id is logged. handleRegister must then return an HONEST message
+    // — it must NOT say a verification email was sent; it must say the
+    // subscription was recorded and delivery is not yet enabled (A6 honesty).
+    const src = `
+      import { ethers } from 'ethers';
+      import db from './backend/db.mjs';
+      import { startApiServer } from './backend/api-server.mjs';
+      const assert = (c,m)=>{ if(!c){ console.error('FAIL', m); process.exit(2);} };
+      const wallet = ethers.Wallet.createRandom();
+      const email = 'honest@example.com';
+      const chainId = 1;
+      const timestamp = Math.floor(Date.now()/1000);
+      const message = 'Enable SimpleBond notifications for '+email+' on chain '+chainId+'. Timestamp: '+timestamp;
+      const signature = await wallet.signMessage(message);
+      const srv = startApiServer({ port: 3393, host: '127.0.0.1', onListen: async () => {
+        const resp = await fetch('http://127.0.0.1:3393/api/notify/register', {
+          method: 'POST', headers: { 'Content-Type':'application/json' },
+          body: JSON.stringify({ address: wallet.address, email, chainId, signature, timestamp }),
+        });
+        const body = await resp.json();
+        assert(resp.status === 200, 'register 200 (got '+resp.status+')');
+        assert(body.ok === true, 'ok:true');
+        // Must NOT falsely claim an email was sent.
+        assert(!/email sent/i.test(body.message), 'must NOT claim email sent (got: '+body.message+')');
+        // Must say the subscription was recorded AND delivery not yet enabled.
+        assert(/recorded/i.test(body.message), 'mentions recorded (got: '+body.message+')');
+        assert(/not (yet )?enabled/i.test(body.message), 'mentions not-yet-enabled (got: '+body.message+')');
+        // Subscription was actually persisted.
+        const sub = db.getSubscription(wallet.address, chainId);
+        assert(sub && sub.email === email.toLowerCase(), 'subscription persisted');
+        console.log('OK message='+JSON.stringify(body.message)); srv.close(); process.exit(0);
+      }});
+    `;
+    const r = runEsm(src);
+    expect(r.status, r.stdout + r.stderr).to.equal(0);
+  });
+});
+
 describe("indexer resilience", function () {
   this.timeout(20000);
 
@@ -449,6 +492,129 @@ describe("indexer resilience", function () {
       console.log('OK preserved challenge_count=3'); process.exit(0);
     `;
     const r = runEsm(src);
+    expect(r.status, r.stdout + r.stderr).to.equal(0);
+  });
+
+  it("does NOT silently drop a bond on a transient bonds() read failure; retries it on a later tick (no skip)", () => {
+    // A real BondCreated log is served by getLogs, but contract.bonds() throws on
+    // tick 1 (transient RPC miss). The old code swallowed this and advanced past
+    // the window, leaving the bond unindexed until a later event re-triggered it.
+    // Now the miss must SURFACE and HOLD the checkpoint (no-skip) so the next tick
+    // re-reads the same window and indexes the bond once bonds() recovers.
+    const src = `
+      import { ethers } from 'ethers';
+      import { indexChain } from './backend/watcher.mjs';
+      import db from './backend/db.mjs';
+      import { V6_CONTRACT_ABI, CHAINS } from './backend/config.mjs';
+      const assert = (c,m)=>{ if(!c){ console.error('FAIL', m); process.exit(2);} };
+      const chainId = 1;
+      const iface = new ethers.Interface(V6_CONTRACT_ABI);
+      const frag = iface.getEvent('BondCreated');
+      const enc = iface.encodeEventLog(frag, [
+        7n, '0x'+'11'.repeat(20), '0x'+'22'.repeat(20), 0n, '0x'+'33'.repeat(20),
+        1000n, 500n, 0n, 1n, 1n, 5n, '0x'+'ab'.repeat(32), 'transient bond text',
+      ]);
+      const logObj = { address: CHAINS[chainId].contract, topics: enc.topics, data: enc.data,
+        blockNumber: CHAINS[chainId].startBlock + 5, blockHash: '0x'+'cc'.repeat(32),
+        transactionHash: '0x'+'dd'.repeat(32), transactionIndex: 0, logIndex: 0, removed: false };
+      const provider = {
+        getBlockNumber: async () => CHAINS[chainId].startBlock + 20,
+        getLogs: async () => [logObj],
+      };
+      let bondsThrow = true;
+      const goodBond = { poster:'0x'+'11'.repeat(20), judge:'0x'+'22'.repeat(20), token:'0x'+'33'.repeat(20),
+        bondAmount:1000n, challengeAmount:500n, judgeFee:0n, acceptanceDelay:1n, rulingBuffer:1n,
+        maxChallenges:5n, claimHash:'0x'+'ab'.repeat(32), claimVersion:0n, judgeProfileId:0n,
+        pendingCount:0n, settled:false, closed:false };
+      const contract = {
+        bonds: async () => { if (bondsThrow) throw new Error('transient bonds() rpc miss'); return goodBond; },
+        getChallengeCount: async () => 0n,
+        getChallenge: async () => { throw new Error('unused'); },
+      };
+      // Tick 1: bonds() throws => must NOT advance the checkpoint and must NOT
+      // write a (clobbered/empty) row; the miss is surfaced + held, not lost.
+      await indexChain(chainId, provider, contract, iface, { sleep: async()=>{} });
+      assert(db.getIndexCheckpoint(chainId) === null, 'tick1 checkpoint held (bonds() miss not skipped)');
+      assert(db.getBond(chainId, 7) == null, 'tick1 wrote no bond row');
+      // It must NOT be misclassified as a poison block / dead-lettered.
+      assert(db.getDeadLetters(chainId).length === 0, 'tick1 no dead-letter for an index-layer (bonds) miss');
+      // Tick 2: bonds() recovers => the SAME window is re-read and the bond lands.
+      bondsThrow = false;
+      await indexChain(chainId, provider, contract, iface, { sleep: async()=>{} });
+      const row = db.getBond(chainId, 7);
+      assert(row, 'tick2 bond indexed after retry (not lost)');
+      assert(row.claim_content === 'transient bond text', 'tick2 claim text indexed');
+      assert(db.getIndexCheckpoint(chainId) !== null, 'tick2 checkpoint advanced');
+      console.log('OK transient bonds() miss retried, not silently dropped'); process.exit(0);
+    `;
+    const r = runEsm(src, {
+      MAINNET_V6_CONTRACT: "0x6B24380B1980db3e2DfDd2b62f5ed3E7E88DFA43",
+      MAINNET_V6_START_BLOCK: "100",
+    });
+    expect(r.status, r.stdout + r.stderr).to.equal(0);
+  });
+
+  it("distinguishes a getLogs failure (sub-chunk/dead-letter) from an indexLogs/DB error (surface, NOT poison-block)", () => {
+    // B2 over-broad-catch fix: only a getLogs-layer failure is eligible for
+    // sub-chunk + dead-letter recovery. An indexLogs/DB-layer error (here a
+    // contract.bonds() failure during indexLogs) is NOT helped by halving the
+    // block range, so it must surface and hold the checkpoint WITHOUT being
+    // dead-lettered as a poison block.
+    const src = `
+      import { ethers } from 'ethers';
+      import { indexChain } from './backend/watcher.mjs';
+      import db from './backend/db.mjs';
+      import { V6_CONTRACT_ABI, CHAINS } from './backend/config.mjs';
+      const assert = (c,m)=>{ if(!c){ console.error('FAIL', m); process.exit(2);} };
+      const chainId = 1;
+      const iface = new ethers.Interface(V6_CONTRACT_ABI);
+      const frag = iface.getEvent('BondCreated');
+      const enc = iface.encodeEventLog(frag, [
+        9n, '0x'+'11'.repeat(20), '0x'+'22'.repeat(20), 0n, '0x'+'33'.repeat(20),
+        1000n, 500n, 0n, 1n, 1n, 5n, '0x'+'ab'.repeat(32), 'db-error bond',
+      ]);
+      const logObj = { address: CHAINS[chainId].contract, topics: enc.topics, data: enc.data,
+        blockNumber: CHAINS[chainId].startBlock + 5, blockHash: '0x'+'cc'.repeat(32),
+        transactionHash: '0x'+'dd'.repeat(32), transactionIndex: 0, logIndex: 0, removed: false };
+
+      // --- Case A: getLogs ALWAYS fails (true poison) => dead-lettered. ---
+      const poisonProvider = {
+        getBlockNumber: async () => CHAINS[chainId].startBlock + 20,
+        getLogs: async () => { throw new Error('always poison 500 from getLogs'); },
+      };
+      await indexChain(chainId, poisonProvider, {}, {}, { sleep: async()=>{} });
+      assert(db.getIndexCheckpoint(chainId) === null, 'A: getLogs poison holds checkpoint');
+      assert(db.getDeadLetters(chainId).length >= 1, 'A: getLogs poison IS dead-lettered (sub-chunked to floor)');
+      const dlA = db.getDeadLetters(chainId)[0];
+      assert(dlA.from_block === dlA.to_block, 'A: dead-letter is the 1-block floor (sub-chunking happened)');
+      // Clear so case B starts clean.
+      for (const dl of db.getDeadLetters(chainId)) db.clearDeadLetter(chainId, dl.from_block, dl.to_block);
+
+      // --- Case B: getLogs SUCCEEDS but indexLogs (bonds() read) fails => an
+      // index/DB-layer error: must surface + hold, but NOT be dead-lettered. ---
+      let getLogsCalls = 0;
+      const dbErrProvider = {
+        getBlockNumber: async () => CHAINS[chainId].startBlock + 20,
+        getLogs: async () => { getLogsCalls++; return [logObj]; },
+      };
+      const badContract = {
+        bonds: async () => { throw new Error('DB/read layer failure during indexLogs'); },
+        getChallengeCount: async () => 0n,
+        getChallenge: async () => { throw new Error('unused'); },
+      };
+      await indexChain(chainId, dbErrProvider, badContract, iface, { sleep: async()=>{} });
+      assert(db.getIndexCheckpoint(chainId) === null, 'B: index/DB error holds checkpoint (no-skip)');
+      assert(db.getDeadLetters(chainId).length === 0, 'B: index/DB error is NOT dead-lettered as a poison block');
+      // It must NOT have sub-chunked: a single getLogs call for the one window
+      // (no halving), proving it was not misclassified as a too-large getLogs.
+      assert(getLogsCalls === 1, 'B: no sub-chunking on an index/DB error (getLogsCalls='+getLogsCalls+')');
+      assert(db.getBond(chainId, 9) == null, 'B: no bond row written on the DB-layer failure');
+      console.log('OK getLogs-failure dead-lettered; index/DB-failure surfaced, not poison-blocked'); process.exit(0);
+    `;
+    const r = runEsm(src, {
+      MAINNET_V6_CONTRACT: "0x6B24380B1980db3e2DfDd2b62f5ed3E7E88DFA43",
+      MAINNET_V6_START_BLOCK: "100",
+    });
     expect(r.status, r.stdout + r.stderr).to.equal(0);
   });
 });
