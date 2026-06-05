@@ -104,3 +104,12 @@
 - Backend follow-up logged: handleRegister returns "Verification email sent" while EMAIL_ENABLED=false —
   backend copy itself should be honest (the UI already compensates). Non-blocking.
 - Next: iteration 11 = B2 indexer dead-letter + sub-chunk recovery for poison log windows.
+
+## Iteration 11 — 2026-06-05 — B2 indexer dead-letter + sub-chunk recovery (PROGRESS)
+- Poison-window resilience: a window failing after B1 retry is recovered by recursive halving to a 1-block
+  floor; only a true 1-block poison is dead-lettered, checkpoint NEVER advances past it (no-skip), re-attempted
+  + cleared on later ticks. /health + monitor surface a dead-letter count (M5 probe). 3/3 verdicts pass
+  (proven with independent provider probes); 14 backend tests; deployed to VM — dead-letters 0, lag 12, monitor green.
+- Follow-ups logged: (i) over-broad catch may misclassify a DB/indexLogs error as a poison block (no data loss,
+  just wasted rescans); (ii) pre-existing indexBondState swallows contract.bonds() failure (latent RC1-class gap).
+- Next: iteration 12 = B4 last-tick-age health SLO (page within minutes if the watcher wedges/crashes).

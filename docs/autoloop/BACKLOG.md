@@ -80,3 +80,5 @@ Done when: `node scripts/scoreboard.mjs --json` reports a non-empty `capabilitie
 ## Minor follow-ups (found during review)
 - A2-followup: phaseFor on all-zero timing (only when all 3 on-chain timing reads fail to 0n) returns timeout-claimable while challengeHtml hides the button (rulingEnd>0 guard) — make phaseFor return an explicit "timing unavailable" state instead. Non-blocking.
 - A6-followup (backend honesty): backend/api-server.mjs handleRegister returns "Verification email sent. Check your inbox." while backend/mailer.mjs EMAIL_ENABLED=false. Make the backend message honest too (the UI already does not echo it). Non-blocking.
+- B2-followup: indexChain catch is over-broad — distinguish a getLogsWithRetry (network/too-large) failure from an indexLogs/DB failure so a DB error is not sub-chunked + dead-lettered as a poison block. Non-blocking (no-skip still holds).
+- indexBondState-followup: contract.bonds() failure is swallowed (returns, logs nothing to read-model) — a transient RPC miss can leave a bond unindexed until a later event re-triggers it. Latent RC1-class; make it surface/retry.
