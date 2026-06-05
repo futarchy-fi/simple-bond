@@ -364,6 +364,67 @@ describe("indexer resilience", function () {
     expect(r.status, r.stdout + r.stderr).to.equal(0);
   });
 
+  it("exposes a correct UTC headAgeSeconds and flags a stale tick (freshness/liveness SLO)", () => {
+    // (a) An OLD chain_heads.updated_at (~1h ago) written via the db (so the UTC
+    // handling is exercised) must yield a large headAgeSeconds and read as stale.
+    // (c) A db-written datetime('now') read back immediately must be within a few
+    // seconds of 0 — proving no timezone skew of hours.
+    const src = `
+      import db from './backend/db.mjs';
+      import Database from 'better-sqlite3';
+      import { DB_PATH } from './backend/config.mjs';
+      import { isTickStale } from './scripts/monitor.mjs';
+      const assert = (c,m)=>{ if(!c){ console.error('FAIL', m); process.exit(2);} };
+
+      // --- (a) OLD timestamp written through the db (SQLite datetime, UTC, no suffix). ---
+      // Seed via setChainHead (now), then rewrite updated_at to ~1h ago using the
+      // same datetime() function the watcher relies on, so the UTC path is real.
+      db.setChainHead(1, 1500);
+      const raw = new Database(DB_PATH);
+      raw.prepare("UPDATE chain_heads SET updated_at = datetime('now','-3600 seconds') WHERE chain_id=1").run();
+      raw.close();
+      const sOld = db.indexerStatus().find(x => x.chainId === 1);
+      assert(sOld.headUpdatedAt != null, 'headUpdatedAt still present');
+      assert(Math.abs(sOld.headAgeSeconds - 3600) <= 30, 'old age ~3600 (got '+sOld.headAgeSeconds+')');
+      assert(isTickStale(sOld.headAgeSeconds, 180) === true, 'old tick flagged stale');
+
+      // --- (c) FRESH db-written timestamp read back immediately => ~0, no skew. ---
+      db.setChainHead(2, 2500);
+      const sFresh = db.indexerStatus().find(x => x.chainId === 2);
+      assert(sFresh.headAgeSeconds != null, 'fresh age present');
+      assert(sFresh.headAgeSeconds < 10, 'fresh age ~0, no tz skew of hours (got '+sFresh.headAgeSeconds+')');
+      assert(isTickStale(sFresh.headAgeSeconds, 180) === false, 'fresh tick not stale');
+
+      // --- never-ticked chain (no head row) => age null and treated as stale. ---
+      assert(isTickStale(null, 180) === true, 'never-ticked flagged stale');
+      assert(isTickStale(undefined, 180) === true, 'undefined age flagged stale');
+
+      console.log('OK old='+sOld.headAgeSeconds+' fresh='+sFresh.headAgeSeconds); process.exit(0);
+    `;
+    const r = runEsm(src);
+    expect(r.status, r.stdout + r.stderr).to.equal(0);
+  });
+
+  it("headAgeSeconds is computed as UTC (no local-time skew) from a known timestamp", () => {
+    // Pure-function check of the UTC parse: a timestamp 1h in the past, in the
+    // SQLite "YYYY-MM-DD HH:MM:SS" (UTC, no suffix) shape, must be ~3600s old
+    // regardless of the host timezone. We pin TZ to a non-UTC zone to prove the
+    // parser does not interpret the string as local time.
+    const src = `
+      import { headAgeSeconds } from './backend/db.mjs';
+      const assert = (c,m)=>{ if(!c){ console.error('FAIL', m); process.exit(2);} };
+      const now = Date.now();
+      // Build a UTC timestamp 3600s ago in the exact SQLite datetime('now') shape.
+      const past = new Date(now - 3600*1000).toISOString().slice(0,19).replace('T',' ');
+      const age = headAgeSeconds(past, now);
+      assert(Math.abs(age - 3600) <= 2, 'UTC age ~3600 under TZ='+process.env.TZ+' (got '+age+')');
+      assert(headAgeSeconds(null, now) === null, 'null timestamp => null age');
+      console.log('OK utc age='+age+' tz='+process.env.TZ); process.exit(0);
+    `;
+    const r = runEsm(src, { TZ: "America/Sao_Paulo" });
+    expect(r.status, r.stdout + r.stderr).to.equal(0);
+  });
+
   it("does not clobber challenge_count to 0 when getChallengeCount fails", () => {
     const src = `
       import { indexBondState } from './backend/watcher.mjs';

@@ -11,12 +11,26 @@
 // Each probe is independent; one failing probe doesn't mask the others.
 
 import { ethers } from 'ethers';
+import { fileURLToPath } from 'node:url';
+import { resolve } from 'node:path';
 
 const API = (process.env.API || 'https://api.bond.futarchy.ai').replace(/\/+$/, '');
 const RPC = process.env.RPC || 'https://eth.drpc.org';
 const SUSDS = process.env.SUSDS || '0xa3931d71877C0E7a3148CB7Eb4463524FEc27fbD';
 const CHAIN_ID = Number(process.env.CHAIN_ID || 1);
 const LAG_THRESHOLD = Number(process.env.LAG_THRESHOLD || 200);
+// Freshness/liveness budget: the watcher ticks every POLL_INTERVAL_MS (30s), so
+// 180s = 6 missed polls is a comfortable margin that pages a crashed/wedged
+// watcher within minutes rather than waiting for block-lag to creep up.
+const TICK_AGE_THRESHOLD = Number(process.env.TICK_AGE_THRESHOLD || 180);
+
+// Pure staleness decision, unit-testable without a server. A null/undefined age
+// (the indexer never ticked, or no timestamp) is stale; otherwise stale when the
+// last tick is older than the threshold.
+export function isTickStale(ageSeconds, thresholdSeconds) {
+  if (ageSeconds == null) return true;
+  return ageSeconds > thresholdSeconds;
+}
 
 const alerts = [];
 const alert = (m) => { alerts.push(m); console.error(`ALERT: ${m}`); };
@@ -65,6 +79,25 @@ async function checkDeadLetters() {
   } catch (e) { alert(`dead-letter probe failed: ${e.message}`); }
 }
 
+// M6 — tick freshness/liveness: a fully-stopped watcher whose block-lag happens
+// to look small still serves stale HTTP 200s. The last-tick age (now -
+// chain_heads.updated_at) catches it: alert when the active chain hasn't ticked
+// within TICK_AGE_THRESHOLD, or when it never ticked (no head timestamp).
+async function checkTickAge() {
+  try {
+    const h = await getJson(`${API}/api/notify/health`);
+    const s = (h.indexer || []).find((x) => x.chainId === CHAIN_ID);
+    if (!s) return; // M1 already alerts on a missing indexer status.
+    const age = s.headAgeSeconds;
+    if (isTickStale(age, TICK_AGE_THRESHOLD)) {
+      if (age == null) alert(`indexer never ticked (no head timestamp) for chain ${CHAIN_ID}`);
+      else alert(`indexer tick age ${age}s > ${TICK_AGE_THRESHOLD}s (chain ${CHAIN_ID}) — watcher stalled?`);
+    } else {
+      ok(`indexer tick age ${age}s (chain ${CHAIN_ID})`);
+    }
+  } catch (e) { alert(`tick-age probe failed: ${e.message}`); }
+}
+
 // M2 — read-model non-empty (lists silently showing 0 was I9).
 async function checkBondsNonEmpty() {
   try {
@@ -90,10 +123,20 @@ async function checkRateNotFabricated() {
   }
 }
 
-await Promise.all([checkIndexerLag(), checkDeadLetters(), checkBondsNonEmpty(), checkRateNotFabricated()]);
+// Run the probes only when executed directly, not when imported by a test
+// (importing must not fire network probes or exit the process).
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  await Promise.all([
+    checkIndexerLag(),
+    checkTickAge(),
+    checkDeadLetters(),
+    checkBondsNonEmpty(),
+    checkRateNotFabricated(),
+  ]);
 
-if (alerts.length) {
-  console.error(`\n${alerts.length} alert(s).`);
-  process.exit(1);
+  if (alerts.length) {
+    console.error(`\n${alerts.length} alert(s).`);
+    process.exit(1);
+  }
+  console.log('\nAll monitor probes healthy.');
 }
-console.log('\nAll monitor probes healthy.');

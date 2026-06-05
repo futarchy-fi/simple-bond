@@ -274,6 +274,19 @@ const setChallengeStatusStmt = db.prepare(`
 `);
 const listChallengesStmt = db.prepare(`SELECT * FROM challenges WHERE chain_id=? AND bond_id=? ORDER BY idx ASC`);
 
+// Compute the wall-clock age (seconds) of a SQLite `datetime('now')` string.
+// That value is UTC with NO timezone suffix (e.g. "2026-05-31 12:00:00"), so
+// JS Date() would parse it as LOCAL time and skew the age by the host's UTC
+// offset (hours). We append "Z" (and use "T") to force a UTC parse. Returns
+// null for a missing timestamp (the indexer never ticked) or an unparseable
+// value. Exported for unit tests of the freshness logic.
+export function headAgeSeconds(updatedAt, now = Date.now()) {
+  if (!updatedAt) return null;
+  const ms = Date.parse(updatedAt.replace(' ', 'T') + 'Z');
+  if (Number.isNaN(ms)) return null;
+  return Math.max(0, Math.round((now - ms) / 1000));
+}
+
 export default {
   upsertSubscription(address, email, chainId) {
     upsertSub.run(address.toLowerCase(), email.toLowerCase(), chainId);
@@ -342,10 +355,14 @@ export default {
     upsertChainHead.run(chainId, headBlock);
   },
   // Per-chain indexer status: { chainId, indexedThroughBlock, headBlock,
-  // blocksBehindHead, headUpdatedAt, deadLetters, blockedFromBlock } for health
-  // reporting. `deadLetters` is the count of poison-block ranges that fail even
-  // at the 1-block floor; `blockedFromBlock` is the lowest such range start
-  // (the cursor cannot advance past it without skipping events) or null.
+  // blocksBehindHead, headUpdatedAt, headAgeSeconds, deadLetters,
+  // blockedFromBlock } for health reporting. `deadLetters` is the count of
+  // poison-block ranges that fail even at the 1-block floor; `blockedFromBlock`
+  // is the lowest such range start (the cursor cannot advance past it without
+  // skipping events) or null. `headAgeSeconds` is the wall-clock age of the
+  // last tick (now - chain_heads.updated_at) — the freshness/liveness signal a
+  // monitor uses to page a wedged watcher whose block-lag still looks small;
+  // null if the indexer never ticked.
   indexerStatus() {
     const heads = {}; for (const r of getAllChainHeads.all()) heads[r.chain_id] = r;
     const cps = {}; for (const r of getAllIndexCheckpoints.all()) cps[r.chain_id] = r.last_block;
@@ -355,12 +372,14 @@ export default {
       const head = heads[chainId] ? heads[chainId].head_block : null;
       const indexed = cps[chainId] ?? null;
       const dl = dls[chainId] || null;
+      const headUpdatedAt = heads[chainId] ? heads[chainId].updated_at : null;
       return {
         chainId,
         indexedThroughBlock: indexed,
         headBlock: head,
         blocksBehindHead: head != null && indexed != null ? Math.max(0, head - indexed) : null,
-        headUpdatedAt: heads[chainId] ? heads[chainId].updated_at : null,
+        headUpdatedAt,
+        headAgeSeconds: headAgeSeconds(headUpdatedAt),
         deadLetters: dl ? dl.n : 0,
         blockedFromBlock: dl ? dl.min_from : null,
       };
