@@ -217,8 +217,11 @@ function handleUnsubscribe(req, res) {
 }
 
 function handleHealth(req, res) {
-  // Per-chain indexer lag so a monitor can alert on a stalled read-model
-  // (a stalled indexer used to be served as a healthy HTTP 200).
+  // Per-chain indexer lag + dead-letter count so a monitor can alert on a
+  // stalled read-model (a stalled indexer used to be served as a healthy HTTP
+  // 200). Each indexer entry carries `deadLetters` (poison-block ranges that
+  // fail even at the 1-block floor) and `blockedFromBlock` (the lowest blocked
+  // range start) so a single poison block can't silently freeze the read-model.
   let indexer = [];
   try { indexer = db.indexerStatus(); } catch (_) { indexer = []; }
   json(res, 200, { status: 'ok', uptime: process.uptime(), indexer });

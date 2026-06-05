@@ -113,6 +113,45 @@ async function getLogsWithRetry(provider, params, sleep = ms => new Promise(r =>
   throw lastErr;
 }
 
+// Marker the recovery scan throws when even a single block fails getLogs after
+// retries — a true poison block. Carries the floor range + underlying error so
+// the caller can dead-letter it and stop without advancing the checkpoint.
+class PoisonBlockError extends Error {
+  constructor(fromBlock, toBlock, cause) {
+    super(`poison block range ${fromBlock}-${toBlock}: ${cause?.message || cause}`);
+    this.name = 'PoisonBlockError';
+    this.fromBlock = fromBlock;
+    this.toBlock = toBlock;
+    this.cause = cause;
+  }
+}
+
+// Scan one [fromBlock..toBlock] range, recovering from "too large / transient on
+// a big range" failures by HALVING the window and retrying each half recursively
+// down to a 1-block floor. getLogsWithRetry (B1 bounded retry) absorbs short
+// blips; only when a half still fails after retries do we sub-chunk further.
+// Ordering is preserved (lower half processed before the upper half) and each
+// successful sub-range is fed through the existing indexLogs path immediately.
+// A range that fails even at the 1-block floor is a true poison block and is
+// re-thrown as a PoisonBlockError so the caller can dead-letter it (no-skip).
+async function scanWindowRecovering(provider, contract, chainId, iface, fromBlock, toBlock, sleep) {
+  try {
+    const logs = await getLogsWithRetry(provider, { address: CHAINS[chainId].contract, fromBlock, toBlock }, sleep);
+    if (logs.length > 0) await indexLogs(contract, chainId, logs, iface);
+    return;
+  } catch (err) {
+    if (fromBlock >= toBlock) {
+      // 1-block floor reached and still failing — a genuine poison block.
+      throw new PoisonBlockError(fromBlock, toBlock, err);
+    }
+    console.warn(`[index] chain ${chainId} window ${fromBlock}-${toBlock} failed after retries; sub-chunking:`, err.message);
+  }
+  const mid = Math.floor((fromBlock + toBlock) / 2);
+  // Process lower half first to preserve event ordering, then the upper half.
+  await scanWindowRecovering(provider, contract, chainId, iface, fromBlock, mid, sleep);
+  await scanWindowRecovering(provider, contract, chainId, iface, mid + 1, toBlock, sleep);
+}
+
 // Cursor-based indexing pass, mirroring pollChain but DB-only and using a
 // separate checkpoint so it can backfill from startBlock without re-emailing.
 async function indexChain(chainId, provider, contract, iface, opts = {}) {
@@ -128,6 +167,25 @@ async function indexChain(chainId, provider, contract, iface, opts = {}) {
   db.setChainHead(chainId, latestBlock);
 
   const safeBlock = latestBlock - confirmations;
+
+  // Re-attempt any previously dead-lettered ranges first: a poison block is
+  // often transient infra, so retry it on a later tick and clear the entry when
+  // it finally succeeds. A dead-letter that is still poison stays recorded and
+  // the cursor below will not advance past it (no-skip invariant preserved).
+  let blocked = false;
+  for (const dl of db.getDeadLetters(chainId)) {
+    try {
+      await scanWindowRecovering(provider, contract, chainId, iface, dl.from_block, dl.to_block, sleep);
+      db.clearDeadLetter(chainId, dl.from_block, dl.to_block);
+      console.log(`[index] chain ${chainId} dead-letter ${dl.from_block}-${dl.to_block} recovered and cleared`);
+    } catch (err) {
+      const p = err instanceof PoisonBlockError ? err : null;
+      db.recordDeadLetter(chainId, dl.from_block, dl.to_block, (p ? p.cause : err)?.message || String(err));
+      console.error(`[index] chain ${chainId} dead-letter ${dl.from_block}-${dl.to_block} still failing:`, err.message);
+      blocked = true;
+    }
+  }
+
   const checkpoint = db.getIndexCheckpoint(chainId);
   const fromBlock = checkpoint !== null ? checkpoint + 1 : CHAINS[chainId].startBlock;
   if (fromBlock > safeBlock) return;
@@ -136,18 +194,27 @@ async function indexChain(chainId, provider, contract, iface, opts = {}) {
   while (cursor <= safeBlock) {
     const toBlock = Math.min(cursor + BLOCK_CHUNK - 1, safeBlock);
     try {
-      const logs = await getLogsWithRetry(provider, { address: CHAINS[chainId].contract, fromBlock: cursor, toBlock }, sleep);
-      if (logs.length > 0) await indexLogs(contract, chainId, logs, iface);
+      // Recover from large/transient window failures by sub-chunking; only a
+      // 1-block-floor failure surfaces as a PoisonBlockError.
+      await scanWindowRecovering(provider, contract, chainId, iface, cursor, toBlock, sleep);
       db.setIndexCheckpoint(chainId, toBlock);
     } catch (err) {
-      // Window still failing after retries — stop this tick WITHOUT advancing
-      // the checkpoint so the next tick resumes from here. No data is skipped;
-      // a persistent stall is surfaced via the health lag signal (tier d).
-      console.error(`[index] chain ${chainId} scan ${cursor}–${toBlock} failed after retries:`, err.message);
+      if (err instanceof PoisonBlockError) {
+        // A true poison block: record it and STOP this tick WITHOUT advancing
+        // the checkpoint past it, so no events are ever silently skipped. The
+        // dead-letter surfaces the blocked range via /health for a human/monitor
+        // and is re-attempted on a later tick (poison is often transient infra).
+        db.recordDeadLetter(chainId, err.fromBlock, err.toBlock, err.cause?.message || String(err.cause));
+        console.error(`[index] chain ${chainId} poison block ${err.fromBlock}-${err.toBlock} dead-lettered (checkpoint held):`, err.cause?.message || err.message);
+      } else {
+        console.error(`[index] chain ${chainId} scan ${cursor}–${toBlock} failed:`, err.message);
+      }
+      // Stop this tick without advancing — next tick resumes from `cursor`.
       break;
     }
     cursor = toBlock + 1;
   }
+  if (blocked) return; // keep the blocked indicator surfaced for the monitor
 }
 
 // Build the read provider for a chain. A single RPC yields a hardened

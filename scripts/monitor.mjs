@@ -47,6 +47,24 @@ async function checkIndexerLag() {
   } catch (e) { alert(`health probe failed: ${e.message}`); }
 }
 
+// M5 — dead-lettered (poison-block) ranges: the indexer holds the checkpoint
+// before a window that fails even at the 1-block floor (no-skip), so the
+// read-model freezes behind it. A non-zero dead-letter count means a human
+// must look — page on it.
+async function checkDeadLetters() {
+  try {
+    const h = await getJson(`${API}/api/notify/health`);
+    const s = (h.indexer || []).find((x) => x.chainId === CHAIN_ID);
+    if (!s) return; // M1 already alerts on a missing indexer status.
+    const n = s.deadLetters || 0;
+    if (n > 0) {
+      alert(`indexer has ${n} dead-lettered range(s), blocked from block ${s.blockedFromBlock} (chain ${CHAIN_ID})`);
+    } else {
+      ok(`no dead-lettered ranges (chain ${CHAIN_ID})`);
+    }
+  } catch (e) { alert(`dead-letter probe failed: ${e.message}`); }
+}
+
 // M2 — read-model non-empty (lists silently showing 0 was I9).
 async function checkBondsNonEmpty() {
   try {
@@ -72,7 +90,7 @@ async function checkRateNotFabricated() {
   }
 }
 
-await Promise.all([checkIndexerLag(), checkBondsNonEmpty(), checkRateNotFabricated()]);
+await Promise.all([checkIndexerLag(), checkDeadLetters(), checkBondsNonEmpty(), checkRateNotFabricated()]);
 
 if (alerts.length) {
   console.error(`\n${alerts.length} alert(s).`);

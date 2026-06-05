@@ -101,6 +101,22 @@ db.exec(`
     head_block INTEGER NOT NULL,
     updated_at TEXT DEFAULT (datetime('now'))
   );
+
+  -- Dead-letter queue for log windows that fail getLogs even at the 1-block
+  -- floor (a true "poison block"). The checkpoint is NEVER advanced past such a
+  -- range (no-skip invariant), so each entry marks a blocked range the indexer
+  -- re-attempts on later ticks and clears on success. Surfaced via /health so a
+  -- human/monitor can see a read-model that is stuck behind a poison block.
+  CREATE TABLE IF NOT EXISTS dead_letters (
+    chain_id INTEGER NOT NULL,
+    from_block INTEGER NOT NULL,
+    to_block INTEGER NOT NULL,
+    error TEXT,
+    first_seen TEXT DEFAULT (datetime('now')),
+    last_seen TEXT DEFAULT (datetime('now')),
+    attempts INTEGER NOT NULL DEFAULT 1,
+    PRIMARY KEY (chain_id, from_block, to_block)
+  );
 `);
 
 // --- Subscriptions ---
@@ -193,6 +209,24 @@ const upsertChainHead = db.prepare(`
 `);
 const getAllChainHeads = db.prepare(`SELECT chain_id, head_block, updated_at FROM chain_heads`);
 const getAllIndexCheckpoints = db.prepare(`SELECT chain_id, last_block FROM index_checkpoints`);
+
+// --- Dead letters (poison-block ranges that fail even at the 1-block floor) ---
+const upsertDeadLetterStmt = db.prepare(`
+  INSERT INTO dead_letters (chain_id, from_block, to_block, error, attempts)
+  VALUES (?, ?, ?, ?, 1)
+  ON CONFLICT(chain_id, from_block, to_block) DO UPDATE SET
+    error=excluded.error, last_seen=datetime('now'), attempts=dead_letters.attempts+1
+`);
+const clearDeadLetterStmt = db.prepare(`
+  DELETE FROM dead_letters WHERE chain_id=? AND from_block=? AND to_block=?
+`);
+const getDeadLettersForChainStmt = db.prepare(`
+  SELECT chain_id, from_block, to_block, error, first_seen, last_seen, attempts
+  FROM dead_letters WHERE chain_id=? ORDER BY from_block ASC
+`);
+const countDeadLettersByChainStmt = db.prepare(`
+  SELECT chain_id, COUNT(*) AS n, MIN(from_block) AS min_from FROM dead_letters GROUP BY chain_id
+`);
 
 // --- Bonds read-model ---
 
@@ -308,22 +342,40 @@ export default {
     upsertChainHead.run(chainId, headBlock);
   },
   // Per-chain indexer status: { chainId, indexedThroughBlock, headBlock,
-  // blocksBehindHead, headUpdatedAt } for health reporting.
+  // blocksBehindHead, headUpdatedAt, deadLetters, blockedFromBlock } for health
+  // reporting. `deadLetters` is the count of poison-block ranges that fail even
+  // at the 1-block floor; `blockedFromBlock` is the lowest such range start
+  // (the cursor cannot advance past it without skipping events) or null.
   indexerStatus() {
     const heads = {}; for (const r of getAllChainHeads.all()) heads[r.chain_id] = r;
     const cps = {}; for (const r of getAllIndexCheckpoints.all()) cps[r.chain_id] = r.last_block;
-    const chainIds = new Set([...Object.keys(heads), ...Object.keys(cps)].map(Number));
+    const dls = {}; for (const r of countDeadLettersByChainStmt.all()) dls[r.chain_id] = r;
+    const chainIds = new Set([...Object.keys(heads), ...Object.keys(cps), ...Object.keys(dls)].map(Number));
     return [...chainIds].sort((a, b) => a - b).map((chainId) => {
       const head = heads[chainId] ? heads[chainId].head_block : null;
       const indexed = cps[chainId] ?? null;
+      const dl = dls[chainId] || null;
       return {
         chainId,
         indexedThroughBlock: indexed,
         headBlock: head,
         blocksBehindHead: head != null && indexed != null ? Math.max(0, head - indexed) : null,
         headUpdatedAt: heads[chainId] ? heads[chainId].updated_at : null,
+        deadLetters: dl ? dl.n : 0,
+        blockedFromBlock: dl ? dl.min_from : null,
       };
     });
+  },
+
+  // --- Dead letters ---
+  recordDeadLetter(chainId, fromBlock, toBlock, error) {
+    upsertDeadLetterStmt.run(chainId, fromBlock, toBlock, String(error ?? '').slice(0, 500));
+  },
+  clearDeadLetter(chainId, fromBlock, toBlock) {
+    clearDeadLetterStmt.run(chainId, fromBlock, toBlock);
+  },
+  getDeadLetters(chainId) {
+    return getDeadLettersForChainStmt.all(chainId);
   },
 
   // --- Bonds read-model ---

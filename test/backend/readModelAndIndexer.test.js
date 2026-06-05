@@ -265,6 +265,105 @@ describe("indexer resilience", function () {
     expect(r.status, r.stdout + r.stderr).to.equal(0);
   });
 
+  it("sub-chunks a window that fails large but succeeds halved, advances to head, no permanent dead-letter", () => {
+    const src = `
+      import { indexChain } from './backend/watcher.mjs';
+      import db from './backend/db.mjs';
+      const { CHAINS } = await import('./backend/config.mjs');
+      const chainId = 1;
+      const assert = (c,m)=>{ if(!c){ console.error('FAIL', m); process.exit(2);} };
+      // head startBlock+20, confirmations 12 => safeBlock = startBlock+8, a single
+      // ~9-block window. Provider THROWS when (to-from) > 4 (too-large) but returns
+      // [] for any smaller sub-range — so the window only succeeds once sub-chunked.
+      const K = 4;
+      let throws = 0, succeeds = 0;
+      const provider = {
+        getBlockNumber: async () => CHAINS[chainId].startBlock + 20,
+        getLogs: async ({ fromBlock, toBlock }) => {
+          if ((toBlock - fromBlock) > K) { throws++; throw new Error('query returned more than limit / too large'); }
+          succeeds++; return [];
+        },
+      };
+      await indexChain(chainId, provider, {}, {}, { sleep: async()=>{} });
+      const safe = CHAINS[chainId].startBlock + 8;
+      const cp = db.getIndexCheckpoint(chainId);
+      assert(cp === safe, 'checkpoint advanced to head/safe (got '+cp+', want '+safe+')');
+      assert(throws > 0, 'large window actually failed first (throws='+throws+')');
+      assert(succeeds > 0, 'sub-ranges succeeded (succeeds='+succeeds+')');
+      const dls = db.getDeadLetters(chainId);
+      assert(dls.length === 0, 'no permanent dead-letter recorded (got '+dls.length+')');
+      console.log('OK sub-chunk recovery throws='+throws+' succeeds='+succeeds+' cp='+cp); process.exit(0);
+    `;
+    const r = runEsm(src, {
+      MAINNET_V6_CONTRACT: "0x6B24380B1980db3e2DfDd2b62f5ed3E7E88DFA43",
+      MAINNET_V6_START_BLOCK: "100",
+    });
+    expect(r.status, r.stdout + r.stderr).to.equal(0);
+  });
+
+  it("dead-letters a true 1-block poison and does NOT advance the checkpoint (no-skip at floor)", () => {
+    const src = `
+      import { indexChain } from './backend/watcher.mjs';
+      import db from './backend/db.mjs';
+      const { CHAINS } = await import('./backend/config.mjs');
+      const chainId = 1;
+      const assert = (c,m)=>{ if(!c){ console.error('FAIL', m); process.exit(2);} };
+      // getLogs ALWAYS throws, even at the 1-block floor => true poison block.
+      const provider = {
+        getBlockNumber: async () => CHAINS[chainId].startBlock + 20,
+        getLogs: async () => { throw new Error('always poison 500'); },
+      };
+      await indexChain(chainId, provider, {}, {}, { sleep: async()=>{} });
+      const cp = db.getIndexCheckpoint(chainId);
+      assert(cp === null, 'checkpoint must NOT advance past the poison window (got '+cp+')');
+      const dls = db.getDeadLetters(chainId);
+      assert(dls.length >= 1, 'a dead_letter row was recorded (got '+dls.length+')');
+      // The recorded range must start at the cursor start (startBlock) — the
+      // 1-block floor of the first window.
+      assert(dls[0].from_block === CHAINS[chainId].startBlock, 'dead-letter from_block at window floor (got '+dls[0].from_block+')');
+      assert(dls[0].from_block === dls[0].to_block, 'dead-letter is a 1-block range (got '+dls[0].from_block+'-'+dls[0].to_block+')');
+      console.log('OK poison dead-lettered from='+dls[0].from_block+' to='+dls[0].to_block+' cp='+cp); process.exit(0);
+    `;
+    const r = runEsm(src, {
+      MAINNET_V6_CONTRACT: "0x6B24380B1980db3e2DfDd2b62f5ed3E7E88DFA43",
+      MAINNET_V6_START_BLOCK: "100",
+    });
+    expect(r.status, r.stdout + r.stderr).to.equal(0);
+  });
+
+  it("re-attempts a dead-lettered range on a later tick, indexes it, advances, and clears the dead-letter", () => {
+    const src = `
+      import { indexChain } from './backend/watcher.mjs';
+      import db from './backend/db.mjs';
+      const { CHAINS } = await import('./backend/config.mjs');
+      const chainId = 1;
+      const assert = (c,m)=>{ if(!c){ console.error('FAIL', m); process.exit(2);} };
+      const safe = CHAINS[chainId].startBlock + 8;
+      // Tick 1: always-poison => dead-letter recorded, checkpoint held.
+      let poison = true;
+      const provider = {
+        getBlockNumber: async () => CHAINS[chainId].startBlock + 20,
+        getLogs: async () => { if (poison) throw new Error('transient poison'); return []; },
+      };
+      await indexChain(chainId, provider, {}, {}, { sleep: async()=>{} });
+      assert(db.getIndexCheckpoint(chainId) === null, 'tick1 checkpoint held');
+      assert(db.getDeadLetters(chainId).length >= 1, 'tick1 dead-letter recorded');
+      // Tick 2: poison cleared (infra recovered). The dead-letter retry + cursor
+      // scan now succeed => range indexed, checkpoint advances, dead-letter gone.
+      poison = false;
+      await indexChain(chainId, provider, {}, {}, { sleep: async()=>{} });
+      const cp = db.getIndexCheckpoint(chainId);
+      assert(cp === safe, 'tick2 checkpoint advanced to head/safe (got '+cp+', want '+safe+')');
+      assert(db.getDeadLetters(chainId).length === 0, 'tick2 dead-letter cleared (got '+db.getDeadLetters(chainId).length+')');
+      console.log('OK dead-letter retried+cleared cp='+cp); process.exit(0);
+    `;
+    const r = runEsm(src, {
+      MAINNET_V6_CONTRACT: "0x6B24380B1980db3e2DfDd2b62f5ed3E7E88DFA43",
+      MAINNET_V6_START_BLOCK: "100",
+    });
+    expect(r.status, r.stdout + r.stderr).to.equal(0);
+  });
+
   it("does not clobber challenge_count to 0 when getChallengeCount fails", () => {
     const src = `
       import { indexBondState } from './backend/watcher.mjs';
