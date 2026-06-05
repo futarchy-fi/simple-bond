@@ -20,3 +20,9 @@
 - First two specced: B1 (watcher multi-RPC FallbackProvider, closes RCA gap #1) and
   H1 (capabilities map into scoreboard — makes working-journeys the headline metric).
 - PROGRESS: design deliverable produced (no gate regressions). Next: iteration 2 implements B1.
+
+## Iteration 2 — 2026-06-04 — B1 watcher multi-RPC FallbackProvider (PROGRESS)
+- Implemented + adversarially verified (4/4 skeptic checks incl. mutation tests killing the impl → tests fail).
+- Gates: lint G5 clean, 18 backend tests green (new failover + all-fail no-skip), monitor green.
+- Deployed to VM with MAINNET_RPCS = Alchemy primary + publicnode backup (failover live); lag 12 (healthy).
+- Burn-down: rcaOpenGaps 10 → 9 (gap #1 closed). Next: iteration 3 = H1 capability-journey harness.
