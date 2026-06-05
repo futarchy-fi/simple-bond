@@ -12,3 +12,11 @@
 - Alchemy eth-mainnet wired BACKEND-ONLY (VM MAINNET_RPC). Preflight RPC warning cleared for chain 1.
 - Added lint G5 (zero-tolerance): a keyed provider URL in any frontend/ file fails the build — key stays backend-only.
 - Monitor green post-change (rate 0.91, lag 12, 2 bonds). Sepolia still free publicnode (open).
+
+## Iteration 1 — 2026-06-04 — design workflow (31 agents) → roadmap
+- Output: 13-item ranked backlog (docs/autoloop/roadmap.json + BACKLOG.md), sequenced
+  backend-reliability + capability-harness first, UX next, v0.7 contracts (C1 pending-cap
+  maxChallenges, C2 pull-payment credit ledger) last — each UX-motivated, testnet-first.
+- First two specced: B1 (watcher multi-RPC FallbackProvider, closes RCA gap #1) and
+  H1 (capabilities map into scoreboard — makes working-journeys the headline metric).
+- PROGRESS: design deliverable produced (no gate regressions). Next: iteration 2 implements B1.
