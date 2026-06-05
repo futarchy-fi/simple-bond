@@ -1113,15 +1113,26 @@
     document.body.appendChild(t);
     setTimeout(() => { try { t.remove(); } catch (_) {} }, 8000);
   }
+  // Version-aware bond ABI selector. The active chain's runtime-config carries
+  // bondVersion (6 today; a chain becomes 7 only at an explicit Sepolia repoint).
+  // V7 keeps the entire V6 surface EXCEPT the refund path: it drops the
+  // claimRefunds drain + refundCursor view and adds the per-address credit ledger
+  // (credits/claim + Credited/Claimed). Everything else is identical, so binding
+  // the right ABI is all the read/write factories need to do — every other code
+  // path (createBond, challenge, rulings, lifecycle) is shared. Defaults to V6
+  // when bondVersion is absent so existing v6 chains are byte-identical.
+  function bondAbi() {
+    return chain()?.bondVersion === 7 ? window.SIMPLE_BOND_V7_ABI : window.SIMPLE_BOND_V6_ABI;
+  }
   function bondReadContract() {
     const c = chain();
     if (!c || !c.bondContract) throw new Error(`Missing bondContract in runtime-config.chains[${activeChainId}]`);
-    return new ethers.Contract(c.bondContract, window.SIMPLE_BOND_V6_ABI, readProvider());
+    return new ethers.Contract(c.bondContract, bondAbi(), readProvider());
   }
   function bondWriteContract() {
     requireWalletOnActiveChain();
     const c = chain();
-    return new ethers.Contract(c.bondContract, window.SIMPLE_BOND_V6_ABI, signer);
+    return new ethers.Contract(c.bondContract, bondAbi(), signer);
   }
   function judgeRegRead() {
     const c = chain();
@@ -1171,14 +1182,20 @@
     const sel = $('chainSelect');
     const label = $('chainLabel');
     sel.innerHTML = '';
+    // Show every chain the frontend can actually drive. v0.6 (default when
+    // bondVersion is absent) and v0.7 are both supported now; the only thing that
+    // differs is the refund affordance (shared drain vs per-address claim), which
+    // bondReadContract/bondWriteContract pick by bondVersion. An unknown future
+    // version is still hidden so we never bind a mismatched ABI. With no v7 chain
+    // in runtime-config today, this is behaviourally identical for v6.
     const visible = Object.keys(chains).filter((id) => {
       const c = chains[id];
-      return !c.bondVersion || c.bondVersion === 6;
+      return !c.bondVersion || c.bondVersion === 6 || c.bondVersion === 7;
     });
 
     if (visible.length === 0) {
       const opt = document.createElement('option');
-      opt.textContent = 'No v0.6 chain configured';
+      opt.textContent = 'No supported chain configured';
       opt.disabled = true;
       sel.appendChild(opt);
       sel.classList.remove('hidden');
@@ -3013,8 +3030,9 @@
       );
       const receipt = await waitForTx(tx);
       updateStep(stepperEl, idx, 'done');
-      // Parse BondCreated
-      const iface = new ethers.Interface(window.SIMPLE_BOND_V6_ABI);
+      // Parse BondCreated (version-aware ABI; the BondCreated event is identical
+      // across V6/V7, so this is byte-identical for v6 chains).
+      const iface = new ethers.Interface(bondAbi());
       let bondId = null;
       for (const lg of receipt.logs) {
         try {
@@ -3358,14 +3376,29 @@
       const canChallenge = isNonPoster && bondOpen && Number(b.pendingCount) < Number(b.maxChallenges) && Number(b.pendingCount) <= 100;
       const statusName = b.settled ? 'settled' : (b.closed ? 'closed' : (Number(b.pendingCount) > 0 ? 'disputed' : 'open'));
 
-      // Refunds affordance. computeRefunds (frontend/refunds.js) is a pure,
-      // contract-faithful classifier: a slot is drainable ONLY when the bond is
-      // settled AND the challenge is still Pending — exactly what claimRefunds()
-      // acts on. Conceded/rejected challengers were already refunded inline, so
-      // they are NOT counted. We render the drain control ONLY when something is
-      // actually drainable (no always-on no-op button) and, when the connected
-      // viewer is owed, surface "you are owed ~$X (N slots)".
-      const refunds = (typeof computeRefunds === 'function')
+      // Refunds affordance — VERSION-AWARE.
+      //
+      // v0.6 (mainnet, LIVE): shared-drain model. computeRefunds (frontend/
+      // refunds.js) is a pure, contract-faithful classifier: a slot is drainable
+      // ONLY when the bond is settled AND the challenge is still Pending — exactly
+      // what claimRefunds() acts on. Conceded/rejected challengers were already
+      // refunded inline, so they are NOT counted. We render the drain control ONLY
+      // when something is actually drainable (no always-on no-op button) and, when
+      // the connected viewer is owed, surface "you are owed ~$X (N slots)".
+      //
+      // v0.7: per-address pull-payment ledger (SimpleBondV7.sol C2). There is no
+      // shared drain — every refund/payout is credited to credits[recipient][token]
+      // and pulled via claim(token). So we read the connected viewer's own credit
+      // for this bond's token and, if > 0, show "You are owed ~$X" + a Claim button
+      // that calls claim(token). The credit is a per-token aggregate across all the
+      // viewer's bonds on this contract, but claim(token) settles it in one pull.
+      const isV7 = chain()?.bondVersion === 7;
+      let v7Credit = 0n;
+      if (isV7 && account) {
+        try { v7Credit = await bondReadContract().credits(account, b.token); }
+        catch (_) { v7Credit = 0n; }
+      }
+      const refunds = (!isV7 && typeof computeRefunds === 'function')
         ? computeRefunds(challenges, b, account)
         : { refundableSlots: 0, viewerOwedSlots: 0, viewerOwedShares: 0n };
 
@@ -3490,7 +3523,16 @@
           <div id="judgeMsg"></div>
         </div>` : ''}
 
-        ${refunds.refundableSlots > 0 ? `
+        ${isV7 ? (v7Credit > 0n ? `
+        <div class="card">
+          <h3>Refunds</h3>
+          <p class="msg msg-success" style="margin-top:0;">You are owed ~$${susdsBigIntToUsdString(v7Credit, tokenRate)}. Claim it below to pull it to your wallet.</p>
+          <p class="hint">In v0.7, refunds and payouts are credited to your address. Claim pulls your full credited balance for ${escapeHtml(tokenSym)} in one transaction.</p>
+          <div class="row">
+            <button class="secondary" id="claimBtn">Claim ~$${susdsBigIntToUsdString(v7Credit, tokenRate)}</button>
+          </div>
+          <div id="claimMsg"></div>
+        </div>` : '') : (refunds.refundableSlots > 0 ? `
         <div class="card">
           <h3>Refunds</h3>
           ${refunds.viewerOwedSlots > 0
@@ -3502,7 +3544,7 @@
             <button class="secondary" id="refundsBtn">Drain refunds (max N)</button>
           </div>
           <div id="refundMsg"></div>
-        </div>` : ''}
+        </div>` : '')}
       `;
 
       wireBondDetail(bondId, b);
@@ -3657,8 +3699,10 @@
     $('withdrawBtn')?.addEventListener('click', () => doWithdrawBond(bondId));
     // Judge void
     $('rejectBondBtn')?.addEventListener('click', () => doRejectBond(bondId, b));
-    // Refunds
+    // Refunds (v0.6 shared drain)
     $('refundsBtn')?.addEventListener('click', () => doDrainRefunds(bondId));
+    // Credit claim (v0.7 per-address pull payment)
+    $('claimBtn')?.addEventListener('click', () => doClaimCredit(bondId, b.token));
     // Per-challenge
     document.querySelectorAll('.challenge-item button[data-act]').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -3798,6 +3842,27 @@
     } catch (err) {
       msg.innerHTML = `<div class="msg msg-error">${escapeHtml(friendlyError(err))}</div>`;
       log(`Refunds failed: ${friendlyError(err)}`, 'err');
+    }
+  }
+
+  // v0.7 per-address pull payment. claim(token) pulls the connected wallet's full
+  // credited balance for `token` (SimpleBondV7.sol C2) in one transaction. Routed
+  // through the sanctioned bondWriteContract factory (G3) — no raw signer binding,
+  // no getLogs (G4). After it confirms we re-render so the now-zeroed credit clears
+  // the affordance.
+  async function doClaimCredit(bondId, token) {
+    const msg = $('claimMsg');
+    try {
+      if (!signer) { await connectWallet(); if (!signer) return; }
+      if (msg) msg.innerHTML = `<div class="msg msg-info"><span class="spinner"></span>Claiming your credit…</div>`;
+      const tx = await bondWriteContract().claim(token);
+      await waitForTx(tx);
+      log(`Claimed credit for token ${token} (bond #${bondId}).`);
+      if (msg) msg.innerHTML = `<div class="msg msg-success">Credit claimed.</div>`;
+      setTimeout(() => renderBondDetail(String(bondId)), 600);
+    } catch (err) {
+      if (msg) msg.innerHTML = `<div class="msg msg-error">${escapeHtml(friendlyError(err))}</div>`;
+      log(`Claim failed: ${friendlyError(err)}`, 'err');
     }
   }
 

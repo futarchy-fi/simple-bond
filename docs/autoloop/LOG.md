@@ -177,3 +177,11 @@
 - NO v7 chain registered yet (repoint is a later step) → live behavior unchanged. 3/3 verdicts pass; full hardhat 815;
   new test/backendV7Surface.test.js (6). Deployed to VM (indexer now V7-ready); monitor green.
 - Next: STEP 5b = frontend abi.js V7 ABI + A4 refunds UI (drain card → per-address claim() + owed/claim affordance).
+
+## Iteration 17 — 2026-06-05 — v0.7 STEP 5b: frontend version-aware claim UI (PROGRESS)
+- bondAbi() selects V7 ABI iff chain bondVersion===7, else V6 (default); bondReadContract/bondWriteContract use it.
+  v6 chains BYTE-IDENTICAL in behavior (mainnet safe). v7 bonds: detail reads credits(account,token), shows
+  "You are owed ~$X" + Claim button → claim(token) via the guarded write factory (G3/G4 respected).
+- New SIMPLE_BOND_V7_ABI (credits/claim/Credited/Claimed; no claimRefunds). v7 e2e fixture + refunds-affordance-v7.spec.js
+  (concede→owed→claim→balance moves+clears) green; v6 drain spec still green. 3/3 verdicts pass; full local e2e 59; v6 in sync.
+- Next: STEP 5c = repoint Sepolia (runtime-config bondVersion:7 + V7 addr; backend Sepolia env → V7) so staging runs v0.7. Mainnet stays v6.
