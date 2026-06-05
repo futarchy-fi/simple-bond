@@ -3772,7 +3772,13 @@
             <div class="btn-row"><button class="secondary" data-act="rejectChallenge" data-i="${i}">Reject as out-of-scope</button></div>
           </div>`);
         }
-        if (now > rulingEnd && rulingEnd > 0) {
+        // claimTimeout MUST require a positive rulingDeadline: when the timing
+        // reads fail to load, rulingEnd is 0, and `now > rulingEnd` is trivially
+        // true — without the `rulingEnd > 0` precondition we would wrongly offer a
+        // Claim-timeout button that reverts on-chain. (phaseFor reports this state
+        // as PHASE.TIMING_UNAVAILABLE; the reason text already says no timeout
+        // refund is claimable, so the button must not contradict it.)
+        if (rulingEnd > 0 && now > rulingEnd) {
           actions.push(`<div class="btn-row"><button class="secondary" data-act="claimTimeout" data-i="${i}">Claim timeout (anyone)</button></div>`);
         }
       }
@@ -3812,8 +3818,14 @@
         { key: 'timeout-claimable', text: 'timeout' },
       ];
       const resolved = ph.phase === 'resolved';
+      // PHASE.TIMING_UNAVAILABLE: a pending challenge whose timing reads failed to
+      // load. We surface the honest reason but, since we cannot know which window
+      // is active, we highlight NO timeline step (treat the track as inactive like
+      // a resolved one). phaseFor already returns activeWindow:'' here, but we gate
+      // explicitly so the intent is locked and the track never lights up.
+      const timingUnavailable = ph.phase === PHASE.TIMING_UNAVAILABLE;
       const track = steps.map((st, idx) => {
-        const active = !resolved && ph.activeWindow === st.key;
+        const active = !resolved && !timingUnavailable && ph.activeWindow === st.key;
         const sep = idx > 0 ? '<span class="ci-phase-sep" aria-hidden="true">→</span>' : '';
         return `${sep}<span class="ci-phase-step${active ? ' active' : ''}">${st.text}</span>`;
       }).join('');

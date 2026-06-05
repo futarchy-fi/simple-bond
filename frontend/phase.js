@@ -51,10 +51,14 @@
   'use strict';
 
   // The two pending sub-phases (chronological), the timeout zone, and terminal.
+  // TIMING_UNAVAILABLE is a PENDING challenge whose on-chain timing reads failed
+  // to load (all-zero timing): we cannot know which sub-phase it is in, so we
+  // refuse to classify it (and in particular never call it timeout-claimable).
   const PHASE = Object.freeze({
     PENDING_CONCESSION: 'pending-concession',
     PENDING_RULING: 'pending-ruling',
     TIMEOUT_CLAIMABLE: 'timeout-claimable',
+    TIMING_UNAVAILABLE: 'timing-unavailable',
     RESOLVED: 'resolved',
   });
 
@@ -187,6 +191,29 @@
         label: 'Resolved',
         subLabel: info.sub,
         reason: info.reason,
+        activeWindow: '',
+      };
+    }
+
+    // Pending, but the per-challenge timing reads did not load. For a REAL
+    // challenge T0 == ts + acceptanceDelay > 0 and rulingDeadline == T0 +
+    // rulingBuffer > 0 ALWAYS (and rulingDeadline >= T0), so a non-positive T0 /
+    // rulingDeadline (or rulingDeadline < T0) can only mean the timing is
+    // UNAVAILABLE — not that any window has passed. Without timing we cannot tell
+    // concession from ruling from timeout, so we MUST NOT fall through to the
+    // (now > rulingDeadline) timeout-claimable branch below, which with
+    // rulingDeadline == 0 would falsely declare the timeout refund claimable and
+    // could push the viewer into a claimTimeout that reverts on-chain. Bail out
+    // with an honest, role-independent "timing not loaded; retry" reason that
+    // claims no window has passed and no action is available.
+    if (!(T0 > 0) || !(rulingDeadline > 0) || rulingDeadline < T0) {
+      return {
+        phase: PHASE.TIMING_UNAVAILABLE,
+        label: 'Pending',
+        subLabel: '',
+        reason: 'This challenge is still pending, but its on-chain timing could not be loaded, '
+          + 'so the current phase and which actions are available cannot be determined right now — '
+          + 'please refresh or retry. No window has expired and no timeout refund is available based on this view.',
         activeWindow: '',
       };
     }

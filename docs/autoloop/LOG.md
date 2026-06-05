@@ -282,3 +282,25 @@
   4 skipped, all 7 capabilities true. Burn-down: rcaOpenGaps 4 → 3; g1 41 → 40.
 - Sepolia deployer 0x693E…b43d still ≈ 0.0338 ETH (< 0.05) → live journey still parked.
 - Next: funded → live V7 journey; else A2-followup (phaseFor all-zero-timing → 'timing unavailable'), then UX niceties.
+
+## Iteration 24 — 2026-06-05 — A2-followup: phaseFor timing-unavailable state (PROGRESS)
+- Fixed a misleading-state bug (same family as gap #3): when a Pending challenge's on-chain timing reads failed to load
+  (all-zero timing), phaseFor fell through to TIMEOUT_CLAIMABLE and told the viewer "ruling window passed; claim the
+  timeout refund" — false, and could push a reverting claimTimeout. Added PHASE.TIMING_UNAVAILABLE and a guard (after
+  the terminal branch, before concession): if !(T0>0) || !(rulingDeadline>0) || rulingDeadline<T0 → return an honest
+  "timing not loaded; refresh/retry; no window has expired" state. Valid timing byte-for-byte unchanged (strict
+  rulingDeadline<T0 so the rd==T0 edge stays concession/ruling, no over-fire).
+- Wired into index.html + v6 mirror: timing-unavailable shows the reason, highlights no timeline step; the claimTimeout
+  button gate reordered to lead with rulingEnd>0 (it already had the conjunct; locked it + the absence of the legacy
+  precondition-free form with non-vacuous surface assertions). Mainnet v6 behavior safe (real bonds always have timing).
+- Adversarial panel 3/3 PASS (fixes-bug, no-regression, test-quality) with explicit non-vacuity (disabling the guard →
+  phaseFor.test.js RED reproducing the exact bug). A stale TS "unreachable code at phase.js:210" + "rulingDeadline
+  never read" diagnostic appeared — verified against the real file: line-210 was the verifier's transient `if(false)`
+  mutation (restored), and line-91 is a pre-existing unused param in concessionReason; both non-issues.
+- Gates re-run MYSELF (sequential): full `npx hardhat test` 938 passing / 0 failing (×2 stable); lint EXIT=0 (g1 40);
+  docker e2e 59 passed / 4 skipped, all 7 capabilities true. Burn-down unchanged (rcaOpenGaps 3, g1 40) — this is a
+  UX-correctness fix, not an RCA-gap closure.
+- Sepolia deployer 0x693E…b43d still ≈ 0.0338 ETH (< 0.05) → live journey still parked.
+- NOTE: the high-value tractable RCA gaps (#3/#5/#6/#7) + this A2-followup are now done. Next tick: if no clearly
+  high-value UX/correctness item remains, run a skeptical-senior-eng critic to re-prioritize rather than manufacture
+  cosmetic churn; the real remaining work (live Sepolia journey, mainnet v0.7 cutover) is gated on funding/owner-go.

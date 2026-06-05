@@ -372,4 +372,49 @@ describe("SimpleBond v0.6 frontend surface", function () {
             });
         }
     });
+
+    // A2-followup — all-zero timing must not be misclassified as
+    // timeout-claimable. phase.js gained PHASE.TIMING_UNAVAILABLE for a PENDING
+    // challenge whose timing reads failed to load (all-zero). The per-challenge
+    // render must (a) reference that phase string so the timing-unavailable state
+    // is handled (no timeline step highlighted), and (b) gate the claimTimeout
+    // button behind a POSITIVE rulingDeadline so it can never render when
+    // rulingDeadline == 0 (which `now > rulingEnd` alone would wrongly allow).
+    // Locked in BOTH the canonical frontend/index.html and the v6 mirror; written
+    // so reverting either change turns the test RED.
+    describe("timing-unavailable phase + positive-rulingDeadline claimTimeout gate (A2-followup) wiring", function () {
+        for (const [label, html] of [["frontend/index.html", () => mainHtml], ["frontend/v6/index.html", () => v6html]]) {
+            describe(label, function () {
+                it("the per-challenge render references PHASE.TIMING_UNAVAILABLE", function () {
+                    // The render branches on the timing-unavailable phase (so it can
+                    // suppress timeline highlighting). Deleting that handling fails this.
+                    expect(html()).to.include("PHASE.TIMING_UNAVAILABLE");
+                    // It is used in a phase comparison off the phaseFor() result.
+                    expect(html()).to.match(/ph\.phase === PHASE\.TIMING_UNAVAILABLE/);
+                });
+
+                it("does NOT highlight a timeline step when timing is unavailable", function () {
+                    // The `active` flag for each timeline step must exclude the
+                    // timing-unavailable case (same as resolved). Removing the
+                    // `!timingUnavailable` guard fails this.
+                    expect(html()).to.match(/const timingUnavailable = ph\.phase === PHASE\.TIMING_UNAVAILABLE/);
+                    expect(html()).to.match(/const active = !resolved && !timingUnavailable && ph\.activeWindow === st\.key/);
+                });
+
+                it("claimTimeout button gating requires a POSITIVE rulingDeadline (rulingEnd > 0)", function () {
+                    // The claimTimeout button must be gated on rulingEnd > 0 AND
+                    // now > rulingEnd. Removing the positive-rulingDeadline
+                    // precondition (so it keys off `now > rulingEnd` alone) fails
+                    // this assertion: we require both conjuncts in the guard that
+                    // immediately precedes the claimTimeout button push.
+                    expect(html()).to.match(
+                        /if \(rulingEnd > 0 && now > rulingEnd\) \{[\s\S]{0,160}data-act="claimTimeout"/
+                    );
+                    // And the legacy precondition-free form (now > rulingEnd as the
+                    // SOLE gate) must be absent so a revert is caught.
+                    expect(html()).to.not.match(/if \(now > rulingEnd\) \{[\s\S]{0,160}data-act="claimTimeout"/);
+                });
+            });
+        }
+    });
 });

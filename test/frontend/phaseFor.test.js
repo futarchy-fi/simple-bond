@@ -206,6 +206,99 @@ describe("phaseFor — pure per-challenge phase classifier", function () {
         }
     });
 
+    // REGRESSION (A2-followup): all-zero timing must NOT be classified as
+    // timeout-claimable. When the per-challenge timing reads fail to load, timing
+    // arrives all-zero ({concessionDeadline:0, rulingWindowStart:0,
+    // rulingDeadline:0}), so T0 == 0 and rulingDeadline == 0. With the OLD logic,
+    // for a real (large) `now`: `n < T0` is false and `n <= rulingDeadline` is
+    // false, so it FELL THROUGH to TIMEOUT_CLAIMABLE and told the viewer the
+    // ruling window passed and the timeout refund is claimable — both FALSE, and
+    // a user acting on it would hit a reverting claimTimeout. The guard returns
+    // the new TIMING_UNAVAILABLE phase instead.
+    describe("Pending with UNAVAILABLE timing (all-zero reads) -> timing-unavailable, NOT timeout-claimable", function () {
+        const ZERO_TIMING = { concessionDeadline: 0, rulingWindowStart: 0, rulingDeadline: 0 };
+        // Realistic unix-seconds `now` values (the bug only bites for now > 0).
+        const REAL_NOWS = [1, 1000, 1700000000, Math.floor(Date.now() / 1000)];
+        const ALL_ROLES = [ROLES.POSTER, ROLES.CHALLENGER, ROLES.JUDGE, ROLES.BYSTANDER, undefined, "weirdo"];
+
+        it("exposes the TIMING_UNAVAILABLE phase constant", function () {
+            expect(PHASE.TIMING_UNAVAILABLE).to.equal("timing-unavailable");
+            // The pre-existing constants are all still present (nothing removed).
+            expect(PHASE.PENDING_CONCESSION).to.equal("pending-concession");
+            expect(PHASE.PENDING_RULING).to.equal("pending-ruling");
+            expect(PHASE.TIMEOUT_CLAIMABLE).to.equal("timeout-claimable");
+            expect(PHASE.RESOLVED).to.equal("resolved");
+        });
+
+        for (const now of REAL_NOWS) {
+            for (const role of ALL_ROLES) {
+                const roleLabel = role === undefined ? "(default)" : role;
+                it(`status 0 + all-zero timing @ now=${now} role=${roleLabel} -> TIMING_UNAVAILABLE`, function () {
+                    const out = phaseFor(ZERO_TIMING, 0, now, role);
+                    expect(out.phase).to.equal(PHASE.TIMING_UNAVAILABLE);
+                    expect(out.phase).to.equal("timing-unavailable");
+                    // Direct regression: the OLD logic would have returned this.
+                    expect(out.phase).to.not.equal(PHASE.TIMEOUT_CLAIMABLE);
+                    // No timeline step highlighted.
+                    expect(out.activeWindow).to.equal("");
+                    expect(out.subLabel).to.equal("");
+                    expect(out.label).to.equal("Pending");
+                    // Honest reason: it must NOT claim the ruling window passed nor
+                    // that a timeout refund is claimable (those would contradict the
+                    // suppressed claimTimeout button).
+                    expect(out.reason).to.be.a("string").and.have.length.above(0);
+                    expect(out.reason.toLowerCase()).to.not.include("ruling window passed");
+                    expect(out.reason.toLowerCase()).to.not.include("claim the timeout");
+                    // It should explicitly tell the user it's still pending + retry.
+                    expect(out.reason.toLowerCase()).to.include("pending");
+                    expect(out.reason.toLowerCase()).to.match(/refresh|retry/);
+                });
+            }
+        }
+
+        it("missing rulingWindowStart fallback can't rescue all-zero timing", function () {
+            // Even if only concessionDeadline/rulingWindowStart is absent and the
+            // others are 0, T0 <= 0 -> TIMING_UNAVAILABLE (never timeout).
+            const out = phaseFor({ rulingDeadline: 0 }, 0, 1700000000, ROLES.POSTER);
+            expect(out.phase).to.equal(PHASE.TIMING_UNAVAILABLE);
+            expect(out.phase).to.not.equal(PHASE.TIMEOUT_CLAIMABLE);
+        });
+
+        it("partial timing with positive T0 but zero rulingDeadline -> TIMING_UNAVAILABLE (not timeout)", function () {
+            // T0 > 0 but rulingDeadline == 0 (impossible for a real challenge) must
+            // not classify as timeout-claimable for a now past T0.
+            const out = phaseFor({ concessionDeadline: 1000, rulingWindowStart: 1000, rulingDeadline: 0 }, 0, 5000, ROLES.JUDGE);
+            expect(out.phase).to.equal(PHASE.TIMING_UNAVAILABLE);
+            expect(out.phase).to.not.equal(PHASE.TIMEOUT_CLAIMABLE);
+        });
+
+        it("rulingDeadline < T0 (inconsistent reads) -> TIMING_UNAVAILABLE", function () {
+            const out = phaseFor({ concessionDeadline: 3000, rulingWindowStart: 3000, rulingDeadline: 1000 }, 0, 5000, ROLES.JUDGE);
+            expect(out.phase).to.equal(PHASE.TIMING_UNAVAILABLE);
+            expect(out.phase).to.not.equal(PHASE.TIMEOUT_CLAIMABLE);
+        });
+
+        it("RESOLVED status with all-zero timing is STILL resolved (terminal branch unaffected by the guard)", function () {
+            for (const r of RESOLVED) {
+                const out = phaseFor(ZERO_TIMING, r.status, 1700000000, ROLES.JUDGE);
+                expect(out.phase).to.equal(PHASE.RESOLVED);
+                expect(out.phase).to.not.equal(PHASE.TIMING_UNAVAILABLE);
+                expect(out.subLabel).to.equal(r.sub);
+            }
+        });
+
+        it("VALID timing is UNCHANGED by the guard: concession / ruling / timeout still classify", function () {
+            // A valid just-created challenge (now before T0) -> concession.
+            expect(phaseFor(TIMING, 0, NOW.beforeT0).phase).to.equal(PHASE.PENDING_CONCESSION);
+            // Inside the ruling window -> ruling.
+            expect(phaseFor(TIMING, 0, NOW.insideRulingWindow).phase).to.equal(PHASE.PENDING_RULING);
+            // Past the ruling deadline -> timeout-claimable (NOT timing-unavailable).
+            const passed = phaseFor(TIMING, 0, NOW.afterRulingEnd);
+            expect(passed.phase).to.equal(PHASE.TIMEOUT_CLAIMABLE);
+            expect(passed.phase).to.not.equal(PHASE.TIMING_UNAVAILABLE);
+        });
+    });
+
     describe("defensive input handling (pure, no throws)", function () {
         it("missing timing object -> still classifies Pending without throwing", function () {
             const out = phaseFor(undefined, 0, 0);
