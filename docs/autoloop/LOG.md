@@ -380,3 +380,5 @@
   for the single real call site.
 - Gates re-run MYSELF (sequential): full `npx hardhat test` 1003 passing / 0 failing (×2 stable); lint EXIT=0 (g1 40).
 - Sepolia deployer 0x693E…b43d still ≈ 0.0338 ETH (< 0.05) → live journey still parked.
+- DEPLOYED to VM futarchy-indexers (/opt/simple-bond → dcaeb8a, `docker compose -p bond-notify up -d --build`):
+  /api/notify/health "ok", chain 1 lag 12 / Sepolia lag 6, headAgeSeconds 10, 0 dead-letters, guard registered at boot.
