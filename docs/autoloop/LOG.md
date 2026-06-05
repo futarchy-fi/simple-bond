@@ -323,3 +323,23 @@
 - Sepolia deployer 0x693E…b43d still ≈ 0.0338 ETH (< 0.05) → live journey still parked.
 - Next (per refreshed BACKLOG.md): #2 global v0.7 claimable-credits indicator → #3 README interface fix → #4 docs-as-test
   ABI-signature assertion → optionally #5-#8 → then wind down.
+
+## Iteration 26 — 2026-06-05 — backlog #2: global v0.7 claimable-credits indicator (PROGRESS)
+- Fixed the central push->pull discoverability regression: v0.7 C2 made refunds pull-only (credits[recipient][token],
+  drained by claim(token)), but claim() was surfaced ONLY on the per-bond detail card — an owed user had to revisit the
+  exact bond page. Added a GLOBAL "You have ~$X claimable across your bonds" banner to the My Bonds page. New pure helper
+  frontend/credits-banner.js (myCreditsBannerHtml; "" for <=0, never throws). loadMyBonds, gated behind isV7 && account,
+  reads credits(account, chain().approvedToken) in a try/catch (RPC error -> no banner, never blanks My Bonds) and fills
+  #myCreditsBanner; new My-Bonds-scoped doClaimCreditMyBonds(token) calls claim(token) and re-renders renderMyBonds so the
+  banner clears. Amount derived from the real credits() value (no fabrication; '—' on rate miss).
+- v6/mainnet BYTE-IDENTICAL at runtime: the whole block is bondVersion===7-gated, so v6 makes no extra credits() RPC and
+  shows no banner. index.html + v6 mirror in sync (modulo script-path).
+- Adversarial panel 3/3 PASS, non-vacuity re-verified (mutate helper -> unit RED; git checkout the feature -> 13 surface
+  assertions RED across both files; restored). The "first-run 13 failing" caveat was the verifier's OWN revert test, not a
+  real failure.
+- Gates re-run MYSELF (sequential): full `npx hardhat test` 996 passing / 0 failing (×2 stable); lint EXIT=0 (g1 40);
+  docker e2e 60 passed / 4 skipped (incl. new test #52: concede -> My-Bonds banner -> Claim pulls it + clears), all 7
+  capabilities true. Restored the e2e-churned my-bonds.png. Burn-down unchanged (UX feature, not an RCA-gap closure).
+- Sepolia deployer 0x693E…b43d still ≈ 0.0338 ETH (< 0.05) → live journey still parked.
+- Next (BACKLOG.md): #3 README Contract Interface -> deployed V6 ABI (docs) → #4 docs-as-test ABI-signature assertion →
+  optionally #5-#8 (backend crash-guard, Sepolia monitor, email copy, alert->inline) → then wind down.

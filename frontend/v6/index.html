@@ -16,6 +16,7 @@
 <script src="../allowance-key.js"></script>
 <script src="../async-util.js"></script>
 <script src="../challenge-capacity.js"></script>
+<script src="../credits-banner.js"></script>
 <style>
   :root {
     --bg: #ffffff;
@@ -3215,6 +3216,7 @@
     }
     const c = chain();
     $('view').innerHTML = `<h2 style="margin-bottom:12px;">My bonds on ${escapeHtml(c?.name || '—')}</h2>
+      <div id="myCreditsBanner"></div>
       <div class="my-section">
         <h3>As poster <span class="count" id="myPosterCount">…</span></h3>
         <div id="myPoster"><div class="loading"><span class="spinner"></span>Loading…</div></div>
@@ -3296,6 +3298,65 @@
       renderMySection('myChallenger', 'myChallengerCount', challengerIds, 'challenger', challengerErr),
       renderMySection('myJudge', 'myJudgeCount', judgeIds, 'judge', judgeErr),
     ]);
+
+    // backlog #2 — GLOBAL claimable-credits indicator (v0.7 ONLY). On v0.6
+    // (mainnet, LIVE) refunds are PUSHED inline, so there is no credit ledger to
+    // surface — this whole block is gated behind bondVersion === 7 and never runs
+    // (no extra RPC, no banner) on v6, keeping that behaviour byte-identical.
+    //
+    // In v0.7 every refund/payout is credited to credits[recipient][token] and
+    // pulled via claim(token), so a user owed credit otherwise only discovers it
+    // on the exact per-bond detail page. Here we read the connected account's
+    // credit for the chain's canonical approvedToken (v0.7 bonds all use it —
+    // single-token launch; multi-token enumeration is intentionally out of scope)
+    // and, if > 0, render a prominent claim banner ABOVE the role sections via the
+    // pure myCreditsBannerHtml helper (frontend/credits-banner.js).
+    const isV7 = chain()?.bondVersion === 7;
+    if (isV7 && account) {
+      const token = chain().approvedToken;
+      let credit = 0n;
+      // Wrap the read in try/catch so an RPC hiccup never blanks My Bonds — on
+      // error we simply show no banner (credit stays 0n), never crash.
+      try { credit = await bondReadContract().credits(account, token); }
+      catch (_) { credit = 0n; }
+      const banner = $('myCreditsBanner');
+      if (banner && typeof window.myCreditsBannerHtml === 'function') {
+        if (credit > 0n) {
+          const rate = await susdsRateForDisplay(token);
+          banner.innerHTML = window.myCreditsBannerHtml({
+            creditWei: credit,
+            usdStr: susdsBigIntToUsdString(credit, rate),
+          });
+          // My-Bonds-scoped claim handler — NOT doClaimCredit (which re-renders a
+          // specific bond detail and writes to the detail #claimMsg slot).
+          $('myCreditsClaimBtn')?.addEventListener('click', () => doClaimCreditMyBonds(token));
+        } else {
+          banner.innerHTML = '';
+        }
+      }
+    }
+  }
+
+  // v0.7 My-Bonds-scoped per-address pull payment. Distinct from doClaimCredit
+  // (the bond-detail handler) so it writes progress/result to the My-Bonds message
+  // slot and re-renders the My Bonds page on success (clearing the banner) instead
+  // of re-rendering a bond detail. Routed through bondWriteContract().claim(token)
+  // (G3) — no raw signer binding, no getLogs (G4).
+  async function doClaimCreditMyBonds(token) {
+    const msg = $('myCreditsMsg');
+    try {
+      if (!signer) { await connectWallet(); if (!signer) return; }
+      if (msg) msg.innerHTML = `<div class="msg msg-info"><span class="spinner"></span>Claiming your credit…</div>`;
+      const tx = await bondWriteContract().claim(token);
+      await waitForTx(tx);
+      log(`Claimed credit for token ${token} (My Bonds).`);
+      if (msg) msg.innerHTML = `<div class="msg msg-success">Credit claimed.</div>`;
+      // Re-render My Bonds so the now-zeroed credit clears the banner.
+      setTimeout(() => renderMyBonds(), 600);
+    } catch (err) {
+      if (msg) msg.innerHTML = `<div class="msg msg-error">${escapeHtml(friendlyError(err))}</div>`;
+      log(`Claim failed: ${friendlyError(err)}`, 'err');
+    }
   }
 
   async function renderMySection(containerId, countId, ids, role, loadError) {

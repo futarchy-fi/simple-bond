@@ -11,6 +11,7 @@ const CONTRACT_PROBE = resolve(__dirname, "..", "..", "frontend", "contract-prob
 const ALLOWANCE_KEY = resolve(__dirname, "..", "..", "frontend", "allowance-key.js");
 const ASYNC_UTIL = resolve(__dirname, "..", "..", "frontend", "async-util.js");
 const CHALLENGE_CAPACITY = resolve(__dirname, "..", "..", "frontend", "challenge-capacity.js");
+const CREDITS_BANNER = resolve(__dirname, "..", "..", "frontend", "credits-banner.js");
 
 describe("SimpleBond v0.6 frontend surface", function () {
     const v6html = readFileSync(V6_HTML, "utf8");
@@ -22,6 +23,7 @@ describe("SimpleBond v0.6 frontend surface", function () {
     const allowanceKeySrc = readFileSync(ALLOWANCE_KEY, "utf8");
     const asyncUtilSrc = readFileSync(ASYNC_UTIL, "utf8");
     const challengeCapacitySrc = readFileSync(CHALLENGE_CAPACITY, "utf8");
+    const creditsBannerSrc = readFileSync(CREDITS_BANNER, "utf8");
 
     it("v6/abi.js exports every v0.6 entrypoint the UI calls", function () {
         // Reads
@@ -505,5 +507,124 @@ describe("SimpleBond v0.6 frontend surface", function () {
                 });
             });
         }
+    });
+
+    // backlog #2 — v0.7 pull-payment is undiscoverable. On SimpleBondV7 (Sepolia)
+    // the C2 change replaced PUSHED refunds with a PULL ledger: every refund/payout
+    // is credited to credits[recipient][token] and drained by claim(token). Because
+    // nothing is pushed any more, a user owed credit otherwise only discovers it on
+    // the exact per-bond detail page while connected (and the email prompt is
+    // stubbed). The fix adds a GLOBAL claimable-credits banner to the My Bonds page
+    // for v0.7 chains: loadMyBonds, AFTER the existing Promise.all, gates on
+    // bondVersion === 7 + account, reads credits(account, chain().approvedToken),
+    // and fills a #myCreditsBanner via the pure myCreditsBannerHtml helper, wired to
+    // a My-Bonds-scoped doClaimCreditMyBonds(token) handler (claim(token) +
+    // renderMyBonds re-render). On v0.6 NONE of this runs (no extra RPC, no banner)
+    // — behaviour byte-identical. These assertions lock the wiring in BOTH the
+    // canonical frontend/index.html and the mirror frontend/v6/index.html, and are
+    // written so reverting any single change turns the test RED.
+    describe("My-Bonds global claimable-credits banner (backlog #2) wiring", function () {
+        it("frontend/credits-banner.js exports the pure helper with the dual-export idiom", function () {
+            // Dual export (window + module.exports), mirroring phase.js /
+            // async-util.js / allowance-key.js / challenge-capacity.js.
+            expect(creditsBannerSrc).to.include("module.exports");
+            expect(creditsBannerSrc).to.include("root.myCreditsBannerHtml");
+            expect(creditsBannerSrc).to.match(/function myCreditsBannerHtml\s*\(/);
+            // It returns "" when there is nothing claimable (credit <= 0).
+            expect(creditsBannerSrc).to.match(/creditWei[\s\S]{0,200}<=\s*0n[\s\S]{0,40}return ''/);
+            // The positive branch carries the success styling + the claim button id.
+            expect(creditsBannerSrc).to.include("msg-success");
+            expect(creditsBannerSrc).to.include("myCreditsClaimBtn");
+        });
+
+        for (const [label, html] of [["frontend/index.html", () => mainHtml], ["frontend/v6/index.html", () => v6html]]) {
+            describe(label, function () {
+                it("loads credits-banner.js as a script", function () {
+                    expect(html()).to.match(/<script src="\.{1,2}\/credits-banner\.js"><\/script>/);
+                });
+
+                it("renderMyBonds adds an (initially empty) #myCreditsBanner ABOVE the three my-section blocks", function () {
+                    // The banner container is rendered in renderMyBonds, before the
+                    // poster section. Deleting the container fails this. Requiring it
+                    // ahead of the first my-section div proves the ordering.
+                    expect(html()).to.match(
+                        /<div id="myCreditsBanner"><\/div>[\s\S]{0,120}<div class="my-section">/
+                    );
+                });
+
+                it("loadMyBonds reads credits(account, chain().approvedToken) GUARDED behind bondVersion === 7, AFTER the Promise.all", function () {
+                    // The v7 gate. Reverting it (so the read runs on v6 too) or
+                    // deleting it fails this. The gate + account guard appear AFTER
+                    // the renderMySection('myJudge', ...) Promise.all member that
+                    // renders the third role section, and BEFORE the credits read.
+                    expect(html()).to.match(
+                        /renderMySection\('myJudge', 'myJudgeCount'[\s\S]{0,1200}const isV7 = chain\(\)\?\.bondVersion === 7;[\s\S]{0,80}if \(isV7 && account\)/
+                    );
+                    // Reads the connected account's credit for the chain canonical token.
+                    expect(html()).to.match(
+                        /const token = chain\(\)\.approvedToken;[\s\S]{0,400}bondReadContract\(\)\.credits\(account, token\)/
+                    );
+                });
+
+                it("wraps the credits read in try/catch so an RPC hiccup never blanks My Bonds", function () {
+                    // The read is wrapped so a failure leaves credit at 0n (no banner),
+                    // never a crash. Removing the try/catch fails this.
+                    expect(html()).to.match(
+                        /try \{ credit = await bondReadContract\(\)\.credits\(account, token\); \}\s*catch \(_\) \{ credit = 0n; \}/
+                    );
+                });
+
+                it("fills #myCreditsBanner via the pure myCreditsBannerHtml helper and wires the My-Bonds-scoped claim button", function () {
+                    // The banner markup decision routes through the pure helper.
+                    expect(html()).to.match(/window\.myCreditsBannerHtml\(\{[\s\S]{0,200}creditWei: credit/);
+                    // The button binds to the My-Bonds-scoped handler (NOT doClaimCredit).
+                    expect(html()).to.match(
+                        /\$\('myCreditsClaimBtn'\)\?\.addEventListener\('click', \(\) => doClaimCreditMyBonds\(token\)\)/
+                    );
+                    // A zero credit clears the banner (no stale banner left behind).
+                    expect(html()).to.match(/if \(credit > 0n\)[\s\S]{0,600}\} else \{[\s\S]{0,80}banner\.innerHTML = ''/);
+                });
+
+                it("defines a My-Bonds-scoped claim handler that calls claim(token) and re-renders renderMyBonds() (NOT the bond-detail doClaimCredit)", function () {
+                    // The handler is distinct from the bond-detail doClaimCredit: it
+                    // writes to the My-Bonds message slot and re-renders the My Bonds
+                    // page (clearing the banner) on success.
+                    expect(html()).to.match(/async function doClaimCreditMyBonds\(token\)/);
+                    // It calls claim(token) through the sanctioned write factory.
+                    expect(html()).to.match(
+                        /async function doClaimCreditMyBonds\(token\)[\s\S]{0,600}bondWriteContract\(\)\.claim\(token\)/
+                    );
+                    // On success it re-renders the My Bonds page (so the banner clears),
+                    // NOT a specific bond detail.
+                    expect(html()).to.match(
+                        /async function doClaimCreditMyBonds\(token\)[\s\S]{0,900}renderMyBonds\(\)/
+                    );
+                    expect(html()).to.match(
+                        /async function doClaimCreditMyBonds\(token\)[\s\S]{0,900}\$\('myCreditsMsg'\)|const msg = \$\('myCreditsMsg'\)/
+                    );
+                });
+            });
+        }
+
+        // The v6 (mainnet) PATH must be unaffected: there is no credits()/claim()
+        // read OUTSIDE the v7-guarded blocks. We don't ban the strings outright
+        // (they legitimately appear in the v7-guarded My-Bonds block and the
+        // v7-guarded bond-detail block), but the My-Bonds credits read MUST be
+        // gated behind bondVersion === 7 — proven by the gate assertion above. Here
+        // we additionally assert the My-Bonds credits read never appears without its
+        // v7 guard, i.e. there is no UNguarded credits(account, token) on the
+        // My-Bonds path.
+        it("v6 path is unaffected: the My-Bonds credits read only exists under the bondVersion === 7 guard", function () {
+            // The ONLY My-Bonds-context credits read is the guarded one. The bond
+            // detail read uses credits(account, b.token); the My-Bonds read uses
+            // credits(account, token). The My-Bonds read must be preceded (within
+            // the same loadMyBonds body) by the isV7 gate.
+            for (const html of [mainHtml, v6html]) {
+                const myBondsReadCount = (html.match(/bondReadContract\(\)\.credits\(account, token\)/g) || []).length;
+                expect(myBondsReadCount, "expected exactly one My-Bonds credits(account, token) read").to.equal(1);
+                // And it lives after an isV7 gate.
+                expect(html).to.match(/const isV7 = chain\(\)\?\.bondVersion === 7;[\s\S]{0,400}bondReadContract\(\)\.credits\(account, token\)/);
+            }
+        });
     });
 });
