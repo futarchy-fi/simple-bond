@@ -13,6 +13,7 @@
 <script src="../banner.js"></script>
 <script src="../notify.js"></script>
 <script src="../contract-probe.js"></script>
+<script src="../allowance-key.js"></script>
 <style>
   :root {
     --bg: #ffffff;
@@ -514,7 +515,7 @@
   let walletChainId = null;   // current chain id reported by the wallet
 
   // optimistic / read caches
-  const allowanceCache = {};  // `${token}:${spender}` -> bigint
+  const allowanceCache = {};  // allowanceKey({chainId,account,token,spender}) -> bigint
   const tokenMetaCache = {};  // address -> { decimals, symbol }
   const judgeProfileEntryCache = {}; // `${chainId}:${entryId}` -> entry
   let createPrefill = {};     // { judgeProfileId? }
@@ -1636,6 +1637,14 @@
     _accountsHandler = (accounts) => {
       if (!accounts || accounts.length === 0) { disconnectWallet(); return; }
       account = ethers.getAddress(accounts[0]);
+      // RCA gap #5 — allowance is read PER ACCOUNT on-chain, so a stored entry is
+      // only valid for the account it was read for. Drop every cached allowance
+      // on an account switch so the new account can never be served the previous
+      // account's allowance (which would wrongly SKIP the Approve step and revert
+      // its createBond/challenge). The account-keyed key already prevents this,
+      // but clearing here is belt-and-suspenders against key collisions or
+      // out-of-band approvals made in the wallet between switches.
+      for (const k of Object.keys(allowanceCache)) delete allowanceCache[k];
       $('walletAddr').textContent = short(account);
       render();
       refreshNotifyBell();
@@ -1736,7 +1745,7 @@
 
   // ─── Approval helper with cache ────────────────────────────────────────
   async function ensureApproval(tokenAddr, amount, spender) {
-    const key = `${tokenAddr.toLowerCase()}:${spender.toLowerCase()}`;
+    const key = window.allowanceKey({ chainId: activeChainId, account, token: tokenAddr, spender });
     let cached = allowanceCache[key];
     if (cached == null) {
       try { cached = await erc20Contract(tokenAddr).allowance(account, spender); } catch (_) { cached = 0n; }
@@ -3114,7 +3123,7 @@
       // Check approval
       let allowance = 0n;
       try { allowance = await erc20Contract(token).allowance(account, c.bondContract); } catch (_) {}
-      allowanceCache[`${token.toLowerCase()}:${c.bondContract.toLowerCase()}`] = allowance;
+      allowanceCache[window.allowanceKey({ chainId: activeChainId, account, token, spender: c.bondContract })] = allowance;
       if (allowance < bondAmount) steps.push(`Approve ${meta.symbol}`);
       steps.push('Create bond');
       renderTxStepper(stepperEl, steps);
@@ -3841,7 +3850,7 @@
       const steps = [];
       let allowance = 0n;
       try { allowance = await erc20Contract(b.token).allowance(account, c.bondContract); } catch (_) {}
-      allowanceCache[`${b.token.toLowerCase()}:${c.bondContract.toLowerCase()}`] = allowance;
+      allowanceCache[window.allowanceKey({ chainId: activeChainId, account, token: b.token, spender: c.bondContract })] = allowance;
       if (allowance < b.challengeAmount) steps.push('Approve token');
       steps.push('Submit challenge');
       renderTxStepper(stepperEl, steps);

@@ -1,5 +1,5 @@
 {
-  "iteration": 21,
+  "iteration": 22,
   "updated": "2026-06-05",
   "gates": {
     "lint": true,
@@ -10,7 +10,7 @@
   },
   "burndown": {
     "g1EmptyCatch": 41,
-    "rcaOpenGaps": 5,
+    "rcaOpenGaps": 4,
     "brokenWikiLinks": null,
     "docDrift": 0
   },

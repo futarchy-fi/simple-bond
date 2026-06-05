@@ -8,6 +8,7 @@ const V6_SMOKE = resolve(__dirname, "..", "..", "frontend", "v6", "smoke.html");
 const RUNTIME_CONFIG = resolve(__dirname, "..", "..", "frontend", "runtime-config.js");
 const MAIN_HTML = resolve(__dirname, "..", "..", "frontend", "index.html");
 const CONTRACT_PROBE = resolve(__dirname, "..", "..", "frontend", "contract-probe.js");
+const ALLOWANCE_KEY = resolve(__dirname, "..", "..", "frontend", "allowance-key.js");
 
 describe("SimpleBond v0.6 frontend surface", function () {
     const v6html = readFileSync(V6_HTML, "utf8");
@@ -16,6 +17,7 @@ describe("SimpleBond v0.6 frontend surface", function () {
     const runtimeConfig = readFileSync(RUNTIME_CONFIG, "utf8");
     const mainHtml = readFileSync(MAIN_HTML, "utf8");
     const contractProbe = readFileSync(CONTRACT_PROBE, "utf8");
+    const allowanceKeySrc = readFileSync(ALLOWANCE_KEY, "utf8");
 
     it("v6/abi.js exports every v0.6 entrypoint the UI calls", function () {
         // Reads
@@ -193,6 +195,77 @@ describe("SimpleBond v0.6 frontend surface", function () {
                     expect(html()).to.match(/state === 'unknown'[\s\S]{0,300}_contractTransportMsg = msg;[\s\S]{0,80}return state;/);
                     // Sticky verdict cache exists and is keyed per chain+address.
                     expect(html()).to.include("_contractProbeVerdict");
+                });
+            });
+        }
+    });
+
+    // RCA gap #5 — allowanceCache not keyed by account. The ERC-20 allowance
+    // cache used to be keyed only by `${token}:${spender}` (no account, no
+    // chainId). Because allowance() is read PER ACCOUNT on-chain, connecting
+    // account A (approved) then switching to account B (not approved) served A's
+    // allowance under the shared key, SKIPPED the Approve step, and B's
+    // createBond/challenge REVERTED. The fix routes every cache key through
+    // window.allowanceKey({chainId,account,token,spender}) (pure helper in
+    // frontend/allowance-key.js) AND clears the cache on accountsChanged. These
+    // assertions lock the wiring in BOTH the canonical frontend/index.html and
+    // the mirror frontend/v6/index.html, and are written to FAIL on the old
+    // account-less code so reverting any single part turns this test RED.
+    describe("allowance cache account-keying (RCA gap #5) wiring", function () {
+        it("frontend/allowance-key.js exports the pure helper with the dual-export idiom", function () {
+            // Dual export (window + module.exports), mirroring phase.js / contract-probe.js.
+            expect(allowanceKeySrc).to.include("module.exports");
+            expect(allowanceKeySrc).to.include("root.allowanceKey");
+            expect(allowanceKeySrc).to.match(/function allowanceKey\s*\(/);
+            // Key shape includes account AND chainId (not just token:spender).
+            expect(allowanceKeySrc).to.match(/\$\{chainId\}:\$\{account\}:\$\{token\}:\$\{spender\}/);
+        });
+
+        // The old account-less key was built with a bare two-segment template of
+        // the form `${X.toLowerCase()}:${Y.toLowerCase()}` indexing
+        // allowanceCache (token:spender / token:bondContract). This regex matches
+        // exactly that legacy shape, so it MUST be absent now and MUST have been
+        // present on the old code (guaranteeing a non-vacuous assertion).
+        const LEGACY_KEY_RE = /allowanceCache\[`\$\{[^`]*\.toLowerCase\(\)\}:\$\{[^`]*\.toLowerCase\(\)\}`\]/;
+        // The legacy ensureApproval key (inline const, not indexing the cache).
+        const LEGACY_ENSURE_KEY_RE = /const key = `\$\{tokenAddr\.toLowerCase\(\)\}:\$\{spender\.toLowerCase\(\)\}`/;
+
+        for (const [label, html] of [["frontend/index.html", () => mainHtml], ["frontend/v6/index.html", () => v6html]]) {
+            describe(label, function () {
+                it("loads allowance-key.js as a script", function () {
+                    expect(html()).to.match(/<script src="\.{1,2}\/allowance-key\.js"><\/script>/);
+                });
+                it("builds EVERY allowance-cache key through window.allowanceKey({...account...})", function () {
+                    // All three cache sites (ensureApproval, createBond preflight,
+                    // challenge preflight) call the account-keyed helper. There are
+                    // at least 3 such calls; each passes chainId + account.
+                    const calls = html().match(/window\.allowanceKey\(\{[^}]*\}\)/g) || [];
+                    expect(calls.length, "expected >=3 window.allowanceKey({...}) call sites").to.be.at.least(3);
+                    for (const call of calls) {
+                        expect(call, `allowanceKey call missing account: ${call}`).to.match(/account/);
+                        expect(call, `allowanceKey call missing chainId: ${call}`).to.match(/chainId/);
+                    }
+                    // The cache is indexed via the helper at both preflight sites
+                    // and ensureApproval reads its key from the helper too.
+                    expect(html()).to.match(/allowanceCache\[window\.allowanceKey\(/);
+                    expect(html()).to.match(/const key = window\.allowanceKey\(/);
+                });
+                it("NO LONGER contains an account-less allowance-cache key (the bug)", function () {
+                    // Reverting any single call site back to `${token}:${spender}`
+                    // re-introduces this legacy shape and fails the test.
+                    expect(LEGACY_KEY_RE.test(html()), "found legacy account-less allowanceCache[`...:...`] key").to.equal(false);
+                    expect(LEGACY_ENSURE_KEY_RE.test(html()), "found legacy account-less ensureApproval key").to.equal(false);
+                });
+                it("clears the allowance cache in the accountsChanged handler", function () {
+                    // The _accountsHandler must drop cached allowances on an account
+                    // switch so a stale entry can never be served. Deleting the
+                    // clear loop fails this. We require the clear to live INSIDE the
+                    // accountsChanged handler body (between its definition and the
+                    // chainChanged handler) so an unrelated clear elsewhere can't
+                    // satisfy it.
+                    expect(html()).to.match(
+                        /_accountsHandler = \(accounts\) =>[\s\S]{0,700}for \(const k of Object\.keys\(allowanceCache\)\) delete allowanceCache\[k\];[\s\S]{0,300}_chainHandler =/
+                    );
                 });
             });
         }

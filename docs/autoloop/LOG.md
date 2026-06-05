@@ -242,3 +242,21 @@
   all 7 capabilities re-confirmed true. Burn-down: rcaOpenGaps 6 → 5.
 - Sepolia deployer 0x693E…b43d still ≈ 0.0338 ETH (< 0.05) → live journey still parked.
 - Next: funded → live V7 journey; else RCA gap #5 (allowanceCache not keyed by account) or #3 (withTimeout empty-vs-error).
+
+## Iteration 22 — 2026-06-05 — gap #5: allowanceCache account-keying (PROGRESS)
+- Closed RCA gap #5 (money-path correctness): the ERC-20 allowance cache was keyed `${token}:${spender}` with NO
+  account/chainId, so connecting account A (approved) then switching MetaMask to B (not approved) served A's allowance
+  under the shared key → UI SKIPPED the Approve step → B's createBond/challenge REVERTED (insufficient allowance).
+- New pure helper frontend/allowance-key.js (dual-export like phase.js/contract-probe.js): allowanceKey({chainId,
+  account,token,spender}) → `${chainId}:${account}:${token}:${spender}` (addresses lowercased, chainId stringified,
+  null account → 'noaccount' sentinel, never throws, pure). Wired into all 3 cache sites in index.html + the v6 mirror
+  (ensureApproval, createBond preflight, challenge preflight), reusing the SAME account var the allowance() read uses so
+  write/lookup stay consistent. accountsChanged handler now clears allowanceCache (belt-and-suspenders).
+  Same-account happy path unchanged (still caches + skips redundant approves).
+- Adversarial panel 3/3 PASS with explicit non-vacuous negative tests (revert each part → exact surface/unit failure
+  counts 4/2/1/1). A stale TS "chainId/account never read" diagnostic appeared — I read the file: line 72 returns the
+  4-part key and both vars ARE read; the diagnostic was captured during the verifier's transient token:spender revert.
+- Gates re-run MYSELF: full `npx hardhat test` 882 passing / 0 failing; lint EXIT=0; docker e2e 59 passed / 4 skipped,
+  all 7 capabilities true. Burn-down: rcaOpenGaps 5 → 4.
+- Sepolia deployer 0x693E…b43d still ≈ 0.0338 ETH (< 0.05) → live journey still parked.
+- Next: funded → live V7 journey; else RCA gap #3 (withTimeout empty-array vs error distinction).
