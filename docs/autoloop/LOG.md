@@ -401,3 +401,17 @@
 - Sepolia deployer 0x693E…b43d still ≈ 0.0338 ETH (< 0.05) → live journey still parked.
 - Next: #7 (templates.mjs friendly email copy + first test; backend -> VM deploy) → #6 (repo-side monitor Sepolia-safety
   only; scheduling/alert-sink is owner-gated) → WIND DOWN with full-run completion summary.
+
+## Iteration 30 — 2026-06-05 — backlog #7: friendly email copy for all notified events + first templates test (PROGRESS)
+- backend/config.mjs EVENT_RECIPIENTS notifies 13 events, but backend/templates.mjs eventEmail() descriptions map only
+  covered 9 — so ClaimModified / ChallengeRejected / BondClosed / BondOpened rendered the bare "Event: <Name>" fallback
+  (most user-impactful: ChallengeRejected, the deposit-refund notice). Added specific copy for all 4. Latent only because
+  email is currently stubbed (EMAIL_ENABLED=false), but now correct for when a provider is wired.
+- NEW test/backend/templates.test.js (first templates coverage): loops EVERY EVENT_RECIPIENTS key, renders eventEmail, and
+  asserts NONE renders the "Event: <Name>" fallback + the 4 new events carry emphasised copy + the View Bond/unsubscribe
+  links are present. Locks the invariant: any future notified event without copy fails CI.
+- Done DIRECTLY (no workflow) given the triviality (4 strings + a test); quality held via the test + my own gates +
+  a non-vacuity check I ran (drop the ChallengeRejected desc -> 2 RED naming it; restored).
+- Gates re-run MYSELF (sequential): full `npx hardhat test` 1025 passing / 0 failing (×2 stable; was 1021 + 4 new);
+  lint EXIT=0 (g1 40). BACKEND change -> VM deploy below.
+- Sepolia deployer 0x693E…b43d still ≈ 0.0338 ETH (< 0.05) → live journey still parked.

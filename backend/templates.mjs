@@ -74,6 +74,10 @@ export function eventEmail(eventType, bondId, chainId, metadata, address) {
     BondWithdrawn: 'Your bond has been <strong>withdrawn</strong> successfully.',
     BondTimedOut: 'The bond has <strong>timed out</strong> (judge missed the ruling deadline).',
     BondRejectedByJudge: 'The judge has <strong>rejected</strong> this bond. All parties refunded.',
+    ClaimModified: 'The poster has <strong>modified</strong> their claim.',
+    ChallengeRejected: 'A challenge was <strong>rejected as out-of-scope</strong> by the judge — the challenger has been refunded.',
+    BondClosed: 'A bond you judge has been <strong>closed</strong> to new challenges.',
+    BondOpened: 'A bond you judge has been <strong>re-opened</strong> for challenges.',
   };
 
   const desc = descriptions[eventType] || `Event: ${eventType}`;
