@@ -8,6 +8,7 @@
 <script src="./runtime-config.js"></script>
 <script src="./v6/abi.js"></script>
 <script src="./v6/manualJudgeV6.bytecode.js"></script>
+<script src="./phase.js"></script>
 <style>
   :root {
     --bg: #ffffff;
@@ -289,6 +290,21 @@
   .challenge-item .ci-grid { display: grid; grid-template-columns: 160px 1fr; gap: 4px 12px; font-size: 13px; margin-top: 6px; }
   .challenge-item .ci-grid > div:nth-child(odd) { color: var(--muted); }
   .challenge-item .ci-actions { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+  /* Per-challenge phase timeline (concession -> ruling -> timeout) + reason. */
+  .challenge-item .ci-phase { margin-top: 10px; }
+  .challenge-item .ci-phase-track { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 12px; }
+  .challenge-item .ci-phase-step {
+    padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border);
+    color: var(--muted); background: var(--surface-2, #f3f4f6); text-transform: lowercase;
+  }
+  .challenge-item .ci-phase-step.active {
+    border-color: var(--accent); color: var(--accent); background: #fff; font-weight: 600;
+  }
+  .challenge-item .ci-phase-track.resolved .ci-phase-step { opacity: 0.45; }
+  .challenge-item .ci-phase-sep { color: var(--muted); }
+  .challenge-item .ci-phase-now { margin-left: auto; font-weight: 600; color: var(--text); }
+  .challenge-item .ci-phase-track.resolved .ci-phase-now { color: var(--muted); }
+  .challenge-item .ci-phase-reason { margin-top: 6px; font-size: 13px; color: var(--muted); line-height: 1.4; }
 
   /* Wizard */
   .wizard {
@@ -3243,6 +3259,47 @@
         <div>ruling deadline</div><div>${fmtTime(timing.rulingDeadline)} (${fmtCountdown(timing.rulingDeadline)})</div>
       </div>`;
     }
+
+    // Phase timeline + "why no action / when it changes" reason. phaseFor() is a
+    // pure classifier (see frontend/phase.js): it turns the on-chain timing +
+    // ChallengeStatus into a phase + a full-sentence reason. We ALWAYS show the
+    // reason — it explains the current state and, when no button renders for this
+    // viewer (e.g. bystander in the concession window, judge before the ruling
+    // opens), WHY there's no action and WHEN that changes. No more silent
+    // dead-ends. phaseFor is exposed on window by phase.js.
+    let phaseHtml = '';
+    if (typeof phaseFor === 'function') {
+      // Tailor the reason to the connected viewer so it never contradicts the
+      // buttons gated for them. Priority poster > judge > challenger > bystander
+      // (a wallet is at most one of these for a given challenge). The judge can
+      // reject-as-out-of-scope at any pending instant, so phaseFor surfaces that
+      // caveat for every role.
+      const isChallenger = !!(signer && account && ch.challenger && account.toLowerCase() === ch.challenger.toLowerCase());
+      const viewerRole = isPoster ? 'poster'
+        : isJudgeOperator ? 'judge'
+        : isChallenger ? 'challenger'
+        : 'bystander';
+      const ph = phaseFor(timing || {}, statusIdx, now, viewerRole);
+      const steps = [
+        { key: 'pending-concession', text: 'concession' },
+        { key: 'pending-ruling', text: 'ruling' },
+        { key: 'timeout-claimable', text: 'timeout' },
+      ];
+      const resolved = ph.phase === 'resolved';
+      const track = steps.map((st, idx) => {
+        const active = !resolved && ph.activeWindow === st.key;
+        const sep = idx > 0 ? '<span class="ci-phase-sep" aria-hidden="true">→</span>' : '';
+        return `${sep}<span class="ci-phase-step${active ? ' active' : ''}">${st.text}</span>`;
+      }).join('');
+      const headLabel = resolved && ph.subLabel ? `${ph.label}: ${ph.subLabel}` : ph.label;
+      phaseHtml = `<div class="ci-phase" data-phase="${ph.phase}" data-active="${ph.activeWindow}">
+        <div class="ci-phase-track${resolved ? ' resolved' : ''}">${track}
+          <span class="ci-phase-now">${escapeHtml(headLabel)}</span>
+        </div>
+        <div class="ci-phase-reason">${escapeHtml(ph.reason)}</div>
+      </div>`;
+    }
+
     return `<div class="challenge-item" id="ch-${i}">
       <div class="ci-head">
         <span class="ci-idx">#${i}</span>
@@ -3256,6 +3313,7 @@
         ${ch.rulingMetadataHash && ch.rulingMetadataHash !== '0x0000000000000000000000000000000000000000000000000000000000000000' ? `<div>ruling hash</div><div class="mono" style="font-size:12px;">${ch.rulingMetadataHash}</div>` : ''}
       </div>
       ${timingHtml}
+      ${phaseHtml}
       ${actions.length > 0 ? `<div class="ci-actions">${actions.join('')}</div>` : ''}
     </div>`;
   }

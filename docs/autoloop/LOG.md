@@ -48,3 +48,15 @@
   unavailable → graceful RPC fallback. 3/3 verdicts pass (paint proven by racing a 1.5s-delayed RPC; getLogs=0).
 - New bond-detail-indexer-first.spec.js (2 branches) + full local e2e 42 passed; mirrored to v6; lint G1=41.
 - rcaOpenGaps 8 → 7 (gap #9 closed). Next: iteration 6 = A2 per-challenge status timeline (why-no-action sentences).
+
+## Iteration 6 — 2026-06-04 — A2 per-challenge phase timeline (PROGRESS, with a fix sub-iteration)
+- A2 first pass implemented phaseFor() + reason sentences; adversarial panel CAUGHT 2 real bugs the
+  30 unit + 45 e2e missed: (1) modeled a non-existent concession→ruling gap (contract makes
+  concessionDeadline == rulingWindowStart); (2) role-agnostic reasons wrong for the judge, who can
+  rejectChallenge throughout the pending lifetime (no timing gate). NOT committed.
+- Iteration 6b fixed both (adjacent two-phase model at T0; role-aware reasons via viewerRole) and
+  re-verified: 3/3 verdicts pass, phaseFor 41 unit tests, full local e2e 45 passed, files in sync.
+- New frontend/phase.js (pure phaseFor) + test/frontend/phaseFor.test.js + challenge-phase-timeline.spec.js.
+- Loop-quality note: green tests alone did NOT earn a commit — the adversarial panel did. Working as designed.
+- Minor follow-up logged (non-blocking): all-zero timing (RPC degradation) → phase vs button-guard mismatch.
+- Next: iteration 7 = A3 USD consistency (same bond reads identically across Browse/My-Bonds/detail).
