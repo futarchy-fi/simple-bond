@@ -1,6 +1,6 @@
 {
-  "iteration": 2,
-  "updated": "2026-06-04",
+  "iteration": 3,
+  "updated": "2026-06-05",
   "gates": {
     "lint": true,
     "hardhat": true,
@@ -14,7 +14,15 @@
     "brokenWikiLinks": null,
     "docDrift": 0
   },
-  "capabilities": {},
+  "capabilities": {
+    "createBond": true,
+    "becomeJudge": true,
+    "challengeAndRule": true,
+    "concede": true,
+    "withdraw": true,
+    "drainRefunds": true,
+    "claimTimeout": true
+  },
   "adversarialScore": null,
   "runDeadline": "2026-06-09"
 }

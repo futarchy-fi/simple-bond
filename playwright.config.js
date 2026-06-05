@@ -12,7 +12,14 @@ module.exports = defineConfig({
     fullyParallel: false,
     forbidOnly: !!process.env.CI,
     retries: process.env.CI ? 2 : 0,
-    reporter: process.env.CI ? "github" : "list",
+    // Always emit a machine-readable JSON report alongside the human one so the
+    // capability aggregator (scripts/aggregate-capabilities.mjs) can turn the
+    // user-facing journeys into scoreboard capability flags after every run.
+    // Override the path with PLAYWRIGHT_JSON_OUTPUT_NAME.
+    reporter: [
+        [process.env.CI ? "github" : "list"],
+        ["json", { outputFile: process.env.PLAYWRIGHT_JSON_OUTPUT_NAME || "test-results/report.json" }],
+    ],
 
     use: {
         actionTimeout: 15_000,

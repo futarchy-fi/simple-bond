@@ -15,6 +15,7 @@
     "e2e:live": "playwright test --project live-mainnet --project live-sepolia",
     "e2e:local": "playwright test --project local",
     "e2e:report": "playwright show-report",
+    "capabilities": "node scripts/aggregate-capabilities.mjs",
     "lint": "node scripts/lint-guardrails.mjs"
   },
   "repository": {

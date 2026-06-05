@@ -26,3 +26,10 @@
 - Gates: lint G5 clean, 18 backend tests green (new failover + all-fail no-skip), monitor green.
 - Deployed to VM with MAINNET_RPCS = Alchemy primary + publicnode backup (failover live); lag 12 (healthy).
 - Burn-down: rcaOpenGaps 10 → 9 (gap #1 closed). Next: iteration 3 = H1 capability-journey harness.
+
+## Iteration 3 — 2026-06-04 — H1 capability-journey harness (PROGRESS)
+- aggregate-capabilities.mjs: sole writer of capability flags from the Playwright JSON report;
+  skipped/failed/missing NEVER yield true (7 unit tests + 10 adversarial mutation probes). 3/3 verdicts pass.
+- Ran real local e2e (38 passed) → aggregator populated ALL 7 capability flags true:
+  createBond, becomeJudge, challengeAndRule, concede, withdraw, drainRefunds, claimTimeout.
+- The loop now has a gaming-resistant headline metric (CHARTER §3). Next: iteration 4 = A1 staleness banner (RCA gap #2).
