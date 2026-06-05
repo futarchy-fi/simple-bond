@@ -113,3 +113,11 @@
 - Follow-ups logged: (i) over-broad catch may misclassify a DB/indexLogs error as a poison block (no data loss,
   just wasted rescans); (ii) pre-existing indexBondState swallows contract.bonds() failure (latent RC1-class gap).
 - Next: iteration 12 = B4 last-tick-age health SLO (page within minutes if the watcher wedges/crashes).
+
+## Iteration 12 — 2026-06-05 — B4 last-tick-age liveness SLO (PROGRESS)
+- db.indexerStatus() exposes UTC-correct headAgeSeconds; monitor M6 alerts when the watcher hasn't ticked
+  within TICK_AGE_THRESHOLD (default 180s) or never ticked. UTC verified across 5 timezones. 3/3 verdicts pass.
+- Deployed to VM: tick age 9s, all 4 probes green (lag/bonds/dead-letters/tick-age).
+- BACKEND-RELIABILITY LAYER COMPLETE: B1 failover + B2 dead-letter recovery + B4 liveness + B3 indexer-first FE.
+- Next phase: v0.7 CONTRACTS (C1 pending-cap maxChallenges, C2 pull-payment credit ledger) — design first,
+  then implement+test, then SEPOLIA deploy, then capability-verify, then (only after) cutover.
