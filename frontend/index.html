@@ -9,6 +9,7 @@
 <script src="./v6/abi.js"></script>
 <script src="./v6/manualJudgeV6.bytecode.js"></script>
 <script src="./phase.js"></script>
+<script src="./refunds.js"></script>
 <style>
   :root {
     --bg: #ffffff;
@@ -3095,6 +3096,17 @@
       const canChallenge = isNonPoster && bondOpen && Number(b.pendingCount) < Number(b.maxChallenges) && Number(b.pendingCount) <= 100;
       const statusName = b.settled ? 'settled' : (b.closed ? 'closed' : (Number(b.pendingCount) > 0 ? 'disputed' : 'open'));
 
+      // Refunds affordance. computeRefunds (frontend/refunds.js) is a pure,
+      // contract-faithful classifier: a slot is drainable ONLY when the bond is
+      // settled AND the challenge is still Pending — exactly what claimRefunds()
+      // acts on. Conceded/rejected challengers were already refunded inline, so
+      // they are NOT counted. We render the drain control ONLY when something is
+      // actually drainable (no always-on no-op button) and, when the connected
+      // viewer is owed, surface "you are owed ~$X (N slots)".
+      const refunds = (typeof computeRefunds === 'function')
+        ? computeRefunds(challenges, b, account)
+        : { refundableSlots: 0, viewerOwedSlots: 0, viewerOwedShares: 0n };
+
       view.innerHTML = `
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
           <h2 style="margin:0;">Bond #${bondId}</h2>
@@ -3198,12 +3210,15 @@
           <div id="judgeMsg"></div>
         </div>` : ''}
 
-        ${signer ? `
+        ${refunds.refundableSlots > 0 ? `
         <div class="card">
           <h3>Refunds</h3>
-          <p class="hint">Conceded challenges, judge-rejected challenges, and (after settlement) all remaining pending challenges become refundable. Anyone can process them in bounded batches.</p>
+          ${refunds.viewerOwedSlots > 0
+            ? `<p class="msg msg-success" style="margin-top:0;">You are owed ~$${susdsBigIntToUsdString(refunds.viewerOwedShares, tokenRate)} (${refunds.viewerOwedSlots} slot${refunds.viewerOwedSlots === 1 ? '' : 's'}). Process the refund below to receive it.</p>`
+            : `<p class="hint">${refunds.refundableSlots} refundable slot${refunds.refundableSlots === 1 ? '' : 's'} — anyone can process them (you are not a recipient).</p>`}
+          <p class="hint">When a bond settles with challenges still pending, those challengers are refunded their deposit. Anyone can process them in bounded batches.</p>
           <div class="row">
-            <input id="refundCount" type="number" min="1" max="100" value="10" style="width:90px;">
+            <input id="refundCount" type="number" min="1" max="100" value="${Math.min(Math.max(challengeCount, 1), 100)}" style="width:90px;">
             <button class="secondary" id="refundsBtn">Drain refunds (max N)</button>
           </div>
           <div id="refundMsg"></div>

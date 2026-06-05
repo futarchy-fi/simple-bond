@@ -68,3 +68,15 @@
 - 3/3 verdicts pass; new usdConsistency.test.js (non-1:1 rate, 6 tests) + usd-consistency.spec.js
   (identical-string e2e across 3 views); full local e2e 46 passed; v6 in sync; lint G1=41.
 - Next: iteration 8 = A4 refunds-aware UX (owed $X / N slots; drain control only when refundable).
+
+## Iteration 8 — 2026-06-04 — A4 refunds-aware UX (PROGRESS, spec self-corrected)
+- Drain control now renders ONLY when refundableSlots>0; viewer sees "You are owed ~$X (N slots)".
+- The implementer CORRECTED the spec from contract truth: Conceded(3)/RejectedByJudge(4) are refunded
+  INLINE at concede/reject time, so the ONLY drainable status is settled+Pending(0) — counting the others
+  would resurrect the no-op claimRefunds this change removes. Corroborated by SimpleBondV6.resolution.test.js:290.
+- Found+fixed 2 real bugs during e2e: ethers v6 Result `in`-operator false-negative; refundCursor scans the
+  index SPAN not the count (maxCount default fixed so D2 stays green).
+- New frontend/refunds.js (pure computeRefunds) + computeRefunds.test.js (18 cases) + refunds-affordance.spec.js
+  (3 e2e: no-refundable→no-control; conceded→no-control; settled+pending→owed→drain→gone+balance moved).
+  3/3 verdicts pass; full hardhat 703 + local e2e 49 passed; v6 in sync; lint G1=41.
+- Next: iteration 9 = A5 one-line lifecycle/role banner on bond detail.
