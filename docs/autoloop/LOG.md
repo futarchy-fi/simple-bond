@@ -33,3 +33,11 @@
 - Ran real local e2e (38 passed) → aggregator populated ALL 7 capability flags true:
   createBond, becomeJudge, challengeAndRule, concede, withdraw, drainRefunds, claimTimeout.
 - The loop now has a gaming-resistant headline metric (CHARTER §3). Next: iteration 4 = A1 staleness banner (RCA gap #2).
+
+## Iteration 4 — 2026-06-04 — A1 staleness banner + threshold fallback (PROGRESS)
+- Browse consumes /api/bonds meta.blocksBehindHead; STALE_THRESHOLD=50 (> ~12 confirmation margin).
+  Below: indexer rows, no banner. Above: banner + transparent direct-RPC fallback (no new getLogs, G4 clean).
+- 3/3 verdicts pass (behavior proven with mutation tests killing both branches); new browse-staleness.spec.js
+  (2 tests) + full local e2e 40 passed; mirrored to v6.
+- Bonus: refactor removed an empty catch → G1 baseline 42 → 41 (locked). rcaOpenGaps 9 → 8 (gap #2 closed).
+- Next: iteration 5 = B3 (bond detail loads from indexer point-read; depends B1 ✓).

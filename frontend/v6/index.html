@@ -1478,7 +1478,10 @@
     const n = window.SIMPLE_BOND_CONFIG?.notifyApiBase || '';
     try { return new URL(n).origin + '/api/bonds'; } catch (_) { return null; }
   }
-  async function indexerBonds(params = {}) {
+  // Low-level indexer fetch that preserves the full response envelope
+  // ({ bonds, meta }). Browse uses meta.blocksBehindHead to surface a
+  // staleness banner and decide whether to fall back to a direct read.
+  async function indexerBondsRaw(params = {}) {
     const base = indexerBondsBase();
     if (!base) return null;
     const qs = new URLSearchParams({ chainId: String(activeChainId), ...params });
@@ -1486,8 +1489,12 @@
       const r = await withTimeout(
         fetch(`${base}?${qs.toString()}`).then(x => (x.ok ? x.json() : null)),
         8000, null);
-      return r && Array.isArray(r.bonds) ? r.bonds : null;
+      return r && Array.isArray(r.bonds) ? r : null;
     } catch (_) { return null; }
+  }
+  async function indexerBonds(params = {}) {
+    const r = await indexerBondsRaw(params);
+    return r ? r.bonds : null;
   }
   async function indexerBond(bondId) {
     const base = indexerBondsBase();
@@ -1520,22 +1527,42 @@
     };
   }
 
+  // How far the indexer may lag head before Browse warns the user AND
+  // transparently falls back to a direct on-chain read. Healthy lag tracks
+  // the confirmation margin (~12 blocks), so 50 sits comfortably above normal
+  // jitter: below it we trust the indexer (no banner, no extra enumeration);
+  // above it the read-model is meaningfully behind and we both flag it and
+  // re-read directly so the list reflects current chain state.
+  const STALE_THRESHOLD = 50;
+
+  // Set by loadBrowseData when the indexer self-reports a lag past
+  // STALE_THRESHOLD; consumed by renderBrowseList to show the banner.
+  let browseStaleMeta = null;
+
   async function loadBrowseData() {
     // Prefer the indexer: one HTTP call, claim previews included, no RPC
     // range limits. Fall through to direct-RPC enumeration if it's empty
-    // or unreachable.
+    // or unreachable — or if its self-reported lag exceeds STALE_THRESHOLD.
     try {
-      const idx = await indexerBonds({ limit: '200' });
-      if (idx && idx.length) {
+      const res = await indexerBondsRaw({ limit: '200' });
+      const idx = res ? res.bonds : null;
+      const behind = res && res.meta && res.meta.blocksBehindHead != null
+        ? Number(res.meta.blocksBehindHead) : null;
+      const stale = behind != null && behind > STALE_THRESHOLD;
+      if (idx && idx.length && !stale) {
         const rows = idx.map(rowFromIndexerBond);
         const cc = chain();
         let rate;
         try { rate = await susdsRate(cc.approvedToken); }
         catch (_) { rate = { unavailable: true, decimals: 18 }; }
-        bondListCache[bondListKey()] = { rows, rate, fetchedAt: Date.now() };
+        bondListCache[bondListKey()] = { rows, rate, fetchedAt: Date.now(), blocksBehindHead: behind, stale: false };
         return rows;
       }
-    } catch (_) { /* fall back to RPC enumeration */ }
+      // Stale indexer: remember the lag so the render can show the banner,
+      // then fall through to the direct-RPC read below for a current list.
+      if (stale) browseStaleMeta = { blocksBehindHead: behind };
+      else browseStaleMeta = null;
+    } catch (_) { /* fall back to RPC enumeration */ browseStaleMeta = null; }
     try {
       const bc = bondReadContract();
       const nextId = Number(await withTimeout(bc.nextBondId(), 10000, 0n));
@@ -1570,7 +1597,13 @@
       let rate;
       try { rate = await susdsRate(cc.approvedToken); }
       catch (_) { rate = { unavailable: true, decimals: 18 }; }
-      bondListCache[bondListKey()] = { rows, rate, fetchedAt: Date.now() };
+      // Carry the staleness flag if we reached this direct read because the
+      // indexer was lagging (vs. unreachable/empty), so Browse can explain why.
+      bondListCache[bondListKey()] = {
+        rows, rate, fetchedAt: Date.now(),
+        stale: !!browseStaleMeta,
+        blocksBehindHead: browseStaleMeta ? browseStaleMeta.blocksBehindHead : null,
+      };
       // Best-effort: fetch claim previews via event logs (one batch)
       try {
         const c = chain();
@@ -1604,6 +1637,18 @@
     }
   }
 
+  // Small, non-alarming banner shown above the list when the indexer is
+  // meaningfully behind head. We've already fallen back to a direct read, so
+  // the list itself is current — this just explains the momentary lag.
+  function browseStaleBannerHtml(data) {
+    if (!data || !data.stale) return '';
+    const n = data.blocksBehindHead;
+    const detail = Number.isFinite(n) ? `~${n} blocks behind` : 'briefly behind';
+    return `<div id="browseStaleBanner" class="msg msg-info" style="margin-bottom:10px;">
+      Indexed data may be ${detail}; showing a live on-chain read.
+    </div>`;
+  }
+
   function renderBrowseList() {
     const c = chain();
     const data = bondListCache[bondListKey()];
@@ -1611,6 +1656,7 @@
     if (!container) return; // browse tab not active
     if (!data) return;
     if (data.error) { container.innerHTML = `<div class="msg msg-error">${escapeHtml(data.error)}</div>`; return; }
+    const banner = browseStaleBannerHtml(data);
     const rows = data.rows || [];
     let visible = rows;
     if (browseState.filter !== 'all') {
@@ -1629,7 +1675,7 @@
       );
     }
     if (visible.length === 0) {
-      container.innerHTML = `<div class="empty-state">
+      container.innerHTML = banner + `<div class="empty-state">
         No bonds${rows.length ? ' match your filter' : ` yet on ${escapeHtml(c?.name || 'this chain')}`}.
         ${rows.length ? '' : ' Be the first → <a href="#create">Create bond</a>'}
       </div>`;
@@ -1638,7 +1684,7 @@
     // Cache the rate at render time. browseRowHtml reads from a module-scoped
     // _browseRenderRate so we don't have to thread the rate through the row.
     _browseRenderRate = data.rate || { unavailable: true, decimals: 18 };
-    container.innerHTML = visible.map(r => browseRowHtml(r)).join('');
+    container.innerHTML = banner + visible.map(r => browseRowHtml(r)).join('');
     container.querySelectorAll('.bond-list-item').forEach(item => {
       const bondId = item.dataset.bondid;
       item.addEventListener('click', (e) => {
