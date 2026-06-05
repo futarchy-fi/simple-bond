@@ -168,3 +168,12 @@
   Sepolia ETH to run the live journey.
 - STEP 5 (cutover) pending: backend abiForChain restructure for bondVersion 7 (+ Credited/Claimed indexing),
   frontend abi.js + runtime-config Sepolia→V7, A4 drain card → per-address claim(). Next tractable iterations.
+
+## Iteration 16 — 2026-06-05 — v0.7 STEP 5a: backend indexer V7 support (PROGRESS)
+- config.mjs: V7_CONTRACT_ABI (v6 events − ChallengeRefunded + Credited/Claimed; same bonds()/getChallenge views);
+  abiForChain restructured to an explicit ladder (v7→V7, v6→V6, else V5) — closes the SPEC_V07 binary-fallthrough trap.
+- watcher.mjs: indexChain gate widened to bondVersion 6 OR 7; Credited re-snapshots the bond, Claimed (no bondId)
+  skipped cleanly — no crash. EVENT_RECIPIENTS keeps ChallengeRefunded for the still-live v6 path.
+- NO v7 chain registered yet (repoint is a later step) → live behavior unchanged. 3/3 verdicts pass; full hardhat 815;
+  new test/backendV7Surface.test.js (6). Deployed to VM (indexer now V7-ready); monitor green.
+- Next: STEP 5b = frontend abi.js V7 ABI + A4 refunds UI (drain card → per-address claim() + owed/claim affordance).

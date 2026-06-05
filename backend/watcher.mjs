@@ -69,6 +69,15 @@ async function indexBondState(contract, chainId, bondId, claim) {
 // Index a batch of logs into the read-model (no emails). For each event we
 // re-snapshot the affected bond; the Challenged event additionally carries the
 // challenge's content, which we persist explicitly.
+//
+// v0.7 C2 ledger events:
+//   • Credited carries an indexed `bondId` → it flows through the snapshot path
+//     below exactly like any other bond event, re-reading bonds()/challenges so
+//     the credited-out state (settled/closed/pendingCount/challenge statuses) is
+//     fresh. No bespoke handling needed; no crash.
+//   • Claimed has NO `bondId` (it is a per-token aggregate pull) → the
+//     `parsed.args.bondId == null` guard below skips it cleanly. There is no bond
+//     to re-snapshot from a Claimed event, so skipping is correct and crash-free.
 async function indexLogs(contract, chainId, logs, iface) {
   for (const log of logs) {
     let parsed;
@@ -155,7 +164,11 @@ async function scanWindowRecovering(provider, contract, chainId, iface, fromBloc
 // Cursor-based indexing pass, mirroring pollChain but DB-only and using a
 // separate checkpoint so it can backfill from startBlock without re-emailing.
 async function indexChain(chainId, provider, contract, iface, opts = {}) {
-  if ((CHAINS[chainId] || {}).bondVersion !== 6) return; // v6 read-model only
+  // Read-model covers the modern struct shape (bondVersion 6 AND 7 — their Bond /
+  // Challenge view shapes are identical). v0.5 (Gnosis) keeps its legacy struct and
+  // is retired from the UI, so it is not indexed.
+  const bv = (CHAINS[chainId] || {}).bondVersion;
+  if (bv !== 6 && bv !== 7) return;
   const sleep = opts.sleep;
   const confirmations = CONFIRMATION_BLOCKS[chainId] || 12;
   let latestBlock;

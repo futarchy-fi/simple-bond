@@ -145,10 +145,52 @@ export const V6_CONTRACT_ABI = [
   "function getChallenge(uint256 bondId, uint256 index) view returns (tuple(address challenger, uint8 status, uint256 timestamp, uint256 challengeAtVersion, bytes32 claimHashAtChallenge, bytes32 metadataHash, bytes32 rulingMetadataHash))",
 ];
 
+// SimpleBondV7 ABI subset — v0.7 events + view functions the watcher/indexer need.
+// Same surface as v0.6 EXCEPT:
+//   • ChallengeRefunded is REMOVED (v0.7 replaces the per-challenge push refund with
+//     the C2 credit ledger; refunds now surface as Credited, not ChallengeRefunded).
+//   • Two NEW events for the C2 pull-payment ledger:
+//       Credited(token, recipient, bondId, challengeIndex, amount) — value accrued to a
+//         recipient's claimable balance (carries bondId so the indexer can re-snapshot it).
+//       Claimed(token, recipient, amount) — recipient pulled their full credited balance
+//         (NO bondId — a per-token aggregate, so the indexer must skip it cleanly).
+// The bonds()/getChallengeCount/getChallenge view shapes are IDENTICAL to v0.6
+// (the Bond/Challenge structs in SimpleBondV7.sol match SimpleBondV6 field-for-field),
+// so indexBondState snapshots a v7 bond unchanged.
+export const V7_CONTRACT_ABI = [
+  "event BondCreated(uint256 indexed bondId, address indexed poster, address indexed judge, uint256 judgeProfileId, address token, uint256 bondAmount, uint256 challengeAmount, uint256 judgeFee, uint256 acceptanceDelay, uint256 rulingBuffer, uint256 maxChallenges, bytes32 claimHash, string claimContent)",
+  "event ClaimModified(uint256 indexed bondId, uint256 oldVersion, uint256 newVersion, bytes32 oldHash, bytes32 newHash, string newContent)",
+  "event Challenged(uint256 indexed bondId, uint256 challengeIndex, address indexed challenger, uint256 expectedVersion, bytes32 claimHashAtChallenge, bytes32 metadataHash, string content)",
+  "event ClaimConceded(uint256 indexed bondId, uint256 challengeIndex, address indexed poster, bytes32 contentHash, string content)",
+  "event RuledForPoster(uint256 indexed bondId, uint256 challengeIndex, address indexed challenger, uint256 feeCharged, bytes32 contentHash, string content)",
+  "event RuledForChallenger(uint256 indexed bondId, uint256 challengeIndex, address indexed challenger, uint256 feeCharged, bytes32 contentHash, string content)",
+  "event ChallengeRejected(uint256 indexed bondId, uint256 challengeIndex, address indexed challenger, bytes32 contentHash, string content)",
+  "event BondRejectedByJudge(uint256 indexed bondId, address indexed judge, bytes32 contentHash, string content)",
+  "event BondClosed(uint256 indexed bondId)",
+  "event BondOpened(uint256 indexed bondId)",
+  "event BondWithdrawn(uint256 indexed bondId)",
+  "event BondTimedOut(uint256 indexed bondId, uint256 challengeIndex)",
+  // C2 pull-payment ledger events (new in v0.7; replace ChallengeRefunded).
+  "event Credited(address indexed token, address indexed recipient, uint256 indexed bondId, uint256 challengeIndex, uint256 amount)",
+  "event Claimed(address indexed token, address indexed recipient, uint256 amount)",
+  // View functions — same shapes as SimpleBondV6 (confirmed against SimpleBondV7.sol
+  // Bond/Challenge structs). The indexer snapshots a v7 bond/challenge unchanged.
+  "function bonds(uint256) view returns (address poster, address judge, address token, uint256 bondAmount, uint256 challengeAmount, uint256 judgeFee, uint256 acceptanceDelay, uint256 rulingBuffer, uint256 maxChallenges, bytes32 claimHash, uint256 claimVersion, uint256 judgeProfileId, uint256 pendingCount, bool settled, bool closed)",
+  "function getChallengeCount(uint256 bondId) view returns (uint256)",
+  "function getChallenge(uint256 bondId, uint256 index) view returns (tuple(address challenger, uint8 status, uint256 timestamp, uint256 challengeAtVersion, bytes32 claimHashAtChallenge, bytes32 metadataHash, bytes32 rulingMetadataHash))",
+];
+
 /// Returns the ABI to use for a given chain id.
+///
+/// Explicit per-version switch (NOT a binary ternary): a chain marked
+/// bondVersion:7 MUST resolve to V7 so Credited/Claimed (and all the v6 events)
+/// decode. The old `v===6 ? V6 : V5` shape would have silently fallen a v7 chain
+/// through to the V5 ABI — see SPEC_V07 "the trap to avoid".
 export function abiForChain(chainId) {
   const v = (CHAINS[chainId] || {}).bondVersion || 5;
-  return v === 6 ? V6_CONTRACT_ABI : V5_CONTRACT_ABI;
+  if (v === 7) return V7_CONTRACT_ABI;
+  if (v === 6) return V6_CONTRACT_ABI;
+  return V5_CONTRACT_ABI;
 }
 
 // Back-compat: the existing watcher imports `CONTRACT_ABI`. Keep that export
@@ -158,6 +200,12 @@ export const CONTRACT_ABI = V5_CONTRACT_ABI;
 
 // Events we watch and who gets notified. v0.5 and v0.6 share event names where
 // possible; v0.6 also emits ClaimModified, ChallengeRejected, BondClosed, BondOpened.
+// v0.7: ChallengeRefunded is GONE on-chain but its entry STAYS here — it is keyed by
+// event name, so the still-deployed v6 path keeps notifying refunded challengers; a v7
+// chain simply never emits it (a harmless unused key). v0.7's new Credited/Claimed
+// events are intentionally ABSENT from this map: they are ledger bookkeeping, not
+// human-notifiable lifecycle events, so processLogs skips them (no email). The indexer
+// still re-snapshots the bond on Credited (see indexLogs).
 export const EVENT_RECIPIENTS = {
   BondCreated:        ['judge'],
   Challenged:         ['poster', 'judge'],
