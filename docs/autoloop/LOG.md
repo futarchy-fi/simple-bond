@@ -364,3 +364,19 @@
 - Sepolia deployer 0x693E…b43d still ≈ 0.0338 ETH (< 0.05) → live journey still parked.
 - All 4 HIGH-value backlog items (#1-#4) now DONE. Next: optional medium items #5 (backend crash-guard) → #6 (Sepolia
   monitor) → #7 (templates email copy) → #8 (alert->inline), then WIND DOWN to funding/main-green checks until 2026-06-09.
+
+## Iteration 28 — 2026-06-05 — backlog #5: process crash-guard for the combined API+watcher (PROGRESS)
+- Closed an outsized-blast-radius reliability hole: prod runs backend/server.mjs as ONE process serving the API AND the
+  indexer; there was NO unhandledRejection/uncaughtException guard, so a single stray async rejection (Node ≥15 default)
+  terminated BOTH the live site and indexing until external restart. New backend/process-guards.mjs: registerProcessGuards()
+  (idempotent) — unhandledRejection → log + KEEP SERVING (transient fire-and-forget errors must not kill the service);
+  uncaughtException → log loudly + onFatal (default process.exit(1)). Confirmed deploy/docker-compose.yml service bond-notify
+  has `restart: unless-stopped`, so exit-on-uncaught lets the supervisor restart cleanly (verified by both impl + verifier).
+  onFatal injectable so the fatal path is tested without killing the test process. Wired at the very top of server.mjs.
+- New test/backend/processGuards.test.js (4 cases): listeners attached, unhandledRejection logs + no exit, uncaughtException
+  logs + onFatal once, idempotency. afterEach removes only listeners it added → no leak into the rest of the suite.
+- Adversarial panel 3/3 PASS (guard-correct, no-leak, test-quality) with non-vacuity (mutate handler → RED). Minor
+  non-blocking note: a redundant 2nd registerProcessGuards call rebinds closures but keeps the 1st listeners live — harmless
+  for the single real call site.
+- Gates re-run MYSELF (sequential): full `npx hardhat test` 1003 passing / 0 failing (×2 stable); lint EXIT=0 (g1 40).
+- Sepolia deployer 0x693E…b43d still ≈ 0.0338 ETH (< 0.05) → live journey still parked.
