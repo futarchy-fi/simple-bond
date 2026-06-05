@@ -7,6 +7,7 @@ const EXPECTED_CONTRACTS = [
   "SimpleBondV4",
   "SimpleBondV5",
   "SimpleBondV6",
+  "SimpleBondV7",
   "SimpleBondV3",
   "KlerosJudge",
   "SimpleBond",

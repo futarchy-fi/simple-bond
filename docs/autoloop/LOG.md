@@ -129,3 +129,13 @@
   abiForChain must be restructured before bondVersion:7 (else V5-ABI fallthrough drops Credited).
 - Plan order: C1 (pending-cap, smallest) → C2 (credit ledger) → Sepolia deploy → capability-verify → cutover. V6 stays live.
 - Next: STEP 0+1 = scaffold SimpleBondV7.sol from V6 + implement C1 + tests (test/core/v7/).
+
+## Iteration 13 — 2026-06-05 — v0.7 STEP 0+1: SimpleBondV7 scaffold + C1 (PROGRESS)
+- contracts/core/SimpleBondV7.sol = V6 fork (V6 byte-for-byte UNCHANGED, still live), reusing registries/ManualJudgeV6.
+- C1: challenge() gate now require(pendingCount < maxChallenges) (pre-increment → invariant holds); hard
+  MAX_CHALLENGES_CEILING=100 in createBond (the settle-loop gas-bomb safety lock).
+- Tests test/core/v7/SimpleBondV7.challenge.test.js: lockout-fix proven (cap=2, file 2, 3rd reverts, judge
+  rejects 1, refile SUCCEEDS, getChallengeCount==3 while pendingCount==2), invariant loop, ceiling 101-revert/100-ok.
+- 3/3 verdicts pass incl. an adversarial search finding NO path to inflate pendingCount. Full hardhat 769 passing; lint G1=41.
+- Next: STEP 2 = C2 credit ledger ([recipient][token] credits, claim() CEI+nonReentrant, settle loops, delete
+  claimRefunds/refundCursor/ChallengeRefunded; reentrancy + fee-on-transfer mocks; rewrite invariants/resolution tests).
