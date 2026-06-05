@@ -926,6 +926,20 @@
     return susdsRateCache[k];
   }
 
+  // Resolve a token's sUSDS→USD rate for DISPLAY, never throwing: on any failure
+  // it returns the explicit {unavailable:true} marker so susdsBigIntToUsdString
+  // renders the shared "—" placeholder. This is the single safe-resolve used by
+  // every view that shows a bond's USD amount (Browse, My-Bonds, detail), so the
+  // same bond reads identically everywhere — and it keeps the rate-miss fallback
+  // in one place rather than a swallowed catch per call site.
+  async function susdsRateForDisplay(tokenAddr) {
+    try {
+      return await susdsRate(tokenAddr);
+    } catch (err) {
+      return { unavailable: true, decimals: 18 };
+    }
+  }
+
   // USD-string input → sUSDS BigInt (in the token's smallest units).
   // Returns 0n on bad input; caller validates.
   function usdStringToSusdsBigInt(usdStr, rate) {
@@ -2879,7 +2893,13 @@
         if (role === 'poster' && b.pendingCount > 0n) hint = `${b.pendingCount} pending challenge${b.pendingCount > 1n ? 's' : ''} — review action`;
         else if (role === 'challenger' && !b.settled) hint = 'Challenge active — check ruling window';
         else if (role === 'judge' && b.pendingCount > 0n) hint = 'Pending challenges to rule';
-        rows.push({ id, b, hint });
+        // Resolve the per-bond sUSDS→USD rate so My-Bonds rows show the SAME
+        // canonical USD value as Browse and the detail page (unit-drift fix:
+        // these rows used to render raw sUSDS via fmtUnits, so a bond read
+        // "$10" on Browse but "9.78" here). On a rate miss susdsBigIntToUsdString
+        // renders the shared "—" placeholder, identical to the other views.
+        const rate = await susdsRateForDisplay(b.token);
+        rows.push({ id, b, hint, rate });
       } catch (_) {}
     }
     el.innerHTML = rows.map(r => myRowHtml(r)).join('');
@@ -2888,11 +2908,14 @@
     });
   }
 
-  function myRowHtml({ id, b, hint }) {
+  function myRowHtml({ id, b, hint, rate }) {
     let status = 'open';
     if (b.settled) status = 'settled';
     else if (b.closed) status = 'closed';
     else if (b.pendingCount > 0n) status = 'disputed';
+    // Canonical USD via susdsBigIntToUsdString — same formatter Browse rows and
+    // the detail page use, so the same bond reads the identical amount here.
+    const rowRate = rate || { unavailable: true, decimals: 18 };
     return `<div class="bond-list-item" data-bondid="${id}">
       <div class="bli-head">
         <span class="bli-id">Bond #${id}</span>
@@ -2900,8 +2923,8 @@
         ${b.pendingCount > 0n ? `<span class="status-badge status-pending">${b.pendingCount} pending</span>` : ''}
       </div>
       <div class="bli-meta">
-        <span>bond <span class="stat-val">${fmtUnits(b.bondAmount, 18)}</span></span>
-        <span>challenge <span class="stat-val">${fmtUnits(b.challengeAmount, 18)}</span></span>
+        <span>bond <span class="stat-val">$${susdsBigIntToUsdString(b.bondAmount, rowRate)}</span></span>
+        <span>challenge <span class="stat-val">$${susdsBigIntToUsdString(b.challengeAmount, rowRate)}</span></span>
         <span>judge ${addressLink(b.judge)}</span>
       </div>
       ${hint ? `<div class="role-hint">${escapeHtml(hint)}</div>` : ''}
@@ -3095,7 +3118,7 @@
           </div>
         </div>` : ''}
 
-        ${canChallenge && beliefs ? riskRewardHtml(bondAmount, challengeAmount, judgeFee, beliefs, tokenSym) : ''}
+        ${canChallenge && beliefs ? riskRewardHtml(bondAmount, challengeAmount, judgeFee, beliefs, tokenSym, tokenRate) : ''}
 
         <div class="card">
           <h3>Bond details</h3>
@@ -3191,21 +3214,31 @@
     }
   }
 
-  function riskRewardHtml(bondAmount, challengeAmount, judgeFee, beliefs, tokenSym) {
+  function riskRewardHtml(bondAmount, challengeAmount, judgeFee, beliefs, tokenSym, rate) {
     const netProfit = bondAmount - judgeFee;
+    const winAmount = netProfit + challengeAmount;
+    // Route the risk/reward figures through the canonical USD formatter so they
+    // agree with the belief card above (same bondAmount/challengeAmount/judgeFee
+    // basis) and the bond-details card below (fmtUsdAndSusds). Previously these
+    // showed raw sUSDS via fmtUnits, so the dollars the user staked on didn't
+    // match the belief card's implied thresholds. On a rate miss every figure
+    // shows the shared "—" placeholder.
+    const rrRate = rate || { unavailable: true, decimals: 18 };
+    const winUsd = susdsBigIntToUsdString(winAmount, rrRate);
+    const riskUsd = susdsBigIntToUsdString(challengeAmount, rrRate);
     return `<div class="risk-reward-card">
       <h3>Challenge this bond</h3>
       <div class="risk-reward-grid">
         <div class="reward-item">
           <div class="rr-label">If you win</div>
-          <div class="rr-value">+${fmtUnits(netProfit + challengeAmount, 18)} ${escapeHtml(tokenSym)}</div>
+          <div class="rr-value">+$${winUsd}</div>
         </div>
         <div class="risk-item">
           <div class="rr-label">Your risk</div>
-          <div class="rr-value">${fmtUnits(challengeAmount, 18)} ${escapeHtml(tokenSym)}</div>
+          <div class="rr-value">$${riskUsd}</div>
         </div>
       </div>
-      <div class="rr-note">By challenging, you signal &gt;${beliefs.challengerPct.toFixed(0)}% belief the poster is wrong. If the judge rules against you, you forfeit your ${fmtUnits(challengeAmount, 18)} ${escapeHtml(tokenSym)} deposit.</div>
+      <div class="rr-note">By challenging, you signal &gt;${beliefs.challengerPct.toFixed(0)}% belief the poster is wrong. If the judge rules against you, you forfeit your $${riskUsd} deposit.</div>
     </div>`;
   }
 

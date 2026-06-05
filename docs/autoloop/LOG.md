@@ -60,3 +60,11 @@
 - Loop-quality note: green tests alone did NOT earn a commit — the adversarial panel did. Working as designed.
 - Minor follow-up logged (non-blocking): all-zero timing (RPC degradation) → phase vs button-guard mismatch.
 - Next: iteration 7 = A3 USD consistency (same bond reads identically across Browse/My-Bonds/detail).
+
+## Iteration 7 — 2026-06-04 — A3 USD consistency (PROGRESS)
+- The same bond now reads the identical USD amount across Browse, My-Bonds, and detail; risk/reward
+  card agrees with the belief card. Switched My-Bonds rows + risk/reward from raw fmtUnits to the
+  canonical susdsBigIntToUsdString; funding-card wallet balances + judge-fee write-input left out of scope.
+- 3/3 verdicts pass; new usdConsistency.test.js (non-1:1 rate, 6 tests) + usd-consistency.spec.js
+  (identical-string e2e across 3 views); full local e2e 46 passed; v6 in sync; lint G1=41.
+- Next: iteration 8 = A4 refunds-aware UX (owed $X / N slots; drain control only when refundable).
