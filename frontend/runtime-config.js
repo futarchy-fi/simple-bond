@@ -40,8 +40,11 @@ window.SIMPLE_BOND_CONFIG = Object.assign(
       11155111: {
         name: "Sepolia",
         rpc: "https://ethereum-sepolia-rpc.publicnode.com",
-        bondContract: "0xEeEB10a05b4D819d736DB7A130eaC0f36626F583",
-        deployBlock: 10888612,
+        // v0.7 cutover (staging only): Sepolia runs SimpleBondV7. The registries,
+        // judge and token are reused from the v6 deploy. Mainnet (chain 1)
+        // stays on v0.6 — its cutover is a separate later gate.
+        bondContract: "0x71e15D42bE15BAE117096E12C9dBA25E67d14C67",
+        deployBlock: 10992602,
         judgeProfileRegistry: "0x5C182867862c061a32C7621c0e3529FF682bbF22",
         posterProfileRegistry: "0x7644dfE83B1e1e9E466644557606Ff28916fCc15",
         challengerProfileRegistry: "0xA6c22430CB34AC5403D6f2a01BecD90c91e09C23",
@@ -49,7 +52,7 @@ window.SIMPLE_BOND_CONFIG = Object.assign(
         officialDirectory: "0xe93B0E8fd59FA1dbfa3441559616ADBD3344395F",
         approvedToken: "0x8983aebdA1D5f2b406144D7AAa4f50df4ec8A837",
         explorer: "https://sepolia.etherscan.io",
-        bondVersion: 6,
+        bondVersion: 7,
       },
     },
 

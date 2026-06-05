@@ -185,3 +185,11 @@
 - New SIMPLE_BOND_V7_ABI (credits/claim/Credited/Claimed; no claimRefunds). v7 e2e fixture + refunds-affordance-v7.spec.js
   (concede→owed→claim→balance moves+clears) green; v6 drain spec still green. 3/3 verdicts pass; full local e2e 59; v6 in sync.
 - Next: STEP 5c = repoint Sepolia (runtime-config bondVersion:7 + V7 addr; backend Sepolia env → V7) so staging runs v0.7. Mainnet stays v6.
+
+## Iteration 18 — 2026-06-05 — v0.7 STEP 5c: repoint Sepolia to v0.7 (CUTOVER, staging)
+- frontend/runtime-config.js Sepolia → SimpleBondV7 (0x71e15D42…C67, deployBlock 10992602, bondVersion:7), reusing
+  registries/judge/token. config.mjs: SEPOLIA_V7_CONTRACT env flips the Sepolia indexer entry to bondVersion:7 (V7 ABI).
+- MAINNET (chain 1) UNCHANGED — still v6. Mainnet cutover is a separate later gate, never autonomous.
+- Verified: config flip → Sepolia v7 + Credited/Claimed ABI; mainnet entry untouched. Gates green (16 surface tests).
+- Deploying to VM with SEPOLIA_V7_CONTRACT set; reset Sepolia index cursor to the V7 deploy; cleared stale v6-Sepolia rows.
+- v0.7 cutover on STAGING (staging.bond.futarchy.ai) COMPLETE. Mainnet stays v6 pending the owner's go + the live capability journey.

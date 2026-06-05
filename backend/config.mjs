@@ -101,6 +101,23 @@ if (process.env.SEPOLIA_V6_CONTRACT) {
   };
 }
 
+// v0.7 cutover: when SEPOLIA_V7_CONTRACT is set, Sepolia flips to bondVersion 7
+// pointing at the new SimpleBondV7 (reusing the v6 registries). Takes precedence
+// over the v6 Sepolia entry. Mainnet (chain 1) is intentionally NOT switched
+// here — mainnet cutover is a separate later gate.
+if (process.env.SEPOLIA_V7_CONTRACT) {
+  const rpcs = resolveRpcs(process.env.SEPOLIA_RPCS, process.env.SEPOLIA_RPC, 'https://ethereum-sepolia-rpc.publicnode.com');
+  _CHAINS[11155111] = {
+    name: 'Sepolia',
+    rpcs,
+    rpc: rpcs[0],
+    contract: process.env.SEPOLIA_V7_CONTRACT,
+    startBlock: parseInt(process.env.SEPOLIA_V7_START_BLOCK || '0', 10),
+    explorer: 'https://sepolia.etherscan.io',
+    bondVersion: 7,
+  };
+}
+
 export const CHAINS = _CHAINS;
 
 // SimpleBondV5 ABI subset — only events + view functions the email watcher needs.
