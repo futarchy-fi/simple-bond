@@ -154,3 +154,17 @@
 - Gates: V6 UNCHANGED; compile clean; full hardhat 809 passing; lint G1=41. Cleaned verifier probe files.
 - This is the marquee example of the adversarial-verification design: green tests would have shipped a fund-loss bug.
 - Next: STEP 3 = clone scripts/v7 deploy + Sepolia deploy (testnet-first; stop at deploy if gas/funds-blocked).
+
+## Iteration 15 — 2026-06-05 — v0.7 STEP 3: SimpleBondV7 deployed to Sepolia + verified
+- Deployed SimpleBondV7 to Sepolia at 0x71e15D42bE15BAE117096E12C9dBA25E67d14C67 (block 10992602),
+  reusing the existing v6 registries/judge/token (constructor takes judgeProfileRegistry). Guarded deploy
+  script scripts/v7/deploySimpleBondV7.js (refuses if balance < est*1.15). Actual cost 0.041 ETH.
+- Read-only verify: MAX_CHALLENGES_CEILING=100, credits() ledger readable, judgeProfileRegistry wired,
+  refundCursor GONE (confirms it's V7 not V6). deployments/sepolia-v7.json written.
+- STEP 4 (live multi-actor capability JOURNEY on Sepolia) is FUND-CONSTRAINED: deployer has ~0.019 ETH left
+  and a full poster/challengers/judge journey needs more Sepolia ETH + MockSUSDS distribution. The mechanism
+  behavior is exhaustively covered by the hardhat suite (809 tests incl. lockout-fix, concede→credit→claim,
+  multi-pending settle, conservation, reentrancy, settle-loop-bound). EXTERNAL BLOCKER: fund 0x693E…b43d with
+  Sepolia ETH to run the live journey.
+- STEP 5 (cutover) pending: backend abiForChain restructure for bondVersion 7 (+ Credited/Claimed indexing),
+  frontend abi.js + runtime-config Sepolia→V7, A4 drain card → per-address claim(). Next tractable iterations.

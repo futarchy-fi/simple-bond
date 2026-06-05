@@ -1,0 +1,19 @@
+{
+  "chainId": 11155111,
+  "network": "sepolia",
+  "deployer": "0x693E3FB46Bb36eE43C702FE94f9463df0691b43d",
+  "approvedToken": "0x8983aebdA1D5f2b406144D7AAa4f50df4ec8A837",
+  "reusedFromV6": {
+    "judgeProfileRegistry": "0x5C182867862c061a32C7621c0e3529FF682bbF22",
+    "posterProfileRegistry": "0x7644dfE83B1e1e9E466644557606Ff28916fCc15",
+    "challengerProfileRegistry": "0xA6c22430CB34AC5403D6f2a01BecD90c91e09C23",
+    "manualJudgeV6": "0x25E749d42EE4AD0afBEF5c92Bede672784AbDBa9",
+    "officialBondDirectory": "0xe93B0E8fd59FA1dbfa3441559616ADBD3344395F"
+  },
+  "contracts": {
+    "simpleBondV7": {
+      "address": "0x71e15D42bE15BAE117096E12C9dBA25E67d14C67",
+      "blockNumber": 10992602
+    }
+  }
+}
