@@ -304,3 +304,22 @@
 - NOTE: the high-value tractable RCA gaps (#3/#5/#6/#7) + this A2-followup are now done. Next tick: if no clearly
   high-value UX/correctness item remains, run a skeptical-senior-eng critic to re-prioritize rather than manufacture
   cosmetic churn; the real remaining work (live Sepolia journey, mainnet v0.7 cutover) is gated on funding/owner-go.
+
+## Iteration 25 — 2026-06-05 — backlog #1: version-aware challenge-capacity gate (PROGRESS)
+- Fixed a LIVE MAINNET money-waster surfaced by the iter-24 re-prioritization audit: the frontend gated the Challenge
+  card on pendingCount<maxChallenges for BOTH versions, but v6 (mainnet) caps challenge() on challenges[].length
+  (TOTAL-ever, SimpleBondV6.sol:266) while v7 caps on pendingCount (SimpleBondV7.sol:391). So a much-challenged v6
+  bond (pendingCount back to 0, total filings == max) still showed a Challenge card → user paid a real approve + a
+  reverting challenge() tx. New pure helper frontend/challenge-capacity.js: hasChallengeCapacity({bondVersion,
+  pendingCount,challengeCount,maxChallenges}) → v7: pending<max; v6/default: challengeCount<max; fail-closed on
+  missing/0 max. Wired into canChallenge in index.html + v6 mirror (challengeCount already read at 3477; dropped the
+  dead <=100 conjunct). Create-form maxChallenges label now version-aware (v7 "pending at once" vs v6 "total ever filed").
+- Adversarial panel 3/3 PASS with the exact production-bug regression locked: {v6,pending:0,challengeCount:3,max:3}→false
+  (card hidden), {v7,pending:1,challengeCount:9,max:3}→true. Non-vacuity re-verified (revert→RED→restore). No-regression
+  lens confirmed challengeCount is genuinely in scope (else v6 would hide ALL challenges — a worse bug).
+- Gates re-run MYSELF (sequential): full `npx hardhat test` 973 passing / 0 failing (×2 stable); lint EXIT=0 (g1 40);
+  docker e2e 59 passed / 4 skipped, all 7 capabilities true. Burn-down unchanged (this is a UX-correctness fix, not an
+  RCA-gap closure). Committed.
+- Sepolia deployer 0x693E…b43d still ≈ 0.0338 ETH (< 0.05) → live journey still parked.
+- Next (per refreshed BACKLOG.md): #2 global v0.7 claimable-credits indicator → #3 README interface fix → #4 docs-as-test
+  ABI-signature assertion → optionally #5-#8 → then wind down.

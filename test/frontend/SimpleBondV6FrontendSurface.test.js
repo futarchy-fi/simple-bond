@@ -10,6 +10,7 @@ const MAIN_HTML = resolve(__dirname, "..", "..", "frontend", "index.html");
 const CONTRACT_PROBE = resolve(__dirname, "..", "..", "frontend", "contract-probe.js");
 const ALLOWANCE_KEY = resolve(__dirname, "..", "..", "frontend", "allowance-key.js");
 const ASYNC_UTIL = resolve(__dirname, "..", "..", "frontend", "async-util.js");
+const CHALLENGE_CAPACITY = resolve(__dirname, "..", "..", "frontend", "challenge-capacity.js");
 
 describe("SimpleBond v0.6 frontend surface", function () {
     const v6html = readFileSync(V6_HTML, "utf8");
@@ -20,6 +21,7 @@ describe("SimpleBond v0.6 frontend surface", function () {
     const contractProbe = readFileSync(CONTRACT_PROBE, "utf8");
     const allowanceKeySrc = readFileSync(ALLOWANCE_KEY, "utf8");
     const asyncUtilSrc = readFileSync(ASYNC_UTIL, "utf8");
+    const challengeCapacitySrc = readFileSync(CHALLENGE_CAPACITY, "utf8");
 
     it("v6/abi.js exports every v0.6 entrypoint the UI calls", function () {
         // Reads
@@ -413,6 +415,93 @@ describe("SimpleBond v0.6 frontend surface", function () {
                     // And the legacy precondition-free form (now > rulingEnd as the
                     // SOLE gate) must be absent so a revert is caught.
                     expect(html()).to.not.match(/if \(now > rulingEnd\) \{[\s\S]{0,160}data-act="claimTimeout"/);
+                });
+            });
+        }
+    });
+
+    // backlog #1 — challenge-capacity gate is wrong on the LIVE mainnet v6 chain.
+    // The two contracts cap challenge() DIFFERENTLY:
+    //   - SimpleBondV6.sol (LIVE on mainnet): challenges[bondId].length <
+    //     b.maxChallenges — caps on TOTAL-EVER filed.
+    //   - SimpleBondV7.sol (Sepolia): b.pendingCount < b.maxChallenges — caps on
+    //     the LIVE pending set.
+    // The frontend used to gate BOTH on pendingCount (`Number(b.pendingCount) <
+    // Number(b.maxChallenges) && Number(b.pendingCount) <= 100`), so on a v6 bond
+    // where maxChallenges had already been filed-and-resolved (pendingCount back
+    // to 0, challenges[].length == maxChallenges) the UI STILL showed the full
+    // Challenge card and the user wasted real gas on a reverting challenge() tx.
+    // The fix routes the capacity check through window.hasChallengeCapacity({...})
+    // (pure helper in frontend/challenge-capacity.js): version-aware so v6 uses
+    // challengeCount (total-ever) and v7 uses pendingCount, and the dead `<= 100`
+    // conjunct is dropped. It also makes the create-form maxChallenges label
+    // version-aware. These assertions lock the wiring in BOTH the canonical
+    // frontend/index.html and the mirror frontend/v6/index.html, and are written
+    // so reverting any single change turns this test RED.
+    describe("challenge-capacity gate (backlog #1) wiring", function () {
+        it("frontend/challenge-capacity.js exports the pure helper with the dual-export idiom", function () {
+            // Dual export (window + module.exports), mirroring phase.js /
+            // async-util.js / allowance-key.js.
+            expect(challengeCapacitySrc).to.include("module.exports");
+            expect(challengeCapacitySrc).to.include("root.hasChallengeCapacity");
+            expect(challengeCapacitySrc).to.match(/function hasChallengeCapacity\s*\(/);
+            // The version split is present: v7 keys off pendingCount, v6 off
+            // challengeCount, both against maxChallenges.
+            expect(challengeCapacitySrc).to.match(/bondVersion\)\s*===\s*7/);
+            expect(challengeCapacitySrc).to.match(/pendingCount\)\s*<\s*max/);
+            expect(challengeCapacitySrc).to.match(/challengeCount\)\s*<\s*max/);
+        });
+
+        // The OLD account-/version-less capacity gate was
+        // `Number(b.pendingCount) < Number(b.maxChallenges) && Number(b.pendingCount) <= 100`.
+        // This regex matches exactly that legacy shape, so it MUST be absent now
+        // and MUST have been present on the old code (guaranteeing non-vacuous
+        // assertions). The `<= 100` dead conjunct is matched separately too.
+        const LEGACY_GATE_RE = /Number\(b\.pendingCount\)\s*<\s*Number\(b\.maxChallenges\)\s*&&\s*Number\(b\.pendingCount\)\s*<=\s*100/;
+        const DEAD_CEILING_RE = /Number\(b\.pendingCount\)\s*<=\s*100/;
+
+        for (const [label, html] of [["frontend/index.html", () => mainHtml], ["frontend/v6/index.html", () => v6html]]) {
+            describe(label, function () {
+                it("loads challenge-capacity.js as a script", function () {
+                    expect(html()).to.match(/<script src="\.{1,2}\/challenge-capacity\.js"><\/script>/);
+                });
+
+                it("computes canChallenge via window.hasChallengeCapacity({...}) with version + both counts", function () {
+                    // The capacity check routes through the pure helper, fed the
+                    // active chain's bondVersion AND both pendingCount (v7) and
+                    // challengeCount (v6) so the gate is version-correct.
+                    expect(html()).to.match(
+                        /const canChallenge = isNonPoster && bondOpen && window\.hasChallengeCapacity\(\{[^}]*\}\)/
+                    );
+                    // The single call site passes bondVersion, pendingCount,
+                    // challengeCount and maxChallenges.
+                    const call = (html().match(/window\.hasChallengeCapacity\(\{[^}]*\}\)/) || [])[0] || "";
+                    expect(call, `call missing bondVersion: ${call}`).to.match(/bondVersion/);
+                    expect(call, `call missing pendingCount: ${call}`).to.match(/pendingCount/);
+                    expect(call, `call missing challengeCount: ${call}`).to.match(/challengeCount/);
+                    expect(call, `call missing maxChallenges: ${call}`).to.match(/maxChallenges/);
+                });
+
+                it("NO LONGER contains the account-less pendingCount-only capacity gate or the `<= 100` conjunct (the bug)", function () {
+                    // Reverting canChallenge to the old
+                    // `Number(b.pendingCount) < Number(b.maxChallenges) && Number(b.pendingCount) <= 100`
+                    // re-introduces this legacy shape and fails the test.
+                    expect(LEGACY_GATE_RE.test(html()), "found legacy pendingCount-only capacity gate").to.equal(false);
+                    // The dead `<= 100` ceiling must be gone entirely.
+                    expect(DEAD_CEILING_RE.test(html()), "found dead `Number(b.pendingCount) <= 100` conjunct").to.equal(false);
+                });
+
+                it("renders the create-form maxChallenges label version-conditionally (distinct v7 vs v6 strings)", function () {
+                    // The label is conditional on the active chain bondVersion: a v7
+                    // string ('Max challenges pending at once') distinct from the v6
+                    // string ('Max challenges (total ever filed)'). Reverting to the
+                    // static v6-only label fails this.
+                    expect(html()).to.match(
+                        /<label for="cb-max">\$\{chain\(\) && chain\(\)\.bondVersion === 7 \? 'Max challenges pending at once' : 'Max challenges \(total ever filed\)'\}<\/label>/
+                    );
+                    // Both distinct strings are present and are NOT equal.
+                    expect(html()).to.include("Max challenges pending at once");
+                    expect(html()).to.include("Max challenges (total ever filed)");
                 });
             });
         }

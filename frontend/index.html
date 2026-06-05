@@ -15,6 +15,7 @@
 <script src="./contract-probe.js"></script>
 <script src="./allowance-key.js"></script>
 <script src="./async-util.js"></script>
+<script src="./challenge-capacity.js"></script>
 <style>
   :root {
     --bg: #ffffff;
@@ -2958,7 +2959,7 @@
           <input id="cb-rb" type="number" min="0" value="${createState.rulingBuffer}" placeholder="seconds">
         </div>
         <div class="form-group">
-          <label for="cb-max">Max challenges (total ever filed)</label>
+          <label for="cb-max">${chain() && chain().bondVersion === 7 ? 'Max challenges pending at once' : 'Max challenges (total ever filed)'}</label>
           <input id="cb-max" type="number" min="1" value="${createState.maxChallenges}">
         </div>`;
       // Update preset highlights in place rather than re-rendering the whole
@@ -3529,7 +3530,7 @@
       }
       const isNonPoster = signer && account && account.toLowerCase() !== b.poster.toLowerCase();
       const bondOpen = !b.settled && !b.closed;
-      const canChallenge = isNonPoster && bondOpen && Number(b.pendingCount) < Number(b.maxChallenges) && Number(b.pendingCount) <= 100;
+      const canChallenge = isNonPoster && bondOpen && window.hasChallengeCapacity({ bondVersion: chain() && chain().bondVersion, pendingCount: b.pendingCount, challengeCount, maxChallenges: b.maxChallenges });
       const statusName = b.settled ? 'settled' : (b.closed ? 'closed' : (Number(b.pendingCount) > 0 ? 'disputed' : 'open'));
 
       // Refunds affordance — VERSION-AWARE.
