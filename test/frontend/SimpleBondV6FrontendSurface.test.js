@@ -9,6 +9,7 @@ const RUNTIME_CONFIG = resolve(__dirname, "..", "..", "frontend", "runtime-confi
 const MAIN_HTML = resolve(__dirname, "..", "..", "frontend", "index.html");
 const CONTRACT_PROBE = resolve(__dirname, "..", "..", "frontend", "contract-probe.js");
 const ALLOWANCE_KEY = resolve(__dirname, "..", "..", "frontend", "allowance-key.js");
+const ASYNC_UTIL = resolve(__dirname, "..", "..", "frontend", "async-util.js");
 
 describe("SimpleBond v0.6 frontend surface", function () {
     const v6html = readFileSync(V6_HTML, "utf8");
@@ -18,6 +19,7 @@ describe("SimpleBond v0.6 frontend surface", function () {
     const mainHtml = readFileSync(MAIN_HTML, "utf8");
     const contractProbe = readFileSync(CONTRACT_PROBE, "utf8");
     const allowanceKeySrc = readFileSync(ALLOWANCE_KEY, "utf8");
+    const asyncUtilSrc = readFileSync(ASYNC_UTIL, "utf8");
 
     it("v6/abi.js exports every v0.6 entrypoint the UI calls", function () {
         // Reads
@@ -265,6 +267,106 @@ describe("SimpleBond v0.6 frontend surface", function () {
                     // satisfy it.
                     expect(html()).to.match(
                         /_accountsHandler = \(accounts\) =>[\s\S]{0,700}for \(const k of Object\.keys\(allowanceCache\)\) delete allowanceCache\[k\];[\s\S]{0,300}_chainHandler =/
+                    );
+                });
+            });
+        }
+    });
+
+    // RCA gap #3 — a timeout/error masquerades as "empty". withTimeout(promise,
+    // ms, fallback) silently resolves to the fallback on timeout, so a timed-out
+    // LIST read returned 0n / [] and the UI rendered a misleading "no bonds"
+    // empty state instead of a VISIBLE, retryable error. The fix is a pure
+    // helper (frontend/async-util.js) exporting withTimeoutResult(promise, ms)
+    // that returns a TAGGED {status:'ok'|'error'|'timeout'} object, wired into
+    // the THREE list-DETERMINING reads (BROWSE nextBondId, MY BONDS event
+    // fallbacks, BONDS JUDGED event fallback) so a non-ok status routes to an
+    // error state, NOT the empty state. These assertions lock the wiring in BOTH
+    // the canonical frontend/index.html and the mirror frontend/v6/index.html,
+    // and are written so reverting any single change turns this test RED.
+    describe("timeout-vs-empty distinction (RCA gap #3) wiring", function () {
+        it("frontend/async-util.js exports the pure helper with the dual-export idiom", function () {
+            // Dual export (window + module.exports), mirroring phase.js /
+            // contract-probe.js / allowance-key.js.
+            expect(asyncUtilSrc).to.include("module.exports");
+            expect(asyncUtilSrc).to.include("root.withTimeoutResult");
+            expect(asyncUtilSrc).to.match(/function withTimeoutResult\s*\(/);
+            // All three tagged statuses exist in the helper.
+            for (const s of ["ok", "error", "timeout"]) {
+                expect(asyncUtilSrc, `missing status ${s}`).to.include(`'${s}'`);
+            }
+        });
+
+        // The old browse path used `withTimeout(bc.nextBondId(), 10000, 0n)`,
+        // collapsing a timeout into a bare 0n fallback. This regex matches
+        // exactly that legacy shape, so it MUST be absent now and was present on
+        // the old code (guaranteeing the next assertions are non-vacuous).
+        const LEGACY_NEXTID_RE = /withTimeout\(\s*bc\.nextBondId\(\),\s*10000,\s*0n\s*\)/;
+        // The old fallback shape for the My-Bonds / Bonds-judged event scans.
+        const LEGACY_FALLBACK_RE = /withTimeout\(\s*queryFilterChunked\([^)]*\)[^,]*,\s*25000,\s*\[\]\s*\)/;
+
+        for (const [label, html] of [["frontend/index.html", () => mainHtml], ["frontend/v6/index.html", () => v6html]]) {
+            describe(label, function () {
+                it("loads async-util.js as a script", function () {
+                    expect(html()).to.match(/<script src="\.{1,2}\/async-util\.js"><\/script>/);
+                });
+
+                it("BROWSE: routes a non-ok nextBondId into a { rows: [], error } cache entry (NOT a bare 0n fallback)", function () {
+                    // The browse path must call withTimeoutResult for nextBondId.
+                    // Reverting to withTimeout(..., 10000, 0n) fails the next line.
+                    expect(html()).to.match(/withTimeoutResult\(\s*bc\.nextBondId\(\),\s*10000\s*\)/);
+                    // The legacy bare-0n fallback shape must be GONE.
+                    expect(LEGACY_NEXTID_RE.test(html()), "found legacy withTimeout(nextBondId, 10000, 0n)").to.equal(false);
+                    // A non-ok status writes an ERROR cache entry and returns —
+                    // it does NOT fall through to enumeration (which would render
+                    // the empty state). Require the status check, the rows:[]+error
+                    // cache write, and the timeout copy in close proximity.
+                    expect(html()).to.match(
+                        /const r = await withTimeoutResult\(\s*bc\.nextBondId\(\),\s*10000\s*\);[\s\S]{0,120}r\.status !== 'ok'[\s\S]{0,400}bondListCache\[bondListKey\(\)\] = \{ rows: \[\], error \}/
+                    );
+                    expect(html()).to.include("The network timed out while loading bonds — please retry.");
+                    // A genuine ok-0 still proceeds to enumeration (normal empty
+                    // state): the value is taken from r.value only on ok.
+                    expect(html()).to.match(/const nextId = Number\(r\.value\)/);
+                });
+
+                it("MY BONDS: the three event fallbacks use withTimeoutResult and feed renderMySection a per-role error", function () {
+                    // No legacy `withTimeout(queryFilterChunked(...), 25000, [])`
+                    // fallback survives (covers My-Bonds + Bonds-judged).
+                    expect(LEGACY_FALLBACK_RE.test(html()), "found legacy withTimeout(queryFilterChunked, 25000, [])").to.equal(false);
+                    // All three roles thread a per-role error into renderMySection.
+                    expect(html()).to.match(/renderMySection\('myPoster', 'myPosterCount', posterIds, 'poster', posterErr\)/);
+                    expect(html()).to.match(/renderMySection\('myChallenger', 'myChallengerCount', challengerIds, 'challenger', challengerErr\)/);
+                    expect(html()).to.match(/renderMySection\('myJudge', 'myJudgeCount', judgeIds, 'judge', judgeErr\)/);
+                    // Each fallback branch only fills ids on ok, else records the
+                    // per-role error (so a timeout can't leave ids silently empty).
+                    expect(html()).to.match(/const r = await withTimeoutResult\(queryFilterChunked\(bc, filter, fromBlock\), 25000\);[\s\S]{0,160}posterErr = fallbackErr\(r\)/);
+                    expect(html()).to.match(/challengerErr = fallbackErr\(r\)/);
+                    expect(html()).to.match(/judgeErr = fallbackErr\(r\)/);
+                });
+
+                it("MY BONDS: renderMySection has an error branch DISTINCT from the empty-state hint", function () {
+                    // renderMySection takes the loadError param and, when set,
+                    // renders a retryable msg-error INSTEAD of the empty hint.
+                    expect(html()).to.match(/async function renderMySection\(containerId, countId, ids, role, loadError\)/);
+                    // The error branch is checked BEFORE the ids.length === 0 empty
+                    // branch and renders the retryable copy via msg-error. Deleting
+                    // the branch (falling back to the empty hint) fails this.
+                    expect(html()).to.match(
+                        /if \(loadError\) \{[\s\S]{0,300}Couldn’t load your \$\{role\} bonds — please retry\.[\s\S]{0,200}msg msg-error[\s\S]{0,120}return;\s*\}[\s\S]{0,120}if \(ids\.length === 0\)/
+                    );
+                });
+
+                it("BONDS JUDGED: the fallback uses withTimeoutResult and surfaces a retryable error instead of the empty state", function () {
+                    // The judged fallback now branches on status and records
+                    // judgedErr on a non-ok outcome.
+                    expect(html()).to.match(/const r = await withTimeoutResult\(queryFilterChunked\(bc, bc\.filters\.BondCreated\(null, null, entry\.judgeContract\), fromBlock\), 25000\)/);
+                    expect(html()).to.include("The network timed out while loading bonds judged — please retry.");
+                    // The render shows the error (msg-error) when judgedErr is set,
+                    // ahead of the "No bonds yet point to this judge contract."
+                    // empty hint — so a failure can't masquerade as "no bonds".
+                    expect(html()).to.match(
+                        /\$\{judgedErr[\s\S]{0,120}msg msg-error[\s\S]{0,200}No bonds yet point to this judge contract\./
                     );
                 });
             });

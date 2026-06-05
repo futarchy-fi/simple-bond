@@ -260,3 +260,25 @@
   all 7 capabilities true. Burn-down: rcaOpenGaps 5 → 4.
 - Sepolia deployer 0x693E…b43d still ≈ 0.0338 ETH (< 0.05) → live journey still parked.
 - Next: funded → live V7 journey; else RCA gap #3 (withTimeout empty-array vs error distinction).
+
+## Iteration 23 — 2026-06-05 — gap #3: timeout-vs-empty distinction (PROGRESS)
+- Closed RCA gap #3 (a timed-out/errored read masquerading as "no bonds"). New pure helper frontend/async-util.js:
+  withTimeoutResult(promise, ms) → tagged {status:'ok',value} / {status:'error',error} / {status:'timeout'}, never
+  rejects (resolve/reject mapped to a non-rejecting wrapper raced against a timer; the promise outcome wins when it
+  settles first). Wired into the THREE list-DETERMINING reads in index.html + v6 mirror: BROWSE nextBondId (was the
+  silent 0n fallback → now {rows:[],error} + retry message), MY BONDS poster/challenger/judge RPC fallbacks (per-role
+  error threaded into a new renderMySection error branch, checked BEFORE the empty hint), BONDS JUDGED fallback. A
+  GENUINE empty (ok-0 / empty list) still shows the friendly empty state — verified it does not over-fire. Best-effort
+  reads (claim-preview logs, getCode, safeRead) left on the old withTimeout.
+- Adversarial panel: fixes-bug ✅, test-quality ✅, no-regression ❌ — the no-regress lens caught a FLAKY test
+  (asyncUtil.test.js ~1/5 failures under full-suite event-loop saturation; both this and the iter-22 verifier observed
+  CONCURRENT hardhat processes from the parallel verifier agents starving real timers). Impl itself was correct.
+  QUARANTINE-THEN-FIX: I made the timer-dependent "WINS" assertions deterministic (already-settled promises beat any
+  setTimeout via microtask ordering — robust under load), then confirmed stability MYSELF: full `npx hardhat test`
+  ×3 = 902 passing/0 failing each; isolated asyncUtil ×3 = 9/9 each.
+- Bonus: G1 empty-catch 41 → 40 (the bonds-judged catch now has a body); tightened scripts/.lint-baseline.json to 40
+  to lock the gain. Restored a screenshot png that earlier e2e runs had byte-churned (kept the commit clean).
+- Gates re-run MYSELF: hardhat 902 passing / 0 failing (×3 stable); lint EXIT=0 (baseline 40); docker e2e 59 passed /
+  4 skipped, all 7 capabilities true. Burn-down: rcaOpenGaps 4 → 3; g1 41 → 40.
+- Sepolia deployer 0x693E…b43d still ≈ 0.0338 ETH (< 0.05) → live journey still parked.
+- Next: funded → live V7 journey; else A2-followup (phaseFor all-zero-timing → 'timing unavailable'), then UX niceties.

@@ -14,6 +14,7 @@
 <script src="../notify.js"></script>
 <script src="../contract-probe.js"></script>
 <script src="../allowance-key.js"></script>
+<script src="../async-util.js"></script>
 <style>
   :root {
     --bg: #ffffff;
@@ -1980,7 +1981,19 @@
     } catch (_) { /* fall back to RPC enumeration */ browseStaleMeta = null; }
     try {
       const bc = bondReadContract();
-      const nextId = Number(await withTimeout(bc.nextBondId(), 10000, 0n));
+      // RCA gap #3 — a timed-out/failed nextBondId must NOT masquerade as 0
+      // (which would skip enumeration and render the "no bonds" empty state).
+      // withTimeoutResult tags the outcome so timeout/error route to a VISIBLE,
+      // retryable error; only a real ok-0 falls through to the normal empty state.
+      const r = await withTimeoutResult(bc.nextBondId(), 10000);
+      if (r.status !== 'ok') {
+        const error = r.status === 'timeout'
+          ? 'The network timed out while loading bonds — please retry.'
+          : friendlyError(r.error);
+        bondListCache[bondListKey()] = { rows: [], error };
+        return [];
+      }
+      const nextId = Number(r.value);
       const rows = [];
       const start = Math.max(0, nextId - 50);
       for (let i = nextId - 1; i >= start; i--) {
@@ -3226,6 +3239,15 @@
     let posterIds = [];
     let challengerIds = [];
     let judgeIds = [];
+    // RCA gap #3 — when the indexer is unreachable and the RPC fallback below
+    // times out / errors, record a per-role error so renderMySection surfaces a
+    // retryable message instead of a misleading "No bonds … yet" empty state.
+    let posterErr = null;
+    let challengerErr = null;
+    let judgeErr = null;
+    const fallbackErr = (r) => r.status === 'timeout'
+      ? 'timeout'
+      : (r.status === 'error' ? friendlyError(r.error) : null);
 
     // Indexer-first per role; fall back to chunked eth_getLogs if it's
     // unreachable (returns null). The judge role keys off the on-chain judge
@@ -3236,9 +3258,10 @@
     } else {
       try {
         const filter = bc.filters.BondCreated(null, account);
-        const logs = await withTimeout(queryFilterChunked(bc, filter, fromBlock), 25000, []);
-        posterIds = logs.map(l => Number(l.args.bondId));
-      } catch (err) { log(`Poster events failed: ${friendlyError(err)}`, 'err'); }
+        const r = await withTimeoutResult(queryFilterChunked(bc, filter, fromBlock), 25000);
+        if (r.status === 'ok') posterIds = r.value.map(l => Number(l.args.bondId));
+        else { posterErr = fallbackErr(r); log(`Poster events failed: ${posterErr}`, 'err'); }
+      } catch (err) { posterErr = friendlyError(err); log(`Poster events failed: ${posterErr}`, 'err'); }
     }
 
     const idxChallenger = await indexerBonds({ challenger: account });
@@ -3247,9 +3270,10 @@
     } else {
       try {
         const filter = bc.filters.Challenged(null, null, account);
-        const logs = await withTimeout(queryFilterChunked(bc, filter, fromBlock), 25000, []);
-        challengerIds = [...new Set(logs.map(l => Number(l.args.bondId)))];
-      } catch (err) { log(`Challenger events failed: ${friendlyError(err)}`, 'err'); }
+        const r = await withTimeoutResult(queryFilterChunked(bc, filter, fromBlock), 25000);
+        if (r.status === 'ok') challengerIds = [...new Set(r.value.map(l => Number(l.args.bondId)))];
+        else { challengerErr = fallbackErr(r); log(`Challenger events failed: ${challengerErr}`, 'err'); }
+      } catch (err) { challengerErr = friendlyError(err); log(`Challenger events failed: ${challengerErr}`, 'err'); }
     }
 
     if (myJudge) {
@@ -3259,22 +3283,34 @@
       } else {
         try {
           const filter = bc.filters.BondCreated(null, null, myJudge);
-          const logs = await withTimeout(queryFilterChunked(bc, filter, fromBlock), 25000, []);
-          judgeIds = logs.map(l => Number(l.args.bondId));
-        } catch (err) { log(`Judge events failed: ${friendlyError(err)}`, 'err'); }
+          const r = await withTimeoutResult(queryFilterChunked(bc, filter, fromBlock), 25000);
+          if (r.status === 'ok') judgeIds = r.value.map(l => Number(l.args.bondId));
+          else { judgeErr = fallbackErr(r); log(`Judge events failed: ${judgeErr}`, 'err'); }
+        } catch (err) { judgeErr = friendlyError(err); log(`Judge events failed: ${judgeErr}`, 'err'); }
       }
     }
 
     await Promise.all([
-      renderMySection('myPoster', 'myPosterCount', posterIds, 'poster'),
-      renderMySection('myChallenger', 'myChallengerCount', challengerIds, 'challenger'),
-      renderMySection('myJudge', 'myJudgeCount', judgeIds, 'judge'),
+      renderMySection('myPoster', 'myPosterCount', posterIds, 'poster', posterErr),
+      renderMySection('myChallenger', 'myChallengerCount', challengerIds, 'challenger', challengerErr),
+      renderMySection('myJudge', 'myJudgeCount', judgeIds, 'judge', judgeErr),
     ]);
   }
 
-  async function renderMySection(containerId, countId, ids, role) {
+  async function renderMySection(containerId, countId, ids, role, loadError) {
     const el = $(containerId);
     if (!el) return;
+    // RCA gap #3 — a load failure for this role's list (indexer unreachable AND
+    // the RPC fallback timed out / errored) must surface a VISIBLE, retryable
+    // error, NOT the "No bonds … yet" empty hint that masks the failure.
+    if (loadError) {
+      $(countId).textContent = '—';
+      const msg = loadError === 'timeout'
+        ? `Couldn’t load your ${role} bonds — please retry.`
+        : `Couldn’t load your ${role} bonds — please retry. (${loadError})`;
+      el.innerHTML = `<div class="msg msg-error">${escapeHtml(msg)}</div>`;
+      return;
+    }
     $(countId).textContent = String(ids.length);
     if (ids.length === 0) {
       let hint = '';
@@ -4063,6 +4099,10 @@
 
       // Bonds judged by this address
       let bondsJudged = [];
+      // RCA gap #3 — when the indexer is unreachable and the RPC fallback below
+      // times out / errors, record the failure so the render surfaces a visible,
+      // retryable error instead of a misleading "no bonds judged" empty state.
+      let judgedErr = null;
       const idxJudged = await indexerBonds({ judge: entry.judgeContract });
       if (idxJudged) {
         bondsJudged = idxJudged.map(b => ({ bondId: b.bondId, claim: String(b.claimContent || '') }));
@@ -4070,9 +4110,12 @@
         try {
           const bc = bondReadContract();
           const fromBlock = c?.deployBlock || 0;
-          const logs = await withTimeout(queryFilterChunked(bc, bc.filters.BondCreated(null, null, entry.judgeContract), fromBlock), 25000, []);
-          bondsJudged = logs.map(l => ({ bondId: Number(l.args.bondId), claim: String(l.args.claimContent || '') }));
-        } catch (_) {}
+          const r = await withTimeoutResult(queryFilterChunked(bc, bc.filters.BondCreated(null, null, entry.judgeContract), fromBlock), 25000);
+          if (r.status === 'ok') bondsJudged = r.value.map(l => ({ bondId: Number(l.args.bondId), claim: String(l.args.claimContent || '') }));
+          else judgedErr = r.status === 'timeout'
+            ? 'The network timed out while loading bonds judged — please retry.'
+            : friendlyError(r.error);
+        } catch (err) { judgedErr = friendlyError(err); }
       }
 
       view.innerHTML = `
@@ -4095,8 +4138,10 @@
           <div class="jp-content">${escapeHtml(entry.content || '(no content)')}</div>
         </div>
         <div class="card">
-          <h3>Bonds judged by this contract <span style="font-size:12px;font-weight:normal;color:var(--muted);">(${bondsJudged.length})</span></h3>
-          ${bondsJudged.length === 0
+          <h3>Bonds judged by this contract <span style="font-size:12px;font-weight:normal;color:var(--muted);">(${judgedErr ? '—' : bondsJudged.length})</span></h3>
+          ${judgedErr
+            ? `<div class="msg msg-error">${escapeHtml(judgedErr)}</div>`
+            : bondsJudged.length === 0
             ? '<div class="hint">No bonds yet point to this judge contract.</div>'
             : bondsJudged.slice(0, 20).map(b => `<div class="bond-list-item" data-bondid="${b.bondId}">
                 <div class="bli-head"><span class="bli-id">Bond #${b.bondId}</span></div>
