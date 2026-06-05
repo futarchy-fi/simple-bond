@@ -39,13 +39,33 @@ export const BLOCK_CHUNK = 10_000;
 export const TIMESTAMP_WINDOW_SEC = 300; // 5 minutes
 export const RATE_LIMIT_MAX = 3; // per IP per hour
 
+// Resolve a chain's RPC endpoint list from env, with graceful fallback.
+// Precedence: comma-separated <CHAIN>_RPCS (multi-endpoint, for the watcher's
+// FallbackProvider) → single <CHAIN>_RPC (back-compat) → the hardcoded public
+// default. Returns a non-empty string[] of de-duped, trimmed URLs. Keys are
+// read here on the backend only and never surface to the frontend bundle.
+function resolveRpcs(listEnv, singleEnv, fallback) {
+  const fromList = String(listEnv || '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
+  if (fromList.length > 0) return [...new Set(fromList)];
+  const single = String(singleEnv || '').trim();
+  if (single) return [single];
+  return [fallback];
+}
+
 // CHAINS is assembled at import time. Gnosis v0.5 stays hardcoded for now
 // (will be removed in Phase 11). Mainnet v0.6 and Sepolia v0.6 enter the map
 // only when the corresponding env vars are set, so the watcher can run
 // safely before the v0.6 deployment.
+//
+// Each chain config exposes `rpcs` (non-empty string[]) used by the watcher to
+// build a multi-RPC FallbackProvider; `rpc` stays as rpcs[0] for back-compat.
 const _CHAINS = {
   100: {
     name: 'Gnosis',
+    rpcs: ['https://rpc.gnosischain.com'],
     rpc: 'https://rpc.gnosischain.com',
     contract: '0x7dF485C013f8671B656d585f1d1411640B1D2776',
     startBlock: 45569363,
@@ -55,9 +75,11 @@ const _CHAINS = {
 };
 
 if (process.env.MAINNET_V6_CONTRACT) {
+  const rpcs = resolveRpcs(process.env.MAINNET_RPCS, process.env.MAINNET_RPC, 'https://eth.llamarpc.com');
   _CHAINS[1] = {
     name: 'Ethereum',
-    rpc: process.env.MAINNET_RPC || 'https://eth.llamarpc.com',
+    rpcs,
+    rpc: rpcs[0],
     contract: process.env.MAINNET_V6_CONTRACT,
     startBlock: parseInt(process.env.MAINNET_V6_START_BLOCK || '0', 10),
     explorer: 'https://etherscan.io',
@@ -66,9 +88,12 @@ if (process.env.MAINNET_V6_CONTRACT) {
 }
 
 if (process.env.SEPOLIA_V6_CONTRACT) {
+  // Sepolia stays on the free publicnode default unless SEPOLIA_RPCS is given.
+  const rpcs = resolveRpcs(process.env.SEPOLIA_RPCS, process.env.SEPOLIA_RPC, 'https://ethereum-sepolia-rpc.publicnode.com');
   _CHAINS[11155111] = {
     name: 'Sepolia',
-    rpc: process.env.SEPOLIA_RPC || 'https://ethereum-sepolia-rpc.publicnode.com',
+    rpcs,
+    rpc: rpcs[0],
     contract: process.env.SEPOLIA_V6_CONTRACT,
     startBlock: parseInt(process.env.SEPOLIA_V6_START_BLOCK || '0', 10),
     explorer: 'https://sepolia.etherscan.io',

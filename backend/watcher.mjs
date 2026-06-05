@@ -150,7 +150,30 @@ async function indexChain(chainId, provider, contract, iface, opts = {}) {
   }
 }
 
-export { indexChain, indexLogs, indexBondState, getLogsWithRetry };
+// Build the read provider for a chain. A single RPC yields a hardened
+// JsonRpcProvider (static network avoids a per-call eth_chainId; small batch
+// cap keeps free-tier endpoints happy). Two or more RPCs yield an
+// ethers.FallbackProvider with quorum:1 so a single healthy endpoint serves
+// reads — browse/detail/notifications keep flowing through a single-RPC outage
+// instead of going blank/stale (RCA gap #1). Endpoints are tried in ascending
+// priority (rpcs[0] preferred), and each child uses staticNetwork so it never
+// probes the chain id at runtime.
+function buildProvider(chainId, cfg) {
+  const rpcs = (cfg.rpcs && cfg.rpcs.length) ? cfg.rpcs : [cfg.rpc];
+  const network = ethers.Network.from(chainId);
+  if (rpcs.length === 1) {
+    return new ethers.JsonRpcProvider(rpcs[0], network, { staticNetwork: true, batchMaxCount: 3 });
+  }
+  const configs = rpcs.map((url, i) => ({
+    provider: new ethers.JsonRpcProvider(url, network, { staticNetwork: true, batchMaxCount: 3 }),
+    priority: i + 1, // ascending: rpcs[0] is preferred
+    stallTimeout: 2000,
+    weight: 1,
+  }));
+  return new ethers.FallbackProvider(configs, network, { quorum: 1 });
+}
+
+export { indexChain, indexLogs, indexBondState, getLogsWithRetry, buildProvider };
 
 /**
  * For a given event, resolve the set of wallet addresses that should be notified.
@@ -293,11 +316,14 @@ async function pollChain(chainId, provider, contract, iface) {
 /**
  * Start the event watcher for all configured chains.
  */
-export function startWatcher() {
+// `providers` is an optional chainId->provider map (mirrors how `sleep` is
+// threaded into getLogsWithRetry/indexChain): tests inject fakes; production
+// leaves it empty and gets a per-chain FallbackProvider from buildProvider.
+export function startWatcher(providers = {}) {
   const chainEntries = Object.entries(CHAINS).map(([id, cfg]) => {
     const chainId = parseInt(id, 10);
     const abi = abiForChain(chainId);
-    const provider = new ethers.JsonRpcProvider(cfg.rpc);
+    const provider = providers[chainId] || buildProvider(chainId, cfg);
     const contract = new ethers.Contract(cfg.contract, abi, provider);
     const iface = new ethers.Interface(abi);
     return { chainId, provider, contract, iface };

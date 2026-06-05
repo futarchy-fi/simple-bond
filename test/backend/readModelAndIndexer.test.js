@@ -135,6 +135,136 @@ describe("indexer resilience", function () {
     expect(r.status, r.stdout + r.stderr).to.equal(0);
   });
 
+  it("fails over a dead RPC to a healthy one (row comes from provider[1]) and advances the checkpoint", () => {
+    // A real ethers.FallbackProvider (quorum:1) over two JsonRpcProvider fakes:
+    // provider[0]'s eth_blockNumber + eth_getLogs throw, provider[1] returns a
+    // head and a single v6 BondCreated log. The bond row landing in the DB can
+    // only have come from provider[1], proving failover (RCA gap #1).
+    const src = `
+      import { ethers } from 'ethers';
+      import { indexChain } from './backend/watcher.mjs';
+      import db from './backend/db.mjs';
+      import { V6_CONTRACT_ABI, CHAINS } from './backend/config.mjs';
+
+      const assert = (c,m)=>{ if(!c){ console.error('FAIL', m); process.exit(2);} };
+      const chainId = 1;
+      const net = ethers.Network.from(chainId);
+      const iface = new ethers.Interface(V6_CONTRACT_ABI);
+
+      // Encode a real v6 BondCreated log (bondId 42) that only provider[1] serves.
+      const frag = iface.getEvent('BondCreated');
+      const enc = iface.encodeEventLog(frag, [
+        42n, '0x'+'11'.repeat(20), '0x'+'22'.repeat(20), 0n, '0x'+'33'.repeat(20),
+        1000n, 500n, 0n, 1n, 1n, 5n, '0x'+'ab'.repeat(32), 'failover claim text',
+      ]);
+      const head = CHAINS[chainId].startBlock + 20;
+      const logObj = {
+        address: CHAINS[chainId].contract, topics: enc.topics, data: enc.data,
+        blockNumber: CHAINS[chainId].startBlock + 5, blockHash: '0x'+'cc'.repeat(32),
+        transactionHash: '0x'+'dd'.repeat(32), transactionIndex: 0, logIndex: 0, removed: false,
+      };
+
+      // JsonRpcProvider subclass whose JSON-RPC sender is stubbed per behavior.
+      class FakeJsonRpc extends ethers.JsonRpcProvider {
+        constructor(name, b) { super('http://localhost:0', net, { staticNetwork: net, batchMaxCount: 1 }); this._name=name; this._b=b; }
+        async _send(payload) {
+          const reqs = Array.isArray(payload) ? payload : [payload];
+          return reqs.map(req => {
+            if (req.method === 'eth_blockNumber') {
+              if (this._b.headThrow) return { id:req.id, error:{ code:-32000, message:this._name+' head boom' } };
+              return { id:req.id, result: ethers.toQuantity(this._b.head) };
+            }
+            if (req.method === 'eth_getLogs') {
+              if (this._b.logsThrow) return { id:req.id, error:{ code:-32000, message:this._name+' logs boom' } };
+              return { id:req.id, result: this._b.logs || [] };
+            }
+            if (req.method === 'eth_chainId') return { id:req.id, result: ethers.toQuantity(Number(net.chainId)) };
+            return { id:req.id, error:{ code:-32601, message:'unsupported '+req.method } };
+          });
+        }
+      }
+
+      const p0 = new FakeJsonRpc('p0', { headThrow:true, logsThrow:true });
+      const p1 = new FakeJsonRpc('p1', { head, logs: [logObj] });
+      const provider = new ethers.FallbackProvider([
+        { provider: p0, priority: 1, stallTimeout: 200, weight: 1 },
+        { provider: p1, priority: 2, stallTimeout: 200, weight: 1 },
+      ], net, { quorum: 1 });
+
+      // Contract resolves bond state from chain (also via failover in prod). Here
+      // the bond struct is returned directly so indexBondState can write the row.
+      const contract = {
+        bonds: async () => ({ poster:'0x'+'11'.repeat(20), judge:'0x'+'22'.repeat(20), token:'0x'+'33'.repeat(20),
+          bondAmount:1000n, challengeAmount:500n, judgeFee:0n, acceptanceDelay:1n, rulingBuffer:1n,
+          maxChallenges:5n, claimHash:'0x'+'ab'.repeat(32), claimVersion:0n, judgeProfileId:0n,
+          pendingCount:0n, settled:false, closed:false }),
+        getChallengeCount: async () => 0n,
+        getChallenge: async () => { throw new Error('unused'); },
+      };
+
+      await indexChain(chainId, provider, contract, iface, { sleep: async()=>{} });
+
+      const row = db.getBond(chainId, 42);
+      assert(row, 'bond row written via failover (provider[1])');
+      assert(row.claim_content === 'failover claim text', 'claim text came from provider[1] log');
+      const cp = db.getIndexCheckpoint(chainId);
+      assert(cp !== null, 'checkpoint advanced after failover');
+      console.log('OK failover row+checkpoint cp='+cp); process.exit(0);
+    `;
+    const r = runEsm(src, {
+      MAINNET_V6_CONTRACT: "0x6B24380B1980db3e2DfDd2b62f5ed3E7E88DFA43",
+      MAINNET_V6_START_BLOCK: "100",
+    });
+    expect(r.status, r.stdout + r.stderr).to.equal(0);
+  });
+
+  it("does NOT advance the checkpoint when the window fails on ALL providers (no-skip invariant)", () => {
+    // FallbackProvider over two fakes that BOTH throw on eth_getLogs: the head
+    // is readable (so a window exists) but every endpoint fails the scan, so the
+    // checkpoint must stay unset — no data is silently skipped.
+    const src = `
+      import { ethers } from 'ethers';
+      import { indexChain } from './backend/watcher.mjs';
+      import db from './backend/db.mjs';
+      import { CHAINS } from './backend/config.mjs';
+
+      const assert = (c,m)=>{ if(!c){ console.error('FAIL', m); process.exit(2);} };
+      const chainId = 1;
+      const net = ethers.Network.from(chainId);
+      const head = CHAINS[chainId].startBlock + 20;
+
+      class FakeJsonRpc extends ethers.JsonRpcProvider {
+        constructor(name, b) { super('http://localhost:0', net, { staticNetwork: net, batchMaxCount: 1 }); this._name=name; this._b=b; }
+        async _send(payload) {
+          const reqs = Array.isArray(payload) ? payload : [payload];
+          return reqs.map(req => {
+            if (req.method === 'eth_blockNumber') return { id:req.id, result: ethers.toQuantity(this._b.head) };
+            if (req.method === 'eth_getLogs') return { id:req.id, error:{ code:-32000, message:this._name+' logs boom' } };
+            if (req.method === 'eth_chainId') return { id:req.id, result: ethers.toQuantity(Number(net.chainId)) };
+            return { id:req.id, error:{ code:-32601, message:'unsupported '+req.method } };
+          });
+        }
+      }
+
+      const p0 = new FakeJsonRpc('p0', { head });
+      const p1 = new FakeJsonRpc('p1', { head });
+      const provider = new ethers.FallbackProvider([
+        { provider: p0, priority: 1, stallTimeout: 200, weight: 1 },
+        { provider: p1, priority: 2, stallTimeout: 200, weight: 1 },
+      ], net, { quorum: 1 });
+
+      await indexChain(chainId, provider, {}, {}, { sleep: async()=>{} });
+      const cp = db.getIndexCheckpoint(chainId);
+      assert(cp === null, 'checkpoint must NOT advance when all providers fail the window (got '+cp+')');
+      console.log('OK no-skip preserved across all providers'); process.exit(0);
+    `;
+    const r = runEsm(src, {
+      MAINNET_V6_CONTRACT: "0x6B24380B1980db3e2DfDd2b62f5ed3E7E88DFA43",
+      MAINNET_V6_START_BLOCK: "100",
+    });
+    expect(r.status, r.stdout + r.stderr).to.equal(0);
+  });
+
   it("does not clobber challenge_count to 0 when getChallengeCount fails", () => {
     const src = `
       import { indexBondState } from './backend/watcher.mjs';
