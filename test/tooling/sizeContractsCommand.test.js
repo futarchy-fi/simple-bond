@@ -13,6 +13,8 @@ const EXPECTED_CONTRACTS = [
   "SimpleBond",
   "TestToken",
   "MockSUSDS",
+  "MockReentrantToken",
+  "MockFeeToken",
   "TestAcceptJudgeV6",
   "TestForwardingJudgeV6",
   "PosterProfileRegistry",

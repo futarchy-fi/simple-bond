@@ -139,3 +139,18 @@
 - 3/3 verdicts pass incl. an adversarial search finding NO path to inflate pendingCount. Full hardhat 769 passing; lint G1=41.
 - Next: STEP 2 = C2 credit ledger ([recipient][token] credits, claim() CEI+nonReentrant, settle loops, delete
   claimRefunds/refundCursor/ChallengeRefunded; reentrancy + fee-on-transfer mocks; rewrite invariants/resolution tests).
+
+## Iteration 14 (+ C2b fix) — 2026-06-05 — v0.7 STEP 2: C2 credit ledger (PROGRESS, critical bug caught+fixed)
+- C2: per-address credits[recipient][token] + claim() (CEI + nonReentrant); all outbound-to-untrusted →
+  credits; judge fee stays inline; settle loops credit all pending; deleted claimRefunds/refundCursor/ChallengeRefunded.
+  Mocks: MockReentrantToken, MockFeeToken. Rewrote invariants/resolution tests to the credit model.
+- SECURITY PANEL CAUGHT A CRITICAL EXPLOIT (verdict FAILED, commit blocked): the settle loop scanned the FULL
+  cumulative challenges[] array (C1 makes it unbounded via O(1)-capital spam→reject→refile). Ceiling bounds
+  pendingCount, NOT array length → ~8.7k entries makes EVERY settle path exceed block gas → bond unsettleable →
+  ALL funds stranded forever. The 44 tests missed it (N=4-6 only). This is the #1 unsafe option SPEC_V07 named.
+- C2b FIX: pendingIds[bondId] live-set + pendingPos for O(1) swap-pop; every settle loop now iterates the live
+  pending set (≤ ceiling), independent of array length. Numeric proof: 1203-entry settle 184,577 gas vs 3-entry
+  186,577 (0.989×). New SimpleBondV7.settleLoopBound.test.js (4 cases). 3/3 security verdicts pass on re-verify.
+- Gates: V6 UNCHANGED; compile clean; full hardhat 809 passing; lint G1=41. Cleaned verifier probe files.
+- This is the marquee example of the adversarial-verification design: green tests would have shipped a fund-loss bug.
+- Next: STEP 3 = clone scripts/v7 deploy + Sepolia deploy (testnet-first; stop at deploy if gas/funds-blocked).
