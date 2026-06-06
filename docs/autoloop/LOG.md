@@ -623,3 +623,23 @@ crosses 0.05 ETH, run the live V7 capability journey; otherwise no new code chan
   check (currently sequential 5s+8s) and [6] cold-start state loss means the first post-cold-start tick won't alert an
   already-bad bond (matches the EXISTING rpc/components change-detection pattern — a cross-cutting choice for fi).
 - STILL owner-gated for go-live: Telegram chat ID + host OK (unchanged).
+
+## Iteration 40 — 2026-06-06 — bot LIVE; fi superseded my bot-level approach (cleaner) → reverted mine
+- USER shipped the bot. Live heartbeat confirms "Bond Indexer (Mainnet) 🟢 Synced (gap: 12)" + a bonus "Bond Indexer
+  (Sepolia) 🟢 (gap: 6)" as FIRST-CLASS components under "All Systems Operational". Gaps match /api/notify/health exactly.
+- fi integrated at the STATUS-PAGE level, not the bot: status.futarchy.fi/api/status now emits components bond_1
+  (Mainnet) + bond_11155111 (Sepolia) reading /api/notify/health. This is cleaner than my bot-level checkBondIndexer:
+  each chain is its own component (so it shows in the component list, gets the standard state.components change-detection,
+  and the per-chain split INHERENTLY avoids the aggregate-masking bug I'd had to fix). The honest /api/notify/health from
+  #2 is what makes it possible — that was the load-bearing contribution.
+- CLEANUP: my bot-level additions (checkBondIndexer/formatBondIndexer + handler wiring) were now redundant AND a
+  double-alert footgun if that tree deployed (fi's state.components + my state.bondIndexerStatus would both fire). Reverse-
+  applied my patch from BOTH clones: canonical (~/futarchy/workspace, left with only fi's uncommitted RPC rewiring) and
+  ~/fleet (back to base cfe9414b). Removed the now-superseded deploy/status-bot-bond-indexer.patch artifact. Verified 0 refs
+  + syntax-clean in both. Net deployed state owes nothing to my bot-level code; it owes everything to the honest health
+  endpoint (#2) + the bond→proxy repoint (#1).
+- RPC Health heartbeat shows "Gnosis 4/5 (down: Alchemy)" — fi added Alchemy to the pool specifically to surface its
+  monthly-quota cap (the original incident root cause). "Alchemy down" here = the capped key, correctly surfaced + benign
+  (proxy fails over). Working as intended.
+- NET RESULT of the whole RPC/health/monitoring effort: #1 bond→shared proxy (no more single-key SPOF), #2 honest
+  /api/notify/health (deployed), #3 bond.futarchy.ai now monitored (Mainnet+Sepolia) by the live @azhermes status bot.
