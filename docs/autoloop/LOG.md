@@ -474,3 +474,21 @@ crosses 0.05 ETH, run the live V7 capability journey; otherwise no new code chan
 - Owner sent 0.1 ETH to the deployer 0x693E3FB46Bb36eE43C702FE94f9463df0691b43d (tx 0x5b15b0a8598e217633f6f23c76c927caaad67d4cf1782d42152cf7ddf738cbe9, Sepolia block 10998485); balance now 0.13381 ETH (> 0.05 gate). Funding gate CLEARED.
 - BUT the automated live V7 capability journey still cannot run from this environment: hardhat.config reads the signer from process.env.PRIVATE_KEY and it is UNSET here (getSigners() = 0). So the journey is now gated on the KEY, not funding. To run it: owner exports PRIVATE_KEY (testnet-only) for 0x693E…b43d, OR tests v0.7 via the staging UI (staging.bond.futarchy.ai on Sepolia) / the green local docker e2e. Surfaced to owner.
 - Caretaker gate corrected: the "funded -> run journey" branch now also requires a usable signer before attempting (else it would re-hit the no-signer wall every tick). main green, all gates ✅ throughout.
+
+## Iteration 32 — 2026-06-05 — LIVE v0.7 capability journey on Sepolia ✅ (owner funded the deployer)
+- Owner funded the Sepolia deployer (0.1 ETH) AND pointed me to the signing key via voyage-search: it was in
+  /home/kelvin/futarchy/workspace/.env.codex (a .env.codex, not a repo .env — my earlier sweeps missed it). Verified the
+  key derives to 0x693E…b43d; staged it into a gitignored .env (never printed/committed).
+- Discovered the reused Sepolia ManualJudgeV6 (0x25E7…DBa9) is active() AND its operator IS the deployer — so one key
+  could be poster, self-challenger (challenge() has no challenger!=poster check), and judge operator (can rule).
+- NEW scripts/v7/liveJourneySepolia.js drove the FULL lifecycle on the live SimpleBondV7 (0x71e1…4C67), recorded in
+  deployments/sepolia-v7-journey.json (all tx hashes). Three bonds (ids 4/5/6):
+  - A judge-ruling: createBond → challenge → ManualJudgeV6.ruleForChallenger → credit 12.5 (C2) → claim → +12.5 on-chain.
+  - B concede: createBond → challenge → concede → credit 3.0 (C2) → claim → +3.0 on-chain.
+  - C clean exit: createBond → closeBond → withdrawBond (credits poster, C2) → claim → +10.0 on-chain.
+- Live-verified capabilities: createBond, challenge, ruleForChallenger, concede, claim (C2 pull-payment ×3), closeBond,
+  withdrawBond. claimTimeout NOT run live (needs waiting past the ruling window; covered by unit + local e2e).
+- Two learnings baked into the script: (1) v0.7 withdrawBond is a PULL payment (credits the poster; needs a claim) —
+  not a push; (2) Sepolia public RPC pools lag reads a block or two, so balance assertions poll-until-visible.
+- Gas spent across the journey ≈ 0.02 ETH; deployer still well funded. main untouched (this is on-chain validation, not a
+  code-path change to mainnet v0.6). The v0.7 mechanism is now proven end-to-end on a live chain, not just locally.

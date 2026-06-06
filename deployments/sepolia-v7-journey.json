@@ -1,0 +1,54 @@
+{
+  "network": "sepolia",
+  "chainId": 11155111,
+  "date": "2026-06-05",
+  "contract": "0x71e15D42bE15BAE117096E12C9dBA25E67d14C67",
+  "signer": "0x693E3FB46Bb36eE43C702FE94f9463df0691b43d",
+  "note": "Live v0.7 capability journey vs the deployed Sepolia SimpleBondV7. Single funded key acts as poster, self-challenger, and (active) ManualJudgeV6 operator. Verified create/challenge/rule/concede/claim(C2 pull-payment)/close/withdraw end-to-end on-chain. claimTimeout omitted (requires waiting past the ruling window; covered by unit + local e2e).",
+  "explorer": "https://sepolia.etherscan.io/address/0x71e15D42bE15BAE117096E12C9dBA25E67d14C67",
+  "judgeProfileId": 2,
+  "setup": {
+    "registerProfile": "0xddcceb074cad04020168191f05b20c4dc9c0deeaa8feebc3c40d9bc7372c93b6",
+    "mint": "0xe3ec8c16a009fe14d03910b80e3f0a8653b047844ab17a9ce8ae17fb9e11b6e8",
+    "approve": "0xf06be7e38c572bd481964ca8b9d30a110d2b6f568d0967d4d41f4380ce194c70"
+  },
+  "bonds": {
+    "A_judgeRuling": {
+      "bondId": 4,
+      "createBond": "0xd670e8c7c9a4af314c73afc72f764936b03daaaff913f27c9b716e300c6e70dd",
+      "challenge": "0x9d33213e745dfaa26d5eb2dc8372a2f0339d38fff62e7f62e4de251a7887e969",
+      "ruleForChallenger": "0x00d04684c7bfc1bf8b8be503d7b636a351435e00db38880ba83a42fcff3420c1",
+      "claim": "0xa5f62f792219700423ec08423d673e54c8f2ed4767ed18b540f8ee8b08c5701d",
+      "creditAfterRule": "12.5",
+      "claimedDelta": "12.5"
+    },
+    "B_concede": {
+      "bondId": 5,
+      "createBond": "0xc5fb9a8642160ab85e3138cdf4fd107f04c46f4527ac3d708d48afb2326e94e5",
+      "challenge": "0x85813a277ace9d872a29ee612c509df93451914573743958e05ab2994e8d7507",
+      "concede": "0x1523e3749a9a110516b45492ecb344f53c23c70b45207a18abb48c4a1f3066db",
+      "claim": "0xd3acfa19aeca7f6814c9d062408b5528195762107a2aa74733337f43e53efab0",
+      "creditAfterConcede": "3.0",
+      "claimedDelta": "3.0"
+    },
+    "C_withdraw": {
+      "bondId": 6,
+      "createBond": "0x929282a426ee8e01c7fe48d6bc19c6015b16b7c315fdd11b4fbb905361c98a28",
+      "closeBond": "0x24eb12558ab99c7be45f0a60e062104f917a27f15baab83035d3a0c6f913f994",
+      "withdrawBond": "0xafa5bef36e297822d13c62dfe195ef811297c47793a9173b0259fce97c665a67",
+      "claim": "0x7409085f40cd44fd939b4ba0bf64488395807d44147216575ca46feeb06fb69e",
+      "creditAfterWithdraw": "10.0",
+      "claimedDelta": "10.0"
+    }
+  },
+  "capabilitiesLiveVerified": {
+    "createBond": true,
+    "challenge": true,
+    "ruleForChallenger": true,
+    "concede": true,
+    "claim": true,
+    "closeBond": true,
+    "withdrawBond": true,
+    "claimTimeout": false
+  }
+}

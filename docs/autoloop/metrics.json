@@ -1,6 +1,13 @@
 {
-  "iteration": 31,
+  "iteration": 32,
   "updated": "2026-06-05",
+  "liveJourneySepolia": {
+    "date": "2026-06-05",
+    "contract": "0x71e15D42bE15BAE117096E12C9dBA25E67d14C67",
+    "bondIds": [4, 5, 6],
+    "verified": ["createBond", "challenge", "ruleForChallenger", "concede", "claim", "closeBond", "withdrawBond"],
+    "note": "Full v0.7 lifecycle exercised on live Sepolia; see deployments/sepolia-v7-journey.json for tx hashes. claimTimeout not run live (needs waiting past ruling window; covered by unit + local e2e)."
+  },
   "gates": {
     "lint": true,
     "hardhat": true,
