@@ -57,6 +57,252 @@ describe("bonds read-model API", function () {
     const r = runEsm(src);
     expect(r.status, r.stdout + r.stderr).to.equal(0);
   });
+
+  // ─── END-TO-END ROLE MAPPING (headline gap) ────────────────────────────────
+  // The existing list/filter test SEEDS the DB directly (db.upsertBond /
+  // db.upsertChallenge). That proves the read-model QUERY, but it does NOT prove
+  // the WATCHER writes each role into the right column. The "My Bonds (as
+  // challenger / as judge)" tabs rely on the live indexer-first path:
+  //   real Challenged log  →  iface.parseLog  →  parsed.args.challenger  →  the
+  //   challenger COLUMN  →  GET /api/bonds?challenger=… .
+  // This test drives a REAL BondCreated log AND a REAL Challenged log THROUGH
+  // indexChain/indexLogs (NOT db seeding), then asserts the api-server serves the
+  // bond by EACH role. Distinct addresses P/J/C make it non-vacuous: if indexLogs
+  // mis-mapped the Challenged role (e.g. wrote the poster or judge into the
+  // challenger column, or wrote the wrong address), ?challenger=C would return
+  // nothing and the test FAILS.
+  it("E2E: a real BondCreated + Challenged through the watcher are served by role (poster/judge/challenger)", () => {
+    const src = `
+      import { ethers } from 'ethers';
+      import { indexChain } from './backend/watcher.mjs';
+      import db from './backend/db.mjs';
+      import { startApiServer } from './backend/api-server.mjs';
+      import { V6_CONTRACT_ABI, CHAINS } from './backend/config.mjs';
+      const assert = (c,m)=>{ if(!c){ console.error('FAIL', m); process.exit(2);} };
+      const chainId = 1;
+      const iface = new ethers.Interface(V6_CONTRACT_ABI);
+      // THREE DISTINCT addresses so a role swap is detectable.
+      const P = '0x'+'11'.repeat(20); // poster
+      const J = '0x'+'22'.repeat(20); // judge
+      const C = '0x'+'cc'.repeat(20); // challenger (distinct from P and J)
+      const TOK = '0x'+'33'.repeat(20);
+      const bondId = 5n;
+
+      // Encode the REAL v6 BondCreated + Challenged logs the way indexLogs parses
+      // them. BondCreated carries poster/judge as indexed topics + claimContent in
+      // data; Challenged carries the indexed challenger + content. indexLogs reads
+      // parsed.args.challenger for the Challenged event and snapshots the bond
+      // (poster/judge from bonds()) for BondCreated.
+      const encB = iface.encodeEventLog(iface.getEvent('BondCreated'),
+        [bondId, P, J, 0n, TOK, 1000n, 500n, 0n, 1n, 1n, 5n, '0x'+'ab'.repeat(32), 'role-map claim text']);
+      const encC = iface.encodeEventLog(iface.getEvent('Challenged'),
+        [bondId, 0n, C, 1n, '0x'+'ab'.repeat(32), '0x'+'00'.repeat(32), 'the challenge content']);
+      const mk = (enc, bn, li) => ({ address: CHAINS[chainId].contract, topics: enc.topics, data: enc.data,
+        blockNumber: bn, blockHash:'0x'+'cc'.repeat(32), transactionHash:'0x'+'dd'.repeat(32),
+        transactionIndex:0, logIndex:li, removed:false });
+      const provider = {
+        getBlockNumber: async () => CHAINS[chainId].startBlock + 20,
+        // getLogs returns BOTH logs in the one window (ordered BondCreated then Challenged).
+        getLogs: async () => [ mk(encB, CHAINS[chainId].startBlock+5, 0), mk(encC, CHAINS[chainId].startBlock+6, 1) ],
+      };
+      // bonds() supplies the poster/judge snapshot (the struct only has a claimHash).
+      // getChallengeCount returns 0 so indexBondState's challenge-refresh loop is a
+      // no-op: the challenger column can ONLY be populated by the Challenged event
+      // handler in indexLogs (parsed.args.challenger). That isolates the mapping.
+      const bondStruct = { poster:P, judge:J, token:TOK, bondAmount:1000n, challengeAmount:500n,
+        judgeFee:0n, acceptanceDelay:1n, rulingBuffer:1n, maxChallenges:5n, claimHash:'0x'+'ab'.repeat(32),
+        claimVersion:0n, judgeProfileId:0n, pendingCount:1n, settled:false, closed:false };
+      const contract = {
+        bonds: async (id) => { if (Number(id) !== 5) throw new Error('snapshot read wrong bondId '+id); return bondStruct; },
+        getChallengeCount: async () => 0n,
+        getChallenge: async () => { throw new Error('unused'); },
+      };
+
+      // Drive the REAL watcher pass (indexChain → scanWindowRecovering → indexLogs).
+      await indexChain(chainId, provider, contract, iface, { sleep: async()=>{} });
+      assert(db.getIndexCheckpoint(chainId) !== null, 'checkpoint advanced (window indexed)');
+
+      // Now serve it over HTTP and assert every role resolves.
+      const srv = startApiServer({ port: 3394, host: '127.0.0.1', onListen: async () => {
+        const j = async (p) => (await fetch('http://127.0.0.1:3394'+p)).json();
+        // Poll each POSITIVE role query until the watcher-written row is queryable.
+        // The spawned child can be CPU-starved under full-suite load, making the
+        // first read transiently empty; retry to a deadline so the test is
+        // deterministic. A genuine mis-map never satisfies has5 → the assert below
+        // still FAILS after the deadline (non-vacuity preserved), and the NEGATIVE
+        // checks (P/J not in the challenger column) remain single, direct reads.
+        const jPoll = async (p, ok) => { let r; for (let i=0;i<50;i++){ try { r = await j(p); if (ok(r)) return r; } catch(_){} await new Promise(x=>setTimeout(x,200)); } return r; };
+        const has5 = (r) => !!(r && r.bonds && r.bonds.length===1 && r.bonds[0].bondId===5);
+        const byPoster = await jPoll('/api/bonds?chainId=1&poster='+P, has5);
+        assert(has5(byPoster), 'poster P serves bond 5 (got '+JSON.stringify((byPoster.bonds||[]).map(b=>b.bondId))+')');
+        const byJudge = await jPoll('/api/bonds?chainId=1&judge='+J, has5);
+        assert(has5(byJudge), 'judge J serves bond 5 (got '+JSON.stringify((byJudge.bonds||[]).map(b=>b.bondId))+')');
+        // The crux: ?challenger=C must serve the bond — proving Challenged.args.challenger
+        // landed in the challenger column (the live My-Bonds-as-challenger path).
+        const byChal = await jPoll('/api/bonds?chainId=1&challenger='+C, has5);
+        assert(has5(byChal), 'challenger C serves bond 5 (got '+JSON.stringify((byChal.bonds||[]).map(b=>b.bondId))+')');
+        // NON-VACUITY: the challenger filter keyed on the POSTER or the JUDGE must
+        // NOT return the bond — i.e. the watcher did not write P or J into the
+        // challenger column. (If it had mis-mapped, one of these would be non-empty.)
+        const chalIsPoster = await j('/api/bonds?chainId=1&challenger='+P);
+        assert(chalIsPoster.bonds.length===0, 'poster P is NOT in the challenger column');
+        const chalIsJudge = await j('/api/bonds?chainId=1&challenger='+J);
+        assert(chalIsJudge.bonds.length===0, 'judge J is NOT in the challenger column');
+        // And the claim text from the BondCreated event was snapshotted too.
+        assert(byPoster.bonds[0].claimContent==='role-map claim text', 'claim text from BondCreated event');
+        console.log('OK e2e role mapping P/J/C all resolve'); srv.close(); process.exit(0);
+      }});
+    `;
+    const r = runEsm(src, {
+      MAINNET_V6_CONTRACT: "0x6B24380B1980db3e2DfDd2b62f5ed3E7E88DFA43",
+      MAINNET_V6_START_BLOCK: "100",
+    });
+    expect(r.status, r.stdout + r.stderr).to.equal(0);
+  });
+
+  // The Challenged row written by indexLogs must carry the RIGHT challenger AND
+  // be linked to the RIGHT bondId — i.e. it appears under /api/bonds/<id> with
+  // the event's challenger + content, at the event's challengeIndex. This proves
+  // the bond linkage of the challenge written on the live indexer path (not just
+  // that the challenger column is queryable, but that it hangs off the correct
+  // bond detail view the UI renders).
+  it("E2E: the watcher-written Challenge is linked to the correct bond with the right challenger + content", () => {
+    const src = `
+      import { ethers } from 'ethers';
+      import { indexChain } from './backend/watcher.mjs';
+      import db from './backend/db.mjs';
+      import { startApiServer } from './backend/api-server.mjs';
+      import { V6_CONTRACT_ABI, CHAINS } from './backend/config.mjs';
+      const assert = (c,m)=>{ if(!c){ console.error('FAIL', m); process.exit(2);} };
+      const chainId = 1;
+      const iface = new ethers.Interface(V6_CONTRACT_ABI);
+      const P = '0x'+'aa'.repeat(20), J = '0x'+'bb'.repeat(20), C = '0x'+'dd'.repeat(20), TOK = '0x'+'ee'.repeat(20);
+      // TWO bonds: only bond 8 is challenged. Asserting the challenge lands under
+      // bond 8 (and NOT under the other bond) proves the bondId linkage.
+      const encB7 = iface.encodeEventLog(iface.getEvent('BondCreated'),
+        [7n, P, J, 0n, TOK, 1n, 1n, 0n, 1n, 1n, 5n, '0x'+'a7'.repeat(32), 'bond seven']);
+      const encB8 = iface.encodeEventLog(iface.getEvent('BondCreated'),
+        [8n, P, J, 0n, TOK, 1n, 1n, 0n, 1n, 1n, 5n, '0x'+'a8'.repeat(32), 'bond eight']);
+      // Challenge bond 8 at challengeIndex 0 with a distinct content.
+      const encC = iface.encodeEventLog(iface.getEvent('Challenged'),
+        [8n, 0n, C, 1n, '0x'+'a8'.repeat(32), '0x'+'00'.repeat(32), 'linked challenge content']);
+      const mk = (enc, bn, li) => ({ address: CHAINS[chainId].contract, topics: enc.topics, data: enc.data,
+        blockNumber: bn, blockHash:'0x'+'cc'.repeat(32), transactionHash:'0x'+'dd'.repeat(32),
+        transactionIndex:0, logIndex:li, removed:false });
+      const provider = {
+        getBlockNumber: async () => CHAINS[chainId].startBlock + 20,
+        getLogs: async () => [ mk(encB7, CHAINS[chainId].startBlock+5, 0), mk(encB8, CHAINS[chainId].startBlock+5, 1), mk(encC, CHAINS[chainId].startBlock+6, 2) ],
+      };
+      const struct = (claimHash) => ({ poster:P, judge:J, token:TOK, bondAmount:1n, challengeAmount:1n,
+        judgeFee:0n, acceptanceDelay:1n, rulingBuffer:1n, maxChallenges:5n, claimHash,
+        claimVersion:0n, judgeProfileId:0n, pendingCount:0n, settled:false, closed:false });
+      const contract = {
+        bonds: async (id) => struct(Number(id)===7 ? '0x'+'a7'.repeat(32) : '0x'+'a8'.repeat(32)),
+        getChallengeCount: async () => 0n,
+        getChallenge: async () => { throw new Error('unused'); },
+      };
+      await indexChain(chainId, provider, contract, iface, { sleep: async()=>{} });
+      const srv = startApiServer({ port: 3395, host: '127.0.0.1', onListen: async () => {
+        const j = async (p) => (await fetch('http://127.0.0.1:3395'+p)).json();
+        // Poll until the watcher-written challenge is queryable (tolerate the
+        // load-starved child's transient empty read; a true linkage bug never
+        // satisfies the predicate and the asserts below still FAIL after the deadline).
+        const jPoll = async (p, ok) => { let r; for (let i=0;i<50;i++){ try { r = await j(p); if (ok(r)) return r; } catch(_){} await new Promise(x=>setTimeout(x,200)); } return r; };
+        const one8 = await jPoll('/api/bonds/8?chainId=1', r=>!!(r && r.bond && r.bond.bondId===8 && (r.challenges||[]).length===1));
+        assert(one8.bond && one8.bond.bondId===8, 'bond 8 served');
+        assert(one8.challenges.length===1, 'bond 8 has exactly one challenge (got '+one8.challenges.length+')');
+        assert(one8.challenges[0].idx===0, 'challenge at the event challengeIndex 0');
+        assert(one8.challenges[0].challenger===C.toLowerCase(), 'challenge carries the event challenger C (got '+one8.challenges[0].challenger+')');
+        assert(one8.challenges[0].content==='linked challenge content', 'challenge carries the event content');
+        // Linkage: the OTHER bond (7) must have NO challenge — the challenge is
+        // bound to bondId 8, not leaked onto a sibling bond.
+        const one7 = await j('/api/bonds/7?chainId=1');
+        assert(one7.bond && one7.bond.bondId===7, 'bond 7 served');
+        assert(one7.challenges.length===0, 'bond 7 has NO challenge (linkage is per-bondId; got '+one7.challenges.length+')');
+        // And the challenger filter returns ONLY bond 8.
+        const byChal = await j('/api/bonds?chainId=1&challenger='+C);
+        assert(byChal.bonds.length===1 && byChal.bonds[0].bondId===8, 'challenger C → only bond 8 (got '+JSON.stringify(byChal.bonds.map(b=>b.bondId))+')');
+        console.log('OK challenge linkage to bond 8 only'); srv.close(); process.exit(0);
+      }});
+    `;
+    const r = runEsm(src, {
+      MAINNET_V6_CONTRACT: "0x6B24380B1980db3e2DfDd2b62f5ed3E7E88DFA43",
+      MAINNET_V6_START_BLOCK: "100",
+    });
+    expect(r.status, r.stdout + r.stderr).to.equal(0);
+  });
+
+  // LIST META + LIMIT + ORDERING. Asserts the ACTUAL contract of
+  // handleBondsList / db.listBonds (read from the source, not invented):
+  //   • meta.blocksBehindHead = chain_heads.head − index_checkpoints.last_block.
+  //   • `limit` clamps the row COUNT on the all/poster/judge paths (SQL LIMIT ?,
+  //     itself capped at 500 by Math.min in handleBondsList).
+  //   • ordering is deterministic by bond_id DESC.
+  //   • REAL-BEHAVIOR NOTE (asserted as-is, not a wish): the CHALLENGER filter
+  //     path in db.listBonds does NOT apply `limit` — it maps every DISTINCT
+  //     bond_id from the challenges table. We assert that real behavior so the
+  //     test documents it and would catch a silent change either way.
+  it("attaches meta.blocksBehindHead and honors the limit/ordering contract (challenger path ignores limit — asserted as-is)", () => {
+    const src = `
+      import db from './backend/db.mjs';
+      import { startApiServer } from './backend/api-server.mjs';
+      const assert = (c,m)=>{ if(!c){ console.error('FAIL', m); process.exit(2);} };
+      const chainId = 1;
+      const base = { token:'0xtok', bond_amount:'1', challenge_amount:'1', judge_fee:'0',
+        acceptance_delay:1, ruling_buffer:1, max_challenges:5, claim_hash:'0x', claim_version:0,
+        pending_count:0, challenge_count:0, settled:false, closed:false, created_block:1 };
+      const P = '0x'+'77'.repeat(20);   // shared poster across all bonds
+      const C = '0x'+'99'.repeat(20);   // shared challenger across all bonds
+      // 6 bonds, each by poster P and challenged by C, so the count clamp and the
+      // ordering are observable on every path.
+      for (let i = 0; i < 6; i++) {
+        db.upsertBond({ ...base, chain_id:chainId, bond_id:i, poster:P, judge:'0xj'+i, judge_profile_id:i, claim_content:'b'+i });
+        db.upsertChallenge({ chain_id:chainId, bond_id:i, idx:0, challenger:C, status:0, content:'x'+i });
+      }
+      // Indexer lag: head 1500, indexed-through 1490 => blocksBehindHead = 10.
+      db.setIndexCheckpoint(chainId, 1490);
+      db.setChainHead(chainId, 1500);
+
+      const srv = startApiServer({ port: 3396, host: '127.0.0.1', onListen: async () => {
+        const j = async (p) => (await fetch('http://127.0.0.1:3396'+p)).json();
+
+        // --- meta.blocksBehindHead lag, relative to chain_heads vs checkpoint ---
+        const all = await j('/api/bonds?chainId='+chainId);
+        assert(all.meta, 'list attaches meta');
+        assert(all.meta.chainId===chainId, 'meta.chainId');
+        assert(all.meta.headBlock===1500, 'meta.headBlock=1500 (got '+all.meta.headBlock+')');
+        assert(all.meta.indexedThroughBlock===1490, 'meta.indexedThroughBlock=1490 (got '+all.meta.indexedThroughBlock+')');
+        assert(all.meta.blocksBehindHead===10, 'meta.blocksBehindHead = head-indexed = 10 (got '+all.meta.blocksBehindHead+')');
+
+        // --- ordering: deterministic by bondId DESC ---
+        assert(all.bonds.length===6, 'all 6 bonds with no limit (got '+all.bonds.length+')');
+        const ids = all.bonds.map(b=>b.bondId);
+        assert(JSON.stringify(ids)===JSON.stringify([5,4,3,2,1,0]), 'ordering is bondId DESC (got '+JSON.stringify(ids)+')');
+
+        // --- limit clamps the COUNT on the all path ---
+        const lim2 = await j('/api/bonds?chainId='+chainId+'&limit=2');
+        assert(lim2.bonds.length===2, 'limit=2 clamps all-path count to 2 (got '+lim2.bonds.length+')');
+        assert(JSON.stringify(lim2.bonds.map(b=>b.bondId))===JSON.stringify([5,4]), 'limit keeps the DESC head (got '+JSON.stringify(lim2.bonds.map(b=>b.bondId))+')');
+
+        // --- limit clamps the COUNT on the poster path too ---
+        const posLim2 = await j('/api/bonds?chainId='+chainId+'&poster='+P+'&limit=2');
+        assert(posLim2.bonds.length===2, 'limit=2 clamps poster-path count to 2 (got '+posLim2.bonds.length+')');
+
+        // --- REAL BEHAVIOR (asserted as-is): the CHALLENGER path IGNORES limit. ---
+        // db.listBonds' challenger branch maps every DISTINCT bond_id from the
+        // challenges table and does not thread the limit param into that query, so
+        // limit=2 still returns all 6. This is the current contract; the test pins it.
+        const chalLim2 = await j('/api/bonds?chainId='+chainId+'&challenger='+C+'&limit=2');
+        assert(chalLim2.bonds.length===6, 'challenger path IGNORES limit (returns all 6 even with limit=2; got '+chalLim2.bonds.length+')');
+        // ordering on the challenger path is still bondId DESC.
+        assert(JSON.stringify(chalLim2.bonds.map(b=>b.bondId))===JSON.stringify([5,4,3,2,1,0]), 'challenger path ordered bondId DESC (got '+JSON.stringify(chalLim2.bonds.map(b=>b.bondId))+')');
+
+        console.log('OK meta lag + limit clamp + ordering (challenger ignores limit)'); srv.close(); process.exit(0);
+      }});
+    `;
+    const r = runEsm(src);
+    expect(r.status, r.stdout + r.stderr).to.equal(0);
+  });
 });
 
 describe("notify register (email-honesty)", function () {

@@ -552,3 +552,21 @@ crosses 0.05 ETH, run the live V7 capability journey; otherwise no new code chan
   My-Bonds challenger+judge listing) × lifecycles + edge/robustness (capacity-full, multi-challenger queue, wrong-chain
   guard, contract-absent, tx-cancelled) — hardhat 1066/0, docker e2e 76 passed/4 skipped (stable ×2), lint EXIT=0 (G1 39).
   Judge-flow display bugs fixed. No contract change. Shipped to bond.futarchy.ai.
+
+## Iteration 36 — 2026-06-06 — indexer role-mapping coverage (event → role column → /api/bonds?role) (PROGRESS)
+- Owner scrutinized indexer test coverage. Found the real gap: the existing tests SEED the DB then test the filter, so the
+  WATCHER's event→column mapping (Challenged.args.challenger → challenger column; BondCreated → poster/judge) wasn't proven
+  end-to-end — exactly the chain My-Bonds-as-challenger/as-judge relies on on the live indexer-first path.
+- Added 3 backend tests (test/backend/readModelAndIndexer.test.js), all driving the REAL watcher (indexChain→indexLogs),
+  NOT db-seeding: (1) a real BondCreated+Challenged through the watcher are served by /api/bonds?poster/?judge/?challenger
+  (distinct P/J/C addresses; ?challenger=P and =J must return 0 → non-vacuous; mutation-verified: swapping the challenger
+  mapping makes both fail); (2) the watcher-written challenge is linked to the correct bondId (lands on bond 8 not sibling 7)
+  with the right challenger+content; (3) list meta.blocksBehindHead + limit clamp + ordering — asserted AS-IS against the
+  real code (challenger filter ignores limit; ordering bond_id DESC — honest, not invented).
+- Adversarial panel caught the 2 E2E spawn tests were FLAKY (~1/10 full-suite runs) — load-starved child read transiently
+  empty. I HARDENED them: the POSITIVE role queries poll-until-present (10s deadline) while the NEGATIVE checks stay direct,
+  so a true mis-map still fails. Re-verified MYSELF: isolated 18/18; FULL suite ×4 = 1069 passing / 0 failing each (flake gone).
+- Test-only change; no app/contract/backend code touched. lint unaffected (scans frontend).
+- NOTE (separate, live): this proves the indexer LOGIC; it does NOT catch the PROD read-model staleness I found separately
+  (mainnet bond #1 settled=true on-chain but settled=false in the indexer; list meta blocksBehindHead 1328 vs /health lag 12).
+  That live discrepancy needs a prod investigation (BondWithdrawn re-snapshot / checkpoint / lag-reporting), not a unit test.
