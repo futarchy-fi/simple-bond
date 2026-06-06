@@ -492,3 +492,15 @@ crosses 0.05 ETH, run the live V7 capability journey; otherwise no new code chan
   not a push; (2) Sepolia public RPC pools lag reads a block or two, so balance assertions poll-until-visible.
 - Gas spent across the journey ≈ 0.02 ETH; deployer still well funded. main untouched (this is on-chain validation, not a
   code-path change to mainnet v0.6). The v0.7 mechanism is now proven end-to-end on a live chain, not just locally.
+
+## Iteration 33 — 2026-06-06 — My Bonds e2e: challenger + judge listings (coverage) (PROGRESS)
+- Owner goal set: comprehensive e2e for ALL flows (poster/challenger/judge) × ALL bond lifecycles on the v0.6 contracts
+  (NO contract change), then deploy the frontend to bond.futarchy.ai once green. This is increment 1.
+- Closed the My-Bonds listing gap (was surface-only for challenger/judge): NEW e2e tests on the v6 fixture —
+  challenger-flows D1b (challenge as challenger1 → /#my shows the bond under #myChallenger AND NOT #myPoster) and
+  judge-flows E1b (operator of the bond's ManualJudgeV6 → /#my shows it under #myJudge AND NOT #myPoster). The
+  not-under-#myPoster assertions make them role-correct (non-vacuous), not just "any bond shows".
+- Gate re-run MYSELF: docker e2e 62 passed / 4 skipped (was 60; +2). Restored e2e-churned screenshots. No contract/frontend
+  change (specs only) so no hardhat/lint needed.
+- A coverage-gap audit workflow (w0aw6ld3x) is running to map the remaining flows×lifecycles for FULL coverage before the
+  prod deploy.

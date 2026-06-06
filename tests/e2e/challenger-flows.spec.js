@@ -55,6 +55,37 @@ test.describe("D — challenger flows + C3 concede", () => {
         expect(c.status).toBe(0n); // Pending
     });
 
+    test("D1b — My Bonds lists the bond under 'As Challenger' for the wallet that challenged", async ({
+        page,
+        deployed,
+        switchAccount,
+    }) => {
+        test.setTimeout(120_000);
+        const id = await createBondViaUI(page);
+        await switchAccount(KEYS.challenger1);
+        await page.reload();
+        await gotoBondDetail(page, id);
+        await page.fill("#chContent", "challenger My-Bonds listing");
+        await page.locator("#challengeBtn").click();
+        // Wait until the challenge lands on-chain (so the My-Bonds scan sees it).
+        const start = Date.now();
+        while (Date.now() - start < 60_000) {
+            if ((await getChallengeCount(deployed, id)) === 1n) break;
+            await new Promise((r) => setTimeout(r, 500));
+        }
+        expect(await getChallengeCount(deployed, id)).toBe(1n);
+        // As challenger1, the bond must populate under "As Challenger"...
+        await page.goto("/#my");
+        await page.locator('button.tab[data-route="my"]').click({ timeout: 5000 }).catch(() => {});
+        await expect(
+            page.locator(`#myChallenger .bond-list-item[data-bondid="${id}"]`)
+        ).toBeVisible({ timeout: 20_000 });
+        // ...and NOT under "As Poster" (role-correct listing, not just "any bond").
+        await expect(
+            page.locator(`#myPoster .bond-list-item[data-bondid="${id}"]`)
+        ).toHaveCount(0);
+    });
+
     test("C3 — poster concedes a specific challenge", async ({ page, deployed, switchAccount }) => {
         test.setTimeout(120_000);
         const id = await createBondViaUI(page);

@@ -106,6 +106,28 @@ test.describe("E — judge flows", () => {
         expect(n).toBeGreaterThan(1n);
     });
 
+    test("E1b — My Bonds lists the bond under 'As Judge' for the judge operator", async ({
+        page,
+        deployed,
+        switchAccount,
+    }) => {
+        test.setTimeout(120_000);
+        // Poster creates a bond judged by the canonical ManualJudgeV6.
+        const id = await createBondViaUI(page);
+        // Become that judge's operator (marks myJudgeContract in localStorage).
+        await asOperator(page, deployed, switchAccount);
+        // As the operator, the bond must populate under "As Judge"...
+        await page.goto("/#my");
+        await page.locator('button.tab[data-route="my"]').click({ timeout: 5000 }).catch(() => {});
+        await expect(
+            page.locator(`#myJudge .bond-list-item[data-bondid="${id}"]`)
+        ).toBeVisible({ timeout: 20_000 });
+        // ...and NOT under "As Poster" (the operator neither posted nor challenged it).
+        await expect(
+            page.locator(`#myPoster .bond-list-item[data-bondid="${id}"]`)
+        ).toHaveCount(0);
+    });
+
     test("E2 — deploy a fresh ManualJudgeV6 (caller becomes operator)", async ({
         page,
         deployed,
