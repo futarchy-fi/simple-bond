@@ -570,3 +570,21 @@ crosses 0.05 ETH, run the live V7 capability journey; otherwise no new code chan
 - NOTE (separate, live): this proves the indexer LOGIC; it does NOT catch the PROD read-model staleness I found separately
   (mainnet bond #1 settled=true on-chain but settled=false in the indexer; list meta blocksBehindHead 1328 vs /health lag 12).
   That live discrepancy needs a prod investigation (BondWithdrawn re-snapshot / checkpoint / lag-reporting), not a unit test.
+
+## Iteration 37 — 2026-06-06 — honest /api/notify/health (bug #2: status was hardcoded 'ok') + bond→shared-proxy
+- INCIDENT (found via the live bond #1 "settled" check): mainnet indexer was FROZEN ~5h. Root cause: the Alchemy key hit
+  its monthly 429 quota, and bond-notify's OWN ethers FallbackProvider does NOT fail over on 429 (unlike the shared
+  rpc_proxy.py which does). Two systems both depended on the same Alchemy key; bond had no failover + no monitoring.
+- FIX #1 (infra, VM env): repointed bond-notify MAINNET_RPCS/MAINNET_RPC → the shared proxy http://172.17.0.1:8546
+  (multi-upstream + working 429 failover). Verified: lag ~14, bond #1 settled, 0 dead-letters. (gitignored env; not in repo.)
+- FIX #2 (code, this commit): backend/api-server.mjs handleHealth no longer returns a hardcoded {status:'ok'}. New pure
+  helper healthFromIndexer(entries,{lagThreshold,tickThreshold}) derives an honest overall status — "down" (no entries /
+  null head / never-ticked, HTTP 503), "degraded" (any chain: lag>HEALTH_LAG_THRESHOLD(200) | deadLetters>0 |
+  headAgeSeconds>HEALTH_TICK_AGE_THRESHOLD(180), HTTP 200), else "ok". Per-chain entries enriched additively with
+  {healthy,reasons}; ALL existing fields preserved (monitor.mjs + frontend unaffected). Response adds {thresholds}.
+- 9 new tests (5 unit on the helper + 4 driving the real endpoint): healthy→ok; lag→degraded; DEAD-LETTER→degraded (the
+  exact bug); STALE TICK→degraded (the frozen-indexer signal, since head+checkpoint freeze together so lag stays small);
+  never-ticked/no-entries→down(503). Non-vacuous (a hardcoded ok fails them). Adversarial panel 2/2.
+- Gates re-run MYSELF: hardhat 1078/0; lint EXIT=0. Deploying to VM below.
+- NEXT (#3): add a "Bond Indexer (Mainnet)" component to the futarchy status bot reading /api/notify/health (now that it
+  tells the truth). Also flagged: bond's ethers-FallbackProvider 429 no-failover is now MOOT (proxy handles it) — left as-is.

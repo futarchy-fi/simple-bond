@@ -348,6 +348,232 @@ describe("notify register (email-honesty)", function () {
   });
 });
 
+describe("health endpoint honesty (overall status, not hardcoded ok)", function () {
+  this.timeout(20000);
+
+  // ── Pure helper unit tests: healthFromIndexer maps injected indexerStatus()
+  // entries to an overall { status, indexer } WITHOUT a server, so the status
+  // logic is provable in isolation. Each case is non-vacuous: it constructs the
+  // single offending field and asserts both the per-entry healthy flag/reason
+  // and the overall status. The old hardcoded "ok" would FAIL every degraded/
+  // down case below.
+  it("UNIT helper: healthy chain (fresh head, small lag, 0 dead-letters, fresh tick) => ok + entry.healthy true", () => {
+    const src = `
+      import { healthFromIndexer } from './backend/api-server.mjs';
+      const assert = (c,m)=>{ if(!c){ console.error('FAIL', m); process.exit(2);} };
+      const { status, indexer } = healthFromIndexer(
+        [{ chainId:1, indexedThroughBlock:1490, headBlock:1500, blocksBehindHead:10, headUpdatedAt:'x', headAgeSeconds:5, deadLetters:0, blockedFromBlock:null }],
+        { lagThreshold:200, tickThreshold:180 });
+      assert(status==='ok', 'overall ok (got '+status+')');
+      assert(indexer.length===1, 'one entry');
+      assert(indexer[0].healthy===true, 'entry.healthy true');
+      assert(Array.isArray(indexer[0].reasons) && indexer[0].reasons.length===0, 'no reasons');
+      // additive, not destructive: existing fields preserved.
+      assert(indexer[0].chainId===1 && indexer[0].blocksBehindHead===10 && indexer[0].deadLetters===0 && indexer[0].headAgeSeconds===5, 'existing fields preserved');
+      console.log('OK'); process.exit(0);
+    `;
+    const r = runEsm(src);
+    expect(r.status, r.stdout + r.stderr).to.equal(0);
+  });
+
+  it("UNIT helper: lag > threshold => degraded + entry.healthy false (head present, ticked)", () => {
+    const src = `
+      import { healthFromIndexer } from './backend/api-server.mjs';
+      const assert = (c,m)=>{ if(!c){ console.error('FAIL', m); process.exit(2);} };
+      const { status, indexer } = healthFromIndexer(
+        [{ chainId:1, indexedThroughBlock:1000, headBlock:1500, blocksBehindHead:500, headUpdatedAt:'x', headAgeSeconds:5, deadLetters:0, blockedFromBlock:null }],
+        { lagThreshold:200, tickThreshold:180 });
+      assert(status==='degraded', 'overall degraded (got '+status+')');
+      assert(indexer[0].healthy===false, 'entry unhealthy');
+      assert(indexer[0].reasons.some(r=>/lag 500/.test(r)), 'reason names the lag (got '+JSON.stringify(indexer[0].reasons)+')');
+      console.log('OK'); process.exit(0);
+    `;
+    const r = runEsm(src);
+    expect(r.status, r.stdout + r.stderr).to.equal(0);
+  });
+
+  it("UNIT helper: deadLetters > 0 => degraded (THE bug: a dead-letter must not read as ok)", () => {
+    const src = `
+      import { healthFromIndexer } from './backend/api-server.mjs';
+      const assert = (c,m)=>{ if(!c){ console.error('FAIL', m); process.exit(2);} };
+      // Lag small, fresh tick, head present — ONLY the dead-letter is wrong, so
+      // this isolates that a poison range alone flips ok -> degraded.
+      const { status, indexer } = healthFromIndexer(
+        [{ chainId:1, indexedThroughBlock:1490, headBlock:1500, blocksBehindHead:10, headUpdatedAt:'x', headAgeSeconds:5, deadLetters:1, blockedFromBlock:123 }],
+        { lagThreshold:200, tickThreshold:180 });
+      assert(status==='degraded', 'overall degraded on a dead-letter (got '+status+') — must NOT be ok');
+      assert(indexer[0].healthy===false, 'entry unhealthy');
+      assert(indexer[0].reasons.some(r=>/dead-letter/.test(r) && /123/.test(r)), 'reason names the dead-letter + blockedFromBlock (got '+JSON.stringify(indexer[0].reasons)+')');
+      console.log('OK'); process.exit(0);
+    `;
+    const r = runEsm(src);
+    expect(r.status, r.stdout + r.stderr).to.equal(0);
+  });
+
+  it("UNIT helper: stale tick (headAgeSeconds > threshold) => degraded (frozen-indexer signal; lag stays small)", () => {
+    const src = `
+      import { healthFromIndexer } from './backend/api-server.mjs';
+      const assert = (c,m)=>{ if(!c){ console.error('FAIL', m); process.exit(2);} };
+      // The real frozen-indexer shape: head+checkpoint froze together (RPC 429)
+      // so lag is small AND no dead-letter yet, but the tick has aged out far
+      // past the threshold. ONLY headAgeSeconds is the signal here.
+      const { status, indexer } = healthFromIndexer(
+        [{ chainId:1, indexedThroughBlock:1500, headBlock:1500, blocksBehindHead:0, headUpdatedAt:'old', headAgeSeconds:18000, deadLetters:0, blockedFromBlock:null }],
+        { lagThreshold:200, tickThreshold:180 });
+      assert(status==='degraded', 'overall degraded on a stale tick (got '+status+')');
+      assert(indexer[0].healthy===false, 'entry unhealthy on stale tick');
+      assert(indexer[0].reasons.some(r=>/stale tick/.test(r) && /18000/.test(r)), 'reason names the stale tick age (got '+JSON.stringify(indexer[0].reasons)+')');
+      console.log('OK'); process.exit(0);
+    `;
+    const r = runEsm(src);
+    expect(r.status, r.stdout + r.stderr).to.equal(0);
+  });
+
+  it("UNIT helper: never-ticked entry (headAgeSeconds null) => down; and NO entries => down", () => {
+    const src = `
+      import { healthFromIndexer } from './backend/api-server.mjs';
+      const assert = (c,m)=>{ if(!c){ console.error('FAIL', m); process.exit(2);} };
+      // Never ticked: no head timestamp and lag unknown.
+      const a = healthFromIndexer(
+        [{ chainId:1, indexedThroughBlock:null, headBlock:null, blocksBehindHead:null, headUpdatedAt:null, headAgeSeconds:null, deadLetters:0, blockedFromBlock:null }],
+        { lagThreshold:200, tickThreshold:180 });
+      assert(a.status==='down', 'never-ticked => down (got '+a.status+')');
+      assert(a.indexer[0].healthy===false, 'never-ticked entry unhealthy');
+      assert(a.indexer[0].reasons.some(r=>/never ticked/.test(r)), 'reason names never-ticked (got '+JSON.stringify(a.indexer[0].reasons)+')');
+      // No entries at all => down (the indexer is not even registered).
+      const b = healthFromIndexer([], { lagThreshold:200, tickThreshold:180 });
+      assert(b.status==='down', 'no entries => down (got '+b.status+')');
+      assert(b.indexer.length===0, 'no indexer entries');
+      console.log('OK'); process.exit(0);
+    `;
+    const r = runEsm(src);
+    expect(r.status, r.stdout + r.stderr).to.equal(0);
+  });
+
+  // ── FULL ENDPOINT (wiring) tests: start the real api-server, GET the real
+  // /api/notify/health route, and assert the JSON status — so handleHealth's use
+  // of the helper + the db.indexerStatus() read are covered, not just the helper.
+  // These seed the DB through db.* so the indexerStatus() shape is exercised.
+  it("ENDPOINT: a healthy chain serves status 'ok' over real /api/notify/health (HTTP 200)", () => {
+    const src = `
+      import db from './backend/db.mjs';
+      import { startApiServer } from './backend/api-server.mjs';
+      const assert = (c,m)=>{ if(!c){ console.error('FAIL', m); process.exit(2);} };
+      // Fresh head (datetime('now') via setChainHead) + tiny lag + no dead-letters.
+      db.setIndexCheckpoint(1, 1499);
+      db.setChainHead(1, 1500);
+      const srv = startApiServer({ port: 3397, host: '127.0.0.1', onListen: async () => {
+        // Poll-until-expected (positive check) so a CPU-starved child is deterministic.
+        let resp, body;
+        for (let i=0;i<50;i++){
+          try { resp = await fetch('http://127.0.0.1:3397/api/notify/health'); body = await resp.json(); if (body.status==='ok') break; } catch(_){}
+          await new Promise(x=>setTimeout(x,200));
+        }
+        assert(resp.status===200, 'HTTP 200 for ok (got '+resp.status+')');
+        assert(body.status==='ok', 'overall status ok (got '+body.status+')');
+        const e = body.indexer.find(x=>x.chainId===1);
+        assert(e && e.healthy===true, 'chain-1 entry healthy');
+        // Existing fields the monitor/frontend read are still present.
+        assert(e.blocksBehindHead===1, 'blocksBehindHead preserved (got '+e.blocksBehindHead+')');
+        assert(typeof e.headAgeSeconds==='number', 'headAgeSeconds preserved');
+        assert(body.thresholds && body.thresholds.lagThreshold===200 && body.thresholds.tickThreshold===180, 'thresholds reported');
+        console.log('OK endpoint ok'); srv.close(); process.exit(0);
+      }});
+    `;
+    const r = runEsm(src);
+    expect(r.status, r.stdout + r.stderr).to.equal(0);
+  });
+
+  it("ENDPOINT: a dead-letter makes /api/notify/health report 'degraded' (no longer lies), still HTTP 200", () => {
+    const src = `
+      import db from './backend/db.mjs';
+      import { startApiServer } from './backend/api-server.mjs';
+      const assert = (c,m)=>{ if(!c){ console.error('FAIL', m); process.exit(2);} };
+      // Fresh head + tiny lag, but a recorded dead-letter (the real bug we hit:
+      // a poison range was served as status:"ok"). It must now read degraded.
+      db.setIndexCheckpoint(1, 1499);
+      db.setChainHead(1, 1500);
+      db.recordDeadLetter(1, 1234, 1234, 'RPC 429 poison range');
+      assert(db.getDeadLetters(1).length===1, 'dead-letter seeded');
+      const srv = startApiServer({ port: 3398, host: '127.0.0.1', onListen: async () => {
+        let resp, body;
+        for (let i=0;i<50;i++){
+          try { resp = await fetch('http://127.0.0.1:3398/api/notify/health'); body = await resp.json(); if (body.status==='degraded') break; } catch(_){}
+          await new Promise(x=>setTimeout(x,200));
+        }
+        assert(body.status==='degraded', 'overall degraded on a dead-letter (got '+body.status+') — NOT ok');
+        assert(resp.status===200, 'HTTP 200 kept for degraded so r.ok consumers still work (got '+resp.status+')');
+        const e = body.indexer.find(x=>x.chainId===1);
+        assert(e && e.healthy===false, 'chain-1 entry unhealthy');
+        assert(e.deadLetters===1 && e.blockedFromBlock===1234, 'dead-letter fields preserved on the entry');
+        assert(e.reasons.some(r=>/dead-letter/.test(r)), 'reason mentions the dead-letter (got '+JSON.stringify(e.reasons)+')');
+        console.log('OK endpoint degraded'); srv.close(); process.exit(0);
+      }});
+    `;
+    const r = runEsm(src);
+    expect(r.status, r.stdout + r.stderr).to.equal(0);
+  });
+
+  it("ENDPOINT: a frozen indexer (stale tick) makes /api/notify/health report 'degraded' (HTTP 200)", () => {
+    const src = `
+      import db from './backend/db.mjs';
+      import Database from 'better-sqlite3';
+      import { DB_PATH } from './backend/config.mjs';
+      import { startApiServer } from './backend/api-server.mjs';
+      const assert = (c,m)=>{ if(!c){ console.error('FAIL', m); process.exit(2);} };
+      // The frozen-indexer shape: seed head=checkpoint (lag 0, no dead-letter),
+      // then push chain_heads.updated_at far into the past so the tick is stale.
+      // On an RPC outage head+checkpoint freeze together so lag stays small —
+      // headAgeSeconds is the only honest signal, and it must flip to degraded.
+      db.setIndexCheckpoint(1, 1500);
+      db.setChainHead(1, 1500);
+      const raw = new Database(DB_PATH);
+      raw.prepare("UPDATE chain_heads SET updated_at = datetime('now','-18000 seconds') WHERE chain_id=1").run();
+      raw.close();
+      const s = db.indexerStatus().find(x=>x.chainId===1);
+      assert(s.blocksBehindHead===0, 'lag is 0 (frozen together) so lag would NOT catch it');
+      assert(s.deadLetters===0, 'no dead-letter so dead-letter would NOT catch it either');
+      assert(s.headAgeSeconds>180, 'tick aged out (got '+s.headAgeSeconds+') — the real signal');
+      const srv = startApiServer({ port: 3399, host: '127.0.0.1', onListen: async () => {
+        let resp, body;
+        for (let i=0;i<50;i++){
+          try { resp = await fetch('http://127.0.0.1:3399/api/notify/health'); body = await resp.json(); if (body.status==='degraded') break; } catch(_){}
+          await new Promise(x=>setTimeout(x,200));
+        }
+        assert(body.status==='degraded', 'frozen indexer => degraded (got '+body.status+')');
+        assert(resp.status===200, 'HTTP 200 kept for degraded (got '+resp.status+')');
+        const e = body.indexer.find(x=>x.chainId===1);
+        assert(e && e.healthy===false && e.reasons.some(r=>/stale tick/.test(r)), 'entry unhealthy with stale-tick reason (got '+JSON.stringify(e.reasons)+')');
+        console.log('OK endpoint frozen->degraded'); srv.close(); process.exit(0);
+      }});
+    `;
+    const r = runEsm(src);
+    expect(r.status, r.stdout + r.stderr).to.equal(0);
+  });
+
+  it("ENDPOINT: no indexer entries (never started) => status 'down' over real /api/notify/health (HTTP 503)", () => {
+    const src = `
+      import { startApiServer } from './backend/api-server.mjs';
+      const assert = (c,m)=>{ if(!c){ console.error('FAIL', m); process.exit(2);} };
+      // Isolated temp DB with NO chain heads/checkpoints/dead-letters => the
+      // indexer never started; the endpoint must say 'down', not 'ok'.
+      const srv = startApiServer({ port: 3400, host: '127.0.0.1', onListen: async () => {
+        let resp, body;
+        for (let i=0;i<50;i++){
+          try { resp = await fetch('http://127.0.0.1:3400/api/notify/health'); body = await resp.json(); if (body.status==='down') break; } catch(_){}
+          await new Promise(x=>setTimeout(x,200));
+        }
+        assert(body.status==='down', 'no entries => down (got '+body.status+')');
+        assert(resp.status===503, 'HTTP 503 only on overall down (got '+resp.status+')');
+        assert(Array.isArray(body.indexer) && body.indexer.length===0, 'indexer array empty but present');
+        console.log('OK endpoint down'); srv.close(); process.exit(0);
+      }});
+    `;
+    const r = runEsm(src);
+    expect(r.status, r.stdout + r.stderr).to.equal(0);
+  });
+});
+
 describe("indexer resilience", function () {
   this.timeout(20000);
 

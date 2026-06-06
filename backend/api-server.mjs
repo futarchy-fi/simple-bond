@@ -223,15 +223,92 @@ function handleUnsubscribe(req, res) {
   redirect(res, `${FRONTEND_BASE_URL}?notify=unsubscribed`);
 }
 
+// Env-overridable health thresholds, mirroring scripts/monitor.mjs defaults so
+// the endpoint and the synthetic monitor agree on what "unhealthy" means.
+//   HEALTH_LAG_THRESHOLD       — max acceptable blocksBehindHead (default 200)
+//   HEALTH_TICK_AGE_THRESHOLD  — max acceptable headAgeSeconds (default 180);
+//                                a wedged watcher freezes BOTH head + checkpoint
+//                                together on an RPC outage, so lag stays small
+//                                and tick age is the real frozen-indexer signal.
+export const HEALTH_LAG_THRESHOLD = Number(process.env.HEALTH_LAG_THRESHOLD || 200);
+export const HEALTH_TICK_AGE_THRESHOLD = Number(process.env.HEALTH_TICK_AGE_THRESHOLD || 180);
+
+// Pure, unit-testable status logic. Takes the db.indexerStatus() entries and
+// returns { status, indexer } where `indexer` is the SAME entries with an
+// additive { healthy, reasons } pair on each (existing fields are preserved so
+// scripts/monitor.mjs + the frontend keep reading chainId/blocksBehindHead/
+// deadLetters/headAgeSeconds/... unchanged). Overall status:
+//   "down"     — no entries at all, OR any chain has a null head / never ticked
+//                (the indexer is not even producing a heartbeat).
+//   "degraded" — every chain has a head + has ticked, but at least one is over a
+//                lag/tick threshold or has a dead-letter.
+//   "ok"       — every chain is fresh, within lag budget, and dead-letter-free.
+export function healthFromIndexer(entries, { lagThreshold = HEALTH_LAG_THRESHOLD, tickThreshold = HEALTH_TICK_AGE_THRESHOLD } = {}) {
+  const list = Array.isArray(entries) ? entries : [];
+  let anyDown = false;
+  let anyUnhealthy = false;
+
+  const indexer = list.map((e) => {
+    const reasons = [];
+    let down = false; // a "down"-class condition (no head / never ticked)
+
+    // Never ticked (no head timestamp) — the indexer is not producing a
+    // heartbeat at all; this is a down-class signal, not merely degraded.
+    if (e.headAgeSeconds == null) {
+      reasons.push('never ticked (no head timestamp)');
+      down = true;
+    } else if (e.headAgeSeconds > tickThreshold) {
+      // Stale tick — the watcher is wedged (e.g. RPC 429): head + checkpoint
+      // both freeze, so lag looks small while the tick ages out.
+      reasons.push(`stale tick: headAgeSeconds ${e.headAgeSeconds} > ${tickThreshold}`);
+    }
+
+    // Lag unknown means we cannot even compute distance-from-head (missing head
+    // or checkpoint) — treat as down-class, like a missing heartbeat.
+    if (e.blocksBehindHead == null) {
+      reasons.push('lag unknown (head/checkpoint missing)');
+      down = true;
+    } else if (e.blocksBehindHead > lagThreshold) {
+      reasons.push(`lag ${e.blocksBehindHead} > ${lagThreshold}`);
+    }
+
+    // Dead-lettered (poison-block) ranges freeze the read-model behind them —
+    // THE bug: a dead-letter must never read as ok.
+    if ((e.deadLetters || 0) > 0) {
+      reasons.push(`${e.deadLetters} dead-lettered range(s) from block ${e.blockedFromBlock}`);
+    }
+
+    const healthy = reasons.length === 0;
+    if (!healthy) anyUnhealthy = true;
+    if (down) anyDown = true;
+    return { ...e, healthy, reasons };
+  });
+
+  let status;
+  if (list.length === 0 || anyDown) status = 'down';
+  else if (anyUnhealthy) status = 'degraded';
+  else status = 'ok';
+
+  return { status, indexer };
+}
+
 function handleHealth(req, res) {
-  // Per-chain indexer lag + dead-letter count so a monitor can alert on a
-  // stalled read-model (a stalled indexer used to be served as a healthy HTTP
-  // 200). Each indexer entry carries `deadLetters` (poison-block ranges that
-  // fail even at the 1-block floor) and `blockedFromBlock` (the lowest blocked
-  // range start) so a single poison block can't silently freeze the read-model.
-  let indexer = [];
-  try { indexer = db.indexerStatus(); } catch (_) { indexer = []; }
-  json(res, 200, { status: 'ok', uptime: process.uptime(), indexer });
+  // Per-chain indexer lag + dead-letter count + tick freshness so a monitor can
+  // alert on a stalled read-model (a stalled indexer USED to be served as a
+  // healthy HTTP 200 — a monitor that lies). Each indexer entry carries
+  // `deadLetters` (poison-block ranges that fail even at the 1-block floor),
+  // `blockedFromBlock` (the lowest blocked range start) and `headAgeSeconds`
+  // (wall-clock tick age) so a single poison block or a frozen watcher can't
+  // silently freeze the read-model. We now derive an HONEST overall `status`
+  // from those fields instead of hardcoding "ok".
+  let entries = [];
+  try { entries = db.indexerStatus(); } catch (_) { entries = []; }
+  const thresholds = { lagThreshold: HEALTH_LAG_THRESHOLD, tickThreshold: HEALTH_TICK_AGE_THRESHOLD };
+  const { status, indexer } = healthFromIndexer(entries, thresholds);
+  // Keep HTTP 200 for ok/degraded so existing r.ok consumers and
+  // scripts/monitor.mjs keep working; only a fully "down" indexer returns 503.
+  const httpStatus = status === 'down' ? 503 : 200;
+  json(res, httpStatus, { status, uptime: process.uptime(), indexer, thresholds });
 }
 
 function handleJudgeProfileGet(req, res) {
