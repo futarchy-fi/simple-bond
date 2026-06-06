@@ -469,3 +469,8 @@ OWNER-GATED (NOT autonomous — these are the real remaining work):
 
 CADENCE FROM HERE: long-interval (hourly) caretaker checks — confirm main stays green and watch the Sepolia balance; if it
 crosses 0.05 ETH, run the live V7 capability journey; otherwise no new code changes. Self-stops at 2026-06-09.
+
+## CARETAKER — 2026-06-05 — Sepolia FUNDED; live journey now gated on the deployer KEY (not funding)
+- Owner sent 0.1 ETH to the deployer 0x693E3FB46Bb36eE43C702FE94f9463df0691b43d (tx 0x5b15b0a8598e217633f6f23c76c927caaad67d4cf1782d42152cf7ddf738cbe9, Sepolia block 10998485); balance now 0.13381 ETH (> 0.05 gate). Funding gate CLEARED.
+- BUT the automated live V7 capability journey still cannot run from this environment: hardhat.config reads the signer from process.env.PRIVATE_KEY and it is UNSET here (getSigners() = 0). So the journey is now gated on the KEY, not funding. To run it: owner exports PRIVATE_KEY (testnet-only) for 0x693E…b43d, OR tests v0.7 via the staging UI (staging.bond.futarchy.ai on Sepolia) / the green local docker e2e. Surfaced to owner.
+- Caretaker gate corrected: the "funded -> run journey" branch now also requires a usable signer before attempting (else it would re-hit the no-signer wall every tick). main green, all gates ✅ throughout.
