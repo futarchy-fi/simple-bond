@@ -317,6 +317,20 @@ const test = base.extend({
                                 return wallet.signTypedData(t.domain, t.types, t.message);
                             }
                             case "eth_sendTransaction": {
+                                // TEST-ONLY hook (fixtures only, never app code):
+                                // when a test arms window.__rejectNextSend, the
+                                // NEXT eth_sendTransaction rejects exactly like a
+                                // user clicking "Reject" in a real wallet — an
+                                // EIP-1193 userRejectedRequest error (code 4001).
+                                // The flag is single-shot (cleared on use) so the
+                                // retry after a cancel goes through normally,
+                                // letting tests prove the UI is not stuck.
+                                if (window.__rejectNextSend) {
+                                    window.__rejectNextSend = false;
+                                    const e = new Error("User rejected the request.");
+                                    e.code = 4001;
+                                    throw e;
+                                }
                                 const [tx] = params;
                                 const rpc = new window.ethers.JsonRpcProvider(window.__mockRpc);
                                 const connected = wallet.connect(rpc);

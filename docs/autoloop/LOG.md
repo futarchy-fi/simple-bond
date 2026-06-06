@@ -504,3 +504,19 @@ crosses 0.05 ETH, run the live V7 capability journey; otherwise no new code chan
   change (specs only) so no hardhat/lint needed.
 - A coverage-gap audit workflow (w0aw6ld3x) is running to map the remaining flows×lifecycles for FULL coverage before the
   prod deploy.
+
+## Iteration 34 — 2026-06-06 — v0.6 e2e edge/robustness buildout (5 specs) (PROGRESS)
+- Owner goal: full e2e for all flows × lifecycles on v0.6 (no contract change) → deploy to bond.futarchy.ai. Coverage-gap
+  audit (w0aw6ld3x) confirmed the v6 happy-path matrix is already covered; the in-scope gaps were edge/robustness states.
+- Added 5 NEW v6 e2e specs (wallet-with-node fixture), all non-vacuous + role/version-correct:
+  challenge-capacity-full (v6 total-ever cap → Challenge card HIDDEN after a resolved challenge at max; locks BACKLOG #1,
+  the mainnet gas-waster), multi-challenger-queue (2 simultaneous pending → 2 distinct per-index cards/targets),
+  bond-detail-chain-guard (challenge + close blocked on wrong chain, no cross-chain leak), contract-absent (getCode 0x →
+  fail-closed banner + writes blocked; getCode error → soft transport note, page still works), tx-cancelled (4001-rejected
+  tx → "Transaction cancelled." + retryable, not stuck).
+- Test-only fixture hooks (no app/contract/backend change): wallet-with-node.js window.__rejectNextSend (single-shot 4001);
+  helpers.js createBondViaUI now honors opts.maxChallenges (fills #cb-max). Adversarial panel 2/2 (non-vacuity + scope).
+- Gate re-run MYSELF: docker e2e 69 passed / 4 skipped (was 62; +7 cases); lint EXIT=0. Restored e2e-churned screenshots.
+- BONUS BUG surfaced (to fix in the judge/UI pass): on a v6 bond at its total-ever cap, the lifecycle banner still says
+  "Open — no challenges yet. Anyone can challenge" while the Challenge card is correctly hidden (banner keys off pendingCount,
+  not total-ever) — a banner-vs-card contradiction, same class as the judge banner over-claim bug.

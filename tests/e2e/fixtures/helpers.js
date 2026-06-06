@@ -55,6 +55,10 @@ async function createBondViaUI(page, opts = {}) {
     // Use shorter timing for tests (in seconds).
     if (opts.acceptanceDelay !== undefined) await page.fill("#cb-ad", String(opts.acceptanceDelay));
     if (opts.rulingBuffer !== undefined) await page.fill("#cb-rb", String(opts.rulingBuffer));
+    // maxChallenges lives on the same (timing) step as #cb-ad/#cb-rb. Fill it so
+    // callers that pin the challenge cap (e.g. capacity / multi-challenger specs)
+    // actually get the cap they ask for instead of the wizard default (10).
+    if (opts.maxChallenges !== undefined) await page.fill("#cb-max", String(opts.maxChallenges));
     await page.click("#wizNext");
     await page.waitForSelector("#wizCreate");
     await page.click("#wizCreate");
