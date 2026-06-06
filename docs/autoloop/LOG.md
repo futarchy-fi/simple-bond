@@ -541,3 +541,14 @@ crosses 0.05 ETH, run the live V7 capability journey; otherwise no new code chan
   catch gained a body); docker e2e 76 passed / 4 skipped (×2 stable, incl. E7/E8/E9 + bond-banner + timeline). Restored
   screenshots. index.html + v6 mirror bodies kept in sync. Adversarial panel 2/2.
 - Next: deploy the better-tested UI to bond.futarchy.ai (verify the deploy mechanism + that prod serves the new build).
+
+## DEPLOY — 2026-06-06 — v0.6 better-tested UI live on bond.futarchy.ai ✅ (GOAL MET)
+- Pushed cae8068 to main; Netlify (zippy-halva-280c00, auto-deploy from main, publishes frontend/) shipped it to
+  bond.futarchy.ai. VERIFIED live: prod rule-fee.js (new in cae8068) is byte-identical to local (4143B); deployed
+  index.html carries judgeStatusCard + "Withdraw fees" + "concession ends"; banner.js has the timing-aware judge clause
+  ("ruling window is not open"); phase.js has the corrected timeout wording. runtime-config serves bondVersion 6 (mainnet,
+  v0.6 — contracts UNCHANGED). Backing indexer /api/notify/health ok (chain1 lag12/dl0, sepolia lag6/dl0).
+- GOAL COMPLETE: comprehensive e2e for all flows (poster C1-C6, challenger D1-D3/C3/D1b, judge E1-E9 incl earnings/withdraw,
+  My-Bonds challenger+judge listing) × lifecycles + edge/robustness (capacity-full, multi-challenger queue, wrong-chain
+  guard, contract-absent, tx-cancelled) — hardhat 1066/0, docker e2e 76 passed/4 skipped (stable ×2), lint EXIT=0 (G1 39).
+  Judge-flow display bugs fixed. No contract change. Shipped to bond.futarchy.ai.
