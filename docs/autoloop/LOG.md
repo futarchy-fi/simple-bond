@@ -588,3 +588,16 @@ crosses 0.05 ETH, run the live V7 capability journey; otherwise no new code chan
 - Gates re-run MYSELF: hardhat 1078/0; lint EXIT=0. Deploying to VM below.
 - NEXT (#3): add a "Bond Indexer (Mainnet)" component to the futarchy status bot reading /api/notify/health (now that it
   tells the truth). Also flagged: bond's ethers-FallbackProvider 429 no-failover is now MOOT (proxy handles it) — left as-is.
+
+## Iteration 38 — 2026-06-06 — #2 deployed+verified live; #3 status-bot Bond Indexer component shipped
+- #2 DEPLOYED: pulled 941b0d2 onto futarchy-indexers VM, rebuilt bond-notify container. Live
+  https://api.bond.futarchy.ai/api/notify/health now returns honest status:ok + {thresholds} + per-chain
+  {healthy,reasons}: chain 1 lag 12 healthy=true, chain 11155111 lag 6 healthy=true. (Would report degraded/down if frozen.)
+- #3 DONE (code, in ~/fleet auto-commit 89b8e437): added checkBondIndexer() to the status bot
+  (infra/lambda/futarchy-telegram-bot/lib/checker.js) — fetches /api/notify/health, maps ok→operational / degraded→degraded
+  / down→outage, focuses chain 1 (mainnet). Wired into telegram-bot.js: change-detection (alerts on status transitions via
+  state.bondIndexerStatus) + heartbeat line via new formatBondIndexer() (telegram.js). Verified live: returns
+  {operational, "lag 12 blocks, 0 dead-letters"}; all 3 states render 🟢/🟡/🔴; node --check clean.
+- All 3 of the user's RPC/health/monitoring steps now done: #1 bond→shared proxy (verified), #2 honest health (deployed),
+  #3 status-bot Bond Indexer (committed). REMAINING for #3 go-live = owner-gated: target Telegram chat ID + OK to host the
+  bot on the futarchy-indexers VM (the bot itself died in the AWS→GCP migration and is not yet running anywhere).
