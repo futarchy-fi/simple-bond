@@ -50,6 +50,19 @@
 // same flags + pendingCount the cards key off), so a CLOSED bond with pending
 // challenges still tells the judge they can rule/reject. The next-move clause is
 // true IFF the corresponding card/button renders.
+//
+// TIMING-AWARENESS (the per-challenge cards are gated on the ruling window, so the
+// banner must be too): the judge's Rule buttons render ONLY when a Pending
+// challenge is inside [rulingWindowStart, rulingDeadline]; reject-as-out-of-scope
+// renders at ANY pending instant. The caller computes judgeCanRuleSomePending
+// (true iff ANY pending challenge is rulable now) from the SAME timing the cards
+// read, and passes it in. The judge clause then says "rule or reject…" only when
+// some challenge is rulable, and "reject … out-of-scope (the ruling window is not
+// open right now)" when challenges are pending but none is rulable (concession
+// window OR past the ruling deadline) — never over-claiming "rule". Likewise the
+// bystander "anyone can challenge" line is gated on hasChallengeCapacity so a
+// capacity-full (but still-labelled-open) v6 bond does not advertise a challenge
+// the (hidden) Challenge card refuses.
 
 (function (root, factory) {
   const api = factory();
@@ -145,6 +158,15 @@
   // @param {boolean} act.settled    terminal — no controls render for anyone
   // @param {number}  act.pendingCount pending challenges in flight
   // @param {boolean} act.canChallenge SAME flag that gates the challenge card
+  // @param {boolean} act.judgeCanRuleSomePending  TRUE iff at least one Pending
+  //   challenge is currently in its ruling window (now in [rulingWindowStart,
+  //   rulingDeadline]) — the SAME timing gate the per-challenge Rule buttons use.
+  //   When false but pendingCount > 0, the judge can ONLY reject-as-out-of-scope
+  //   (no Rule buttons render), so the banner must not over-claim "rule".
+  // @param {boolean} act.hasChallengeCapacity  SAME version-aware gate (frontend/
+  //   challenge-capacity.js) that decides whether ANOTHER challenge may be filed.
+  //   When false on an OPEN bond, capacity is full and the Challenge card is hidden,
+  //   so the bystander banner must not claim "anyone can challenge".
   function nextMoveClause(state, role, act) {
     // Terminal: a settled bond renders no poster/judge/challenge controls at all,
     // so NO role gets a next-move clause — the banner cannot advertise a move the
@@ -174,15 +196,27 @@
         // DISPUTED (open + pending): the poster can close the bond or wait.
         return `Your bond has ${pendingCount} pending challenge${pendingCount === 1 ? '' : 's'}; close the bond or wait for each to resolve below.`;
       case BANNER_ROLE.JUDGE:
-        // The judge's concrete per-challenge move (rule/reject) renders IFF there
-        // is at least one Pending challenge — REGARDLESS of closed. This is the
-        // crux of the fix: do NOT gate on the state label, gate on pendingCount.
+        // The judge's per-challenge moves are TIMING-AWARE — exactly like the
+        // per-challenge cards. A Rule button renders ONLY when a Pending challenge
+        // is inside its ruling window (now in [rulingWindowStart, rulingDeadline]);
+        // reject-as-out-of-scope renders at ANY pending instant (no timing gate).
+        // So the banner must mirror that, NOT just say "rule" whenever pending>0:
+        //   - judgeCanRuleSomePending -> at least one challenge is rulable now:
+        //     "rule or reject each pending challenge below".
+        //   - else, pending>0 (concession window OR past the ruling deadline): the
+        //     ONLY judge move is reject-out-of-scope; do NOT promise "rule".
+        //   - else (nothing pending): no per-challenge move at all.
+        // This is keyed off ACTUAL ACTIONABILITY (timing + pendingCount), still
+        // REGARDLESS of the closed label (rejectChallenge ignores !closed).
         if (pendingCount > 0) {
-          return `You are the judge; rule or reject each pending challenge below.`;
+          if (act.judgeCanRuleSomePending) {
+            return `You are the judge; rule or reject each pending challenge below.`;
+          }
+          return 'You are the judge; reject pending challenges as out-of-scope (the ruling window is not open right now).';
         }
         // Nothing pending (open or closed with 0 pending): no per-challenge ruling
         // to do — the per-challenge buttons render only for Pending challenges.
-        return 'You are the judge; no challenges are pending to rule on.';
+        return 'You are the judge; no challenges are pending.';
       case BANNER_ROLE.CHALLENGER_ELIGIBLE:
         // canChallenge is true only on a non-closed, non-settled bond with room —
         // i.e. exactly OPEN or DISPUTED here. The challenge card IS rendered.
@@ -190,9 +224,13 @@
       case BANNER_ROLE.BYSTANDER:
       default:
         // A non-eligible onlooker. On an open bond anyone (other than the poster)
-        // could in principle challenge; we phrase it neutrally without claiming a
-        // control that isn't rendered for THIS viewer.
-        if (state === BANNER_STATE.OPEN) return 'Anyone can challenge this claim.';
+        // could in principle challenge — BUT only when there is still capacity.
+        // On a v6 bond at its TOTAL-EVER maxChallenges cap (pendingCount may be 0,
+        // so the state label is still "open"), the Challenge card is hidden, so the
+        // banner must NOT claim "anyone can challenge". Gate on the SAME version-
+        // aware hasChallengeCapacity the card uses (BONUS, same class as the JUDGE
+        // over-claim). When capacity is full, fall through to no next-move clause.
+        if (state === BANNER_STATE.OPEN && act.hasChallengeCapacity) return 'Anyone can challenge this claim.';
         return '';
     }
   }
@@ -207,6 +245,16 @@
    * @param {boolean} input.isPoster         SAME flag that gates the poster card
    * @param {boolean} input.isJudgeOperator  SAME flag that gates the judge controls
    * @param {boolean} input.canChallenge     SAME flag that gates the challenge card
+   * @param {boolean} [input.judgeCanRuleSomePending]  TRUE iff at least one Pending
+   *   challenge is currently rulable (now in its [rulingWindowStart, rulingDeadline]
+   *   window) — the SAME timing gate the per-challenge Rule buttons use. Default
+   *   false. When pending>0 but this is false, the judge can ONLY reject-as-out-of-
+   *   scope, so the banner says so instead of promising "rule".
+   * @param {boolean} [input.hasChallengeCapacity]  TRUE iff another challenge may be
+   *   filed under the active chain's rule (the SAME version-aware gate the Challenge
+   *   card uses). Default true (back-compat: callers that don't pass it keep the old
+   *   "Anyone can challenge" wording). On an OPEN-but-capacity-full bond, pass false
+   *   so the bystander banner does not claim "anyone can challenge".
    * @returns {{ state: string, viewerRole: string, headline: string }}
    *   - state: one of BANNER_STATE.* (the lifecycle bucket; identical mapping to
    *     the status badge).
@@ -224,16 +272,28 @@
     const isPoster = !!s.isPoster;
     const isJudgeOperator = !!s.isJudgeOperator;
     const canChallenge = !!s.canChallenge;
+    const judgeCanRuleSomePending = !!s.judgeCanRuleSomePending;
+    // hasChallengeCapacity defaults to TRUE for back-compat: a caller that omits it
+    // keeps the legacy "Anyone can challenge" wording on an open bond. Only an
+    // explicit false (capacity full) suppresses it.
+    const hasChallengeCapacity = s.hasChallengeCapacity === undefined ? true : !!s.hasChallengeCapacity;
 
     const state = classifyState(settled, closed, pendingCount);
     const viewerRole = classifyRole(isPoster, isJudgeOperator, canChallenge);
 
     const lifecycle = lifecycleClause(state, pendingCount);
     // The next-move clause is derived from ACTUAL ACTIONABILITY (settled +
-    // pendingCount + canChallenge), NOT from the state label, so a closed bond with
-    // pending challenges still tells the judge they can rule/reject. `state` is
-    // passed only for poster/bystander phrasing, never to suppress an available move.
-    const nextMove = nextMoveClause(state, viewerRole, { settled, pendingCount, canChallenge });
+    // pendingCount + ruling-window timing + canChallenge + capacity), NOT from the
+    // state label, so a closed bond with pending challenges still tells the judge
+    // they can rule/reject. `state` is passed only for poster/bystander phrasing,
+    // never to suppress an available move.
+    const nextMove = nextMoveClause(state, viewerRole, {
+      settled,
+      pendingCount,
+      canChallenge,
+      judgeCanRuleSomePending,
+      hasChallengeCapacity,
+    });
     const headline = nextMove ? `${lifecycle} ${nextMove}` : lifecycle;
 
     return { state, viewerRole, headline };

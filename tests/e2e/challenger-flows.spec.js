@@ -5,6 +5,7 @@ const { ethers } = require("ethers");
 const {
     createBondViaUI,
     gotoBondDetail,
+    gotoMyBonds,
     readBond,
     readChallenge,
     getChallengeCount,
@@ -75,8 +76,9 @@ test.describe("D — challenger flows + C3 concede", () => {
         }
         expect(await getChallengeCount(deployed, id)).toBe(1n);
         // As challenger1, the bond must populate under "As Challenger"...
-        await page.goto("/#my");
-        await page.locator('button.tab[data-route="my"]').click({ timeout: 5000 }).catch(() => {});
+        // gotoMyBonds re-navigates until the CONNECTED role sections render, so
+        // this assertion is order-independent under full-suite load.
+        await gotoMyBonds(page);
         await expect(
             page.locator(`#myChallenger .bond-list-item[data-bondid="${id}"]`)
         ).toBeVisible({ timeout: 20_000 });

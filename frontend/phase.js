@@ -138,7 +138,7 @@
     switch (role) {
       case ROLES.POSTER:
         return `Ruling window passed ${passed} with no ruling; anyone (including you) can now claim the timeout refund to settle the bond. `
-          + `The judge can still reject this challenge as out-of-scope until then.`;
+          + `The judge can still reject this challenge as out-of-scope until a timeout claim settles the bond.`;
       case ROLES.CHALLENGER:
         return `Ruling window passed ${passed} with no ruling; anyone (including you) can now claim the timeout refund. `
           + `The judge can still reject this challenge as out-of-scope until a timeout claim settles the bond.`;

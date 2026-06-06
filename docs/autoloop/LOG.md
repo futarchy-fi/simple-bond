@@ -520,3 +520,24 @@ crosses 0.05 ETH, run the live V7 capability journey; otherwise no new code chan
 - BONUS BUG surfaced (to fix in the judge/UI pass): on a v6 bond at its total-ever cap, the lifecycle banner still says
   "Open — no challenges yet. Anyone can challenge" while the Challenge card is correctly hidden (banner keys off pendingCount,
   not total-ever) — a banner-vs-card contradiction, same class as the judge banner over-claim bug.
+
+## Iteration 35 — 2026-06-06 — judge-flow UI fixes (the "doesn't show things correctly") + My-Bonds e2e stabilization
+- Owner reported the judge flow shows things wrong. A read-only diagnostic (wjhm1ec4p) pinpointed the bugs; fixed them all
+  (frontend only, v0.6 contracts UNCHANGED), each with a test asserting the corrected behavior:
+  - HIGH judge earnings: were INVISIBLE/unclaimable (withdrawFees had zero callers). Added a hoisted #judgeStatusCard
+    (above the profiles list, outside the "skip this" accordion) that reads the judge contract's claimable fee balance and
+    offers a Withdraw button (withdrawFees). e2e E7: rule with fee → UI shows $0.50 → Withdraw → judge bal 0, operator +0.5.
+  - HIGH banner over-claimed "rule": bondBanner now timing-aware (judgeCanRuleSomePending) — only says "rule" inside the
+    ruling window, else "reject as out-of-scope (ruling window not open)"; + the bonus capacity-full "anyone can challenge"
+    contradiction gated on hasChallengeCapacity. bondBanner.test.js + bond-banner e2e (concession/post-deadline/capacity-full).
+  - MED fee decimals (new pure frontend/rule-fee.js parseRuleFee, token-decimals not hardcoded 18; ruleFee.test.js incl the
+    6-dec case), MED false "Active" on RPC read failure → "Could not read judge state", MED silent-blank judges list →
+    error+Retry, MED My-Bonds As-Judge hint phase-aware (judgeRowHint via phaseFor), MED surface judge status out of the
+    accordion. LOW timing-grid dedup (one T0 row), LOW phase.js poster-timeout wording.
+- Also STABILIZED the My-Bonds listing e2e (D1b challenger, E1b/E8 judge): extracted a shared gotoMyBonds(page) helper
+  (re-navigates until the CONNECTED role sections render) — fixes the order-dependent flake those naive #my navigations had
+  in the full suite. Two consecutive clean full-suite runs confirm determinism.
+- Gates re-run MYSELF: npx hardhat test 1066 passing / 0 failing; lint EXIT=0 (G1 39, even below baseline 40 — a judge-page
+  catch gained a body); docker e2e 76 passed / 4 skipped (×2 stable, incl. E7/E8/E9 + bond-banner + timeline). Restored
+  screenshots. index.html + v6 mirror bodies kept in sync. Adversarial panel 2/2.
+- Next: deploy the better-tested UI to bond.futarchy.ai (verify the deploy mechanism + that prod serves the new build).

@@ -33,12 +33,13 @@ const { bondBanner, BANNER_STATE, BANNER_ROLE } = require("../../frontend/banner
 // combo the old fixture could never reach because it hardcoded pendingCount off the
 // label. canChallenge is only ever true in OPEN/DISPUTED (the contract gates it on
 // !settled && !closed), so the challenger-eligible role only exists there.
-function flagsFor(state, role, pendingOverride) {
+function flagsFor(state, role, pendingOverride, opts) {
     const settled = state === BANNER_STATE.SETTLED;
     const closed = state === BANNER_STATE.CLOSED;
     const pendingCount = pendingOverride !== undefined
         ? pendingOverride
         : (state === BANNER_STATE.DISPUTED ? 2 : 0);
+    const o = opts || {};
     return {
         settled,
         closed,
@@ -47,6 +48,19 @@ function flagsFor(state, role, pendingOverride) {
         isJudgeOperator: role === BANNER_ROLE.JUDGE,
         // canChallenge can only be true when the bond is genuinely challengeable.
         canChallenge: role === BANNER_ROLE.CHALLENGER_ELIGIBLE && !settled && !closed,
+        // HIGH-2: the judge's "rule" clause is now TIMING-AWARE. The legacy matrix
+        // expected "rule or reject" whenever pending>0, which on-chain corresponds
+        // to a Pending challenge being INSIDE its ruling window. So the default for
+        // a pending bond is judgeCanRuleSomePending=true (some challenge is rulable
+        // now); callers exercising the concession-window / past-deadline cases pass
+        // false explicitly.
+        judgeCanRuleSomePending: o.judgeCanRuleSomePending !== undefined
+            ? o.judgeCanRuleSomePending
+            : pendingCount > 0,
+        // HIGH-2 bonus: "anyone can challenge" is gated on capacity. Default to
+        // "room available" so the legacy open-bond wording holds; the capacity-full
+        // case passes false explicitly.
+        hasChallengeCapacity: o.hasChallengeCapacity !== undefined ? o.hasChallengeCapacity : true,
     };
 }
 
@@ -179,7 +193,8 @@ describe("bondBanner — pure bond-level lifecycle/role banner", function () {
             const out = bondBanner({ settled: false, closed: false, pendingCount: 0, isJudgeOperator: true });
             expect(out.viewerRole).to.equal(BANNER_ROLE.JUDGE);
             expect(out.headline).to.not.match(/rule or reject each pending challenge/i);
-            expect(out.headline).to.match(/no challenges are pending to rule on/i);
+            expect(out.headline).to.not.match(/reject pending challenges as out-of-scope/i);
+            expect(out.headline).to.match(/no challenges are pending\.?$/i);
         });
 
         it("a challenger-eligible viewer is ONLY told they can challenge when canChallenge is true", function () {
@@ -210,17 +225,18 @@ describe("bondBanner — pure bond-level lifecycle/role banner", function () {
             expect(out.headline).to.match(LIFECYCLE_PHRASE[BANNER_STATE.CLOSED]);
         });
 
-        it("JUDGE @ closed+pending: banner says rule/reject (NOT 'no challenges pending')", function () {
+        it("JUDGE @ closed+pending (rulable now): banner says rule/reject (NOT 'no challenges pending')", function () {
             const out = bondBanner(flagsFor(BANNER_STATE.CLOSED, BANNER_ROLE.JUDGE, 2));
             expect(out.state).to.equal(BANNER_STATE.CLOSED);
             expect(out.viewerRole).to.equal(BANNER_ROLE.JUDGE);
             // Lifecycle clause: closed, but existing disputes still resolve.
             expect(out.headline).to.match(LIFECYCLE_PHRASE[BANNER_STATE.CLOSED]);
             // Next-move: the SAME rule/reject clause the disputed judge gets, because
-            // the SAME per-challenge buttons render (gated on Pending, not !closed).
+            // the SAME per-challenge buttons render (gated on Pending + ruling window,
+            // not !closed). flagsFor defaults judgeCanRuleSomePending=true for pending.
             expect(out.headline).to.match(/You are the judge; rule or reject each pending challenge below\./);
-            // The OLD BUG: it fell through to this false, self-contradictory line.
-            expect(out.headline).to.not.match(/no challenges are pending to rule on/i);
+            // The OLD BUG: it fell through to a false, self-contradictory denial.
+            expect(out.headline).to.not.match(/no challenges are pending/i);
             // NOT self-contradictory: it must not BOTH claim a pending action AND deny
             // any pending challenge in the same headline.
             const claimsAction = /rule or reject/i.test(out.headline);
@@ -228,12 +244,12 @@ describe("bondBanner — pure bond-level lifecycle/role banner", function () {
             expect(claimsAction && deniesPending).to.equal(false);
         });
 
-        it("JUDGE @ closed+1-pending: singular, still says rule/reject", function () {
+        it("JUDGE @ closed+1-pending (rulable now): singular, still says rule/reject", function () {
             const out = bondBanner(flagsFor(BANNER_STATE.CLOSED, BANNER_ROLE.JUDGE, 1));
             expect(out.state).to.equal(BANNER_STATE.CLOSED);
             expect(out.viewerRole).to.equal(BANNER_ROLE.JUDGE);
             expect(out.headline).to.match(/You are the judge; rule or reject each pending challenge below\./);
-            expect(out.headline).to.not.match(/no challenges are pending to rule on/i);
+            expect(out.headline).to.not.match(/no challenges are pending/i);
         });
 
         it("POSTER @ closed+pending: closed lifecycle + pending disputes still resolve", function () {
@@ -277,8 +293,78 @@ describe("bondBanner — pure bond-level lifecycle/role banner", function () {
             const out = bondBanner(flagsFor(BANNER_STATE.CLOSED, BANNER_ROLE.JUDGE, 0));
             expect(out.state).to.equal(BANNER_STATE.CLOSED);
             expect(out.viewerRole).to.equal(BANNER_ROLE.JUDGE);
-            expect(out.headline).to.match(/no challenges are pending to rule on/i);
+            expect(out.headline).to.match(/no challenges are pending\.?$/i);
             expect(out.headline).to.not.match(/rule or reject each pending challenge/i);
+            expect(out.headline).to.not.match(/reject pending challenges as out-of-scope/i);
+        });
+    });
+
+    // HIGH-2: the judge "rule" clause is TIMING-AWARE. The per-challenge Rule
+    // buttons render ONLY inside a Pending challenge's ruling window; during the
+    // concession window and after the ruling deadline NO Rule button renders (only
+    // reject-as-out-of-scope, which has no timing gate). The old banner said "rule
+    // or reject each pending challenge" for ANY pending>0, contradicting the cards
+    // and phaseFor. These cases drive judgeCanRuleSomePending=false (pending>0 but
+    // nothing rulable now) and assert the banner offers ONLY reject, never "rule".
+    describe("judge clause is timing-aware (no over-claiming 'rule' when the ruling window is shut)", function () {
+        it("DISPUTED + pending but NOT rulable now (concession window / past deadline): reject-only, NOT 'rule'", function () {
+            const out = bondBanner(flagsFor(BANNER_STATE.DISPUTED, BANNER_ROLE.JUDGE, 2, { judgeCanRuleSomePending: false }));
+            expect(out.state).to.equal(BANNER_STATE.DISPUTED);
+            expect(out.viewerRole).to.equal(BANNER_ROLE.JUDGE);
+            // It must NOT over-claim "rule".
+            expect(out.headline).to.not.match(/rule or reject each pending challenge/i);
+            // It MUST still offer the out-of-scope reject (allowed at any pending instant)…
+            expect(out.headline).to.match(/reject pending challenges as out-of-scope/i);
+            // …and explain WHY no "rule" — the ruling window is shut right now.
+            expect(out.headline).to.match(/ruling window is not open right now/i);
+            // And it must NOT falsely deny that any challenge is pending.
+            expect(out.headline).to.not.match(/no challenges are pending/i);
+        });
+
+        it("CLOSED + pending but NOT rulable now: reject-only on a closed bond too", function () {
+            const out = bondBanner(flagsFor(BANNER_STATE.CLOSED, BANNER_ROLE.JUDGE, 1, { judgeCanRuleSomePending: false }));
+            expect(out.state).to.equal(BANNER_STATE.CLOSED);
+            expect(out.viewerRole).to.equal(BANNER_ROLE.JUDGE);
+            // Lifecycle stays "existing disputes still resolve".
+            expect(out.headline).to.match(LIFECYCLE_PHRASE[BANNER_STATE.CLOSED]);
+            expect(out.headline).to.not.match(/rule or reject each pending challenge/i);
+            expect(out.headline).to.match(/reject pending challenges as out-of-scope/i);
+        });
+
+        it("DISPUTED + pending AND rulable now: full rule/reject clause", function () {
+            const out = bondBanner(flagsFor(BANNER_STATE.DISPUTED, BANNER_ROLE.JUDGE, 2, { judgeCanRuleSomePending: true }));
+            expect(out.headline).to.match(/You are the judge; rule or reject each pending challenge below\./);
+            expect(out.headline).to.not.match(/ruling window is not open/i);
+        });
+    });
+
+    // HIGH-2 BONUS: a v6 bond at its TOTAL-EVER maxChallenges cap can have
+    // pendingCount === 0 (all challenges resolved), so the lifecycle label is still
+    // "open" — but the Challenge card is correctly HIDDEN (hasChallengeCapacity is
+    // false on v6 when challengeCount >= maxChallenges). The bystander banner must
+    // NOT say "anyone can challenge" there. It keys off the SAME hasChallengeCapacity
+    // gate the card uses.
+    describe("open bond at full capacity does not claim 'anyone can challenge' (bonus)", function () {
+        it("BYSTANDER @ open + capacity FULL: no 'anyone can challenge' clause", function () {
+            const out = bondBanner(flagsFor(BANNER_STATE.OPEN, BANNER_ROLE.BYSTANDER, 0, { hasChallengeCapacity: false }));
+            expect(out.state).to.equal(BANNER_STATE.OPEN);
+            expect(out.viewerRole).to.equal(BANNER_ROLE.BYSTANDER);
+            expect(out.headline).to.not.match(/anyone can challenge/i);
+            // The headline is just the open lifecycle clause, no false next-move.
+            expect(out.headline).to.equal("Open — no challenges yet.");
+        });
+
+        it("BYSTANDER @ open + capacity AVAILABLE: keeps 'anyone can challenge'", function () {
+            const out = bondBanner(flagsFor(BANNER_STATE.OPEN, BANNER_ROLE.BYSTANDER, 0, { hasChallengeCapacity: true }));
+            expect(out.headline).to.include("Anyone can challenge this claim.");
+        });
+
+        it("hasChallengeCapacity defaults to TRUE when omitted (back-compat)", function () {
+            // A caller that does not pass hasChallengeCapacity keeps the legacy wording.
+            const out = bondBanner({ settled: false, closed: false, pendingCount: 0 });
+            expect(out.state).to.equal(BANNER_STATE.OPEN);
+            expect(out.viewerRole).to.equal(BANNER_ROLE.BYSTANDER);
+            expect(out.headline).to.include("Anyone can challenge this claim.");
         });
     });
 

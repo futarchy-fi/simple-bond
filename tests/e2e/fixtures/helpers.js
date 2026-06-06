@@ -112,6 +112,34 @@ async function syncDateToChain(deployed, page) {
     }, chainNow);
 }
 
+// Open the My Bonds page and wait until the CONNECTED variant renders. We
+// FULL-reload at #my (re-navigating) until the role-section headings appear —
+// the unconnected variant shows a "Connect a wallet" card instead, and under
+// full-suite load the page can briefly show that transitional state, which made
+// naive `goto('/#my')` assertions order-dependent/flaky. Re-navigate until the
+// connected page is up so My-Bonds listing assertions are deterministic.
+async function gotoMyBonds(page) {
+    const start = Date.now();
+    while (Date.now() - start < 60_000) {
+        await page.goto("/#my");
+        await page.reload();
+        try {
+            await page.waitForFunction(
+                () => /As challenger/i.test(document.body.innerText),
+                null,
+                { timeout: 10_000 }
+            );
+            // Let the late banner/role-section reads settle; the caller's
+            // assertions still own the verdict.
+            await new Promise((r) => setTimeout(r, 800));
+            return;
+        } catch (_) {
+            await new Promise((r) => setTimeout(r, 500));
+        }
+    }
+    throw new Error("My Bonds page never rendered the connected role sections");
+}
+
 module.exports = {
     BOND_ABI,
     rpc,
@@ -122,6 +150,7 @@ module.exports = {
     getChallengeCount,
     createBondViaUI,
     gotoBondDetail,
+    gotoMyBonds,
     timeTravel,
     syncDateToChain,
 };

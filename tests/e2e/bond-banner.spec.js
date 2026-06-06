@@ -42,6 +42,7 @@ const {
     readBond,
     getChallengeCount,
     timeTravel,
+    syncDateToChain,
 } = require("./fixtures/helpers");
 
 const BANNER = ".bond-banner";
@@ -154,6 +155,134 @@ test.describe("Bond lifecycle/role banner matches the rendered action cards", ()
         await expect(page.locator('button[data-act="rejectChallenge"][data-i="0"]')).toBeVisible();
     });
 
+    // HIGH-2: the judge "rule" clause must be TIMING-AWARE. The per-challenge Rule
+    // buttons render ONLY inside [rulingWindowStart, rulingDeadline]. During the
+    // concession window (now < T0) and after the ruling deadline, NO Rule button
+    // renders — only reject-as-out-of-scope. The OLD banner said "rule or reject
+    // each pending challenge" for ANY pendingCount>0, contradicting the per-challenge
+    // cards and phaseFor. This test proves the banner withholds "rule" in BOTH the
+    // concession window AND past the ruling deadline, while still offering reject.
+    test("judge-of-disputed in the CONCESSION window: banner offers reject-only, NOT 'rule' (no per-challenge Rule button)", async ({
+        page,
+        deployed,
+        switchAccount,
+    }) => {
+        test.setTimeout(180_000);
+        // Long acceptanceDelay so we stay BEFORE T0 (the ruling window opener).
+        const id = await createBondViaUI(page, { acceptanceDelay: 3600, rulingBuffer: 600 });
+        await fileChallenge(page, deployed, switchAccount, id, KEYS.challenger1, "banner-concession");
+        expect((await readBond(deployed, id)).pendingCount).toBe(1n);
+        // Do NOT advance time: the challenge is still inside its concession window,
+        // so the ruling window is not open and no Rule button may render.
+
+        await asJudgeOperator(page, deployed, switchAccount);
+        await page.reload();
+        await gotoBondDetail(page, id);
+
+        await expect(page.locator(BANNER)).toHaveAttribute("data-state", "disputed");
+        await expect(page.locator(BANNER)).toHaveAttribute("data-role", "judge");
+        // The banner must NOT over-claim "rule" — it offers ONLY out-of-scope reject.
+        await expect(page.locator(BANNER)).not.toContainText("rule or reject each pending challenge below");
+        await expect(page.locator(BANNER)).toContainText(
+            "reject pending challenges as out-of-scope (the ruling window is not open right now)"
+        );
+
+        // Single source of truth: no per-challenge Rule button renders (ruleForPoster
+        // / ruleForChallenger are gated on the ruling window), but the out-of-scope
+        // reject button DOES (no timing gate while Pending).
+        await expect(page.locator('button[data-act="ruleForPoster"][data-i="0"]')).toHaveCount(0);
+        await expect(page.locator('button[data-act="ruleForChallenger"][data-i="0"]')).toHaveCount(0);
+        await expect(page.locator('button[data-act="rejectChallenge"][data-i="0"]')).toBeVisible();
+    });
+
+    test("judge-of-disputed PAST the ruling deadline: banner does NOT offer 'rule' (timeout-claimable, reject still allowed)", async ({
+        page,
+        deployed,
+        switchAccount,
+    }) => {
+        test.setTimeout(180_000);
+        const id = await createBondViaUI(page, { acceptanceDelay: 60, rulingBuffer: 120 });
+        await fileChallenge(page, deployed, switchAccount, id, KEYS.challenger1, "banner-past-deadline");
+        expect((await readBond(deployed, id)).pendingCount).toBe(1n);
+        // Advance PAST the ruling deadline: acceptanceDelay (60) + rulingBuffer (120)
+        // + slack. now > rulingDeadline, so the judge can no longer rule (only reject).
+        await timeTravel(deployed, 60 + 120 + 120, page);
+
+        await asJudgeOperator(page, deployed, switchAccount);
+        await page.reload();
+        await gotoBondDetail(page, id);
+
+        await expect(page.locator(BANNER)).toHaveAttribute("data-state", "disputed");
+        await expect(page.locator(BANNER)).toHaveAttribute("data-role", "judge");
+        await expect(page.locator(BANNER)).not.toContainText("rule or reject each pending challenge below");
+        await expect(page.locator(BANNER)).toContainText(
+            "reject pending challenges as out-of-scope (the ruling window is not open right now)"
+        );
+
+        // No Rule button (past the ruling window); reject-out-of-scope still renders.
+        await expect(page.locator('button[data-act="ruleForPoster"][data-i="0"]')).toHaveCount(0);
+        await expect(page.locator('button[data-act="rejectChallenge"][data-i="0"]')).toBeVisible();
+    });
+
+    // HIGH-2 BONUS: a v6 bond at its TOTAL-EVER maxChallenges cap can have
+    // pendingCount === 0 (every challenge resolved), so the lifecycle label is still
+    // "open" — but the Challenge card is correctly HIDDEN (v6 caps on challengeCount,
+    // not pendingCount). The bystander banner must NOT claim "anyone can challenge".
+    test("capacity-full open v6 bond: banner does NOT say 'anyone can challenge' (challenge card hidden)", async ({
+        page,
+        deployed,
+        switchAccount,
+    }) => {
+        test.setTimeout(240_000);
+        // maxChallenges = 1: a single challenge fills the TOTAL-EVER cap on v6.
+        const id = await createBondViaUI(page, {
+            acceptanceDelay: 60,
+            rulingBuffer: 600,
+            maxChallenges: 1,
+        });
+        await fileChallenge(page, deployed, switchAccount, id, KEYS.challenger1, "banner-capacity-full");
+        expect(await getChallengeCount(deployed, id)).toBe(1n);
+        expect((await readBond(deployed, id)).pendingCount).toBe(1n);
+        // Advance past acceptance so the ruling window is open, then RULE for the
+        // poster — that resolves the challenge (Lost), dropping pendingCount back to
+        // 0 WITHOUT settling the bond. challengeCount stays 1 == maxChallenges.
+        await timeTravel(deployed, 120, page);
+        await asJudgeOperator(page, deployed, switchAccount);
+        await page.reload();
+        await syncDateToChain(deployed, page);
+        await page.reload();
+        await gotoBondDetail(page, id);
+        await page.fill('input[id="fee-0"]', "0");
+        await page.fill('textarea[id="rule-0"]', "challenger argument unsound");
+        await page.locator('button[data-act="ruleForPoster"][data-i="0"]').click();
+        let start = Date.now();
+        while (Date.now() - start < 60_000) {
+            const b = await readBond(deployed, id);
+            if (b.pendingCount === 0n && !b.settled) break;
+            await new Promise((r) => setTimeout(r, 500));
+        }
+        const resolved = await readBond(deployed, id);
+        expect(resolved.pendingCount).toBe(0n);
+        expect(resolved.settled).toBe(false);
+        // challengeCount stays at the cap, so v6 capacity is full even though
+        // pendingCount is 0 and the lifecycle label is "open".
+        expect(await getChallengeCount(deployed, id)).toBe(1n);
+
+        // View as a connected NON-poster (would normally be challenger-eligible on an
+        // open bond) — but capacity is full, so the challenge control is hidden and
+        // the banner must not advertise a challenge.
+        await switchAccount(KEYS.challenger2);
+        await page.reload();
+        await gotoBondDetail(page, id);
+
+        await expect(page.locator(BANNER)).toHaveAttribute("data-state", "open");
+        // No challenge control renders (v6 total-ever cap reached)...
+        await expect(page.locator("#challengeBtn")).toHaveCount(0);
+        // ...so the banner must NOT claim anyone can challenge.
+        await expect(page.locator(BANNER)).not.toContainText("Anyone can challenge");
+        await expect(page.locator(BANNER)).not.toContainText("You can challenge");
+    });
+
     test("judge-of-CLOSED-with-pending: banner STILL says rule/reject IFF judge controls + per-challenge reject button render on a closed bond", async ({
         page,
         deployed,
@@ -186,8 +315,16 @@ test.describe("Bond lifecycle/role banner matches the rendered action cards", ()
         // The bond is CLOSED but STILL has the pending challenge.
         expect(closedBond.pendingCount).toBe(1n);
 
+        // Advance into the ruling window (past acceptanceDelay) so the judge can
+        // actually RULE on the still-pending challenge — the per-challenge Rule
+        // buttons (and the banner's "rule or reject" clause, now timing-aware per
+        // HIGH-2) are gated on the ruling window, NOT on !closed.
+        await timeTravel(deployed, 120, page);
+
         // View the closed-with-pending bond as the judge operator.
         await asJudgeOperator(page, deployed, switchAccount);
+        await page.reload();
+        await syncDateToChain(deployed, page);
         await page.reload();
         await gotoBondDetail(page, id);
 

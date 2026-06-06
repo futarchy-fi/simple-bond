@@ -17,6 +17,7 @@
 <script src="./async-util.js"></script>
 <script src="./challenge-capacity.js"></script>
 <script src="./credits-banner.js"></script>
+<script src="./rule-fee.js"></script>
 <style>
   :root {
     --bg: #ffffff;
@@ -2171,6 +2172,16 @@
       <h2 style="margin-bottom:4px;">Judges on ${escapeHtml(c?.name || '—')}</h2>
       <p class="hint" style="margin-bottom:16px;">Every bond pins a <strong>judge profile id</strong> at creation. Browse the registered profiles below and pick one when you <a href="#create">create a bond</a>. You only need to register a profile yourself if you want to <em>offer judging services</em>.</p>
 
+      <!-- MED-7 + HIGH-1: a compact "Your judge contract" status card, hoisted
+           ABOVE the registered-profiles list and OUTSIDE the "Offer judging
+           services" accordion (whose copy says "skip this"), so an operator's
+           status (active/operator), their claimable fees (HIGH-1), and the
+           Activate / Withdraw-fees actions are visible WITHOUT expanding any
+           details. Populated by refreshOnboarding() only when getMyJudgeContract()
+           is set; otherwise it stays empty (display:none) and the page is unchanged
+           for non-operators. -->
+      <div id="judgeStatusCard"></div>
+
       <h3 style="margin: 8px 0;">Registered judge profiles</h3>
       <div id="judgesList"><div class="loading"><span class="spinner"></span>Loading profiles…</div></div>
 
@@ -2309,10 +2320,15 @@
       b.textContent = 'Connect wallet';
       b.addEventListener('click', () => connectWallet());
       actions.appendChild(b);
+      // MED-7: nothing to hoist when no wallet is connected.
+      renderJudgeStatusCard(null);
       return;
     }
 
     const myJudge = getMyJudgeContract();
+    // MED-7 + HIGH-1: keep the hoisted "Your judge contract" status card (above the
+    // profiles list, outside the accordion) in sync on every onboarding refresh.
+    renderJudgeStatusCard(myJudge);
     if (!myJudge) {
       titleEl.textContent = 'No judge contract yet';
       hintEl.textContent = '';
@@ -2360,7 +2376,15 @@
         judge.active().catch(() => null),
         judge.operator().catch(() => null),
       ]);
-      if (isActive === false) {
+      // MED-4: active() returns null ONLY when the RPC read FAILED (the catch
+      // above). UNKNOWN is NOT the same as "Active" — the old code's final `else`
+      // branch labelled a failed read as "Active", masking a transport problem and
+      // potentially telling an operator their (possibly inactive) judge is live.
+      // Branch on isActive === null FIRST and surface a retry, before the
+      // false/active branches.
+      if (isActive === null) {
+        statusEl.textContent = 'Could not read judge state — retry.';
+      } else if (isActive === false) {
         statusEl.textContent = 'Inactive — accept the operator role to activate.';
         const b = document.createElement('button');
         b.textContent = 'Activate judge (acceptOperatorRole)';
@@ -2402,6 +2426,129 @@
         catch (_) { prompt('Copy:', myJudge); }
       });
     });
+  }
+
+  // MED-7 + HIGH-1: render the compact "Your judge contract" status card hoisted
+  // ABOVE the registered-profiles list and OUTSIDE the "Offer judging services"
+  // accordion. It surfaces, WITHOUT requiring the operator to expand any details:
+  //   - the judge contract address + active/operator status (MED-7), with the SAME
+  //     null-first branch as the in-accordion card (MED-4): a failed active() read
+  //     shows "Could not read judge state — retry.", never a false "Active";
+  //   - HIGH-1: the judge contract's CLAIMABLE FEES — the ERC-20 balance the judge
+  //     contract holds for the chain's canonical token, read via
+  //     erc20Contract(token,false).balanceOf(judgeContract). A judge earns this fee
+  //     on every ruling (feeCharged is transferred to the judge contract), but the
+  //     v6 frontend previously had ZERO callers of withdrawFees and never displayed
+  //     this balance, so earnings were invisible AND unwithdrawable. We render the
+  //     amount (canonical USD via susdsBigIntToUsdString) with a "Withdraw fees"
+  //     button wired to manualJudgeContract(judge,true).withdrawFees(token, account,
+  //     balance) -> waitForTx -> refresh.
+  // Pure-additive: when myJudge is falsy (no linked judge, or no wallet) the card is
+  // emptied + hidden, so non-operators see no change.
+  async function renderJudgeStatusCard(myJudge) {
+    const card = $('judgeStatusCard');
+    if (!card) return; // judges tab not active
+    if (!myJudge) { card.innerHTML = ''; card.style.display = 'none'; return; }
+    card.style.display = '';
+    const c = chain();
+    const token = c && c.approvedToken ? c.approvedToken : null;
+    // Initial paint while the on-chain reads resolve.
+    card.innerHTML = `<div class="card" id="judgeStatusCardInner" style="margin-bottom:16px;">
+        <h3 style="margin:0 0 8px;">Your judge contract</h3>
+        <div class="hint" style="margin-bottom:6px;">Judge contract: ${addressLink(myJudge)}</div>
+        <div id="judgeStatusLine" class="status"><span class="spinner"></span> Reading judge state…</div>
+        <div id="judgeFeesLine" style="margin-top:8px;"></div>
+        <div class="actions" id="judgeStatusActions" style="margin-top:8px;"></div>
+        <div id="judgeFeesMsg" style="margin-top:8px;"></div>
+      </div>`;
+    const statusLine = $('judgeStatusLine');
+    const feesLine = $('judgeFeesLine');
+    const actions = $('judgeStatusActions');
+
+    // Active/operator state — MED-4 null-first branch. We read active() and
+    // operator() independently; on a read failure each falls back to null (an
+    // EXPLICIT "unknown" state the branch below surfaces as a retry, never a false
+    // "Active"). Errors are logged (not silently swallowed) so a transport problem
+    // is diagnosable.
+    let isActive = null, operator = null;
+    try {
+      const judge = manualJudgeContract(myJudge, false);
+      const [activeRes, operatorRes] = await Promise.allSettled([
+        judge.active(),
+        judge.operator(),
+      ]);
+      if (activeRes.status === 'fulfilled') isActive = activeRes.value;
+      else log(`judge.active() read failed: ${friendlyError(activeRes.reason)}`, 'err');
+      if (operatorRes.status === 'fulfilled') operator = operatorRes.value;
+      else log(`judge.operator() read failed: ${friendlyError(operatorRes.reason)}`, 'err');
+    } catch (err) {
+      log(`Judge state read failed: ${friendlyError(err)}`, 'err');
+    }
+
+    if (isActive === null) {
+      statusLine.textContent = 'Could not read judge state — retry.';
+    } else if (isActive === false) {
+      statusLine.textContent = 'Inactive — accept the operator role to activate.';
+      const b = document.createElement('button');
+      b.textContent = 'Activate judge (acceptOperatorRole)';
+      b.addEventListener('click', () => acceptOperatorRole(myJudge));
+      actions.appendChild(b);
+    } else if (operator && account && operator.toLowerCase() !== account.toLowerCase()) {
+      statusLine.textContent = `Active. Operator is ${short(operator)} (not your current wallet).`;
+    } else {
+      statusLine.textContent = 'Active. You are the operator.';
+    }
+
+    // HIGH-1: claimable fees = the judge contract's ERC-20 balance for the chain's
+    // canonical token. Only the operator can withdraw, so only offer the button when
+    // this wallet is the operator. balanceOf is a plain eth_call (not getLogs).
+    const isOperator = !!(operator && account && operator.toLowerCase() === account.toLowerCase());
+    if (!token) {
+      feesLine.innerHTML = `<span class="hint">Claimable fees: token not configured on this chain.</span>`;
+      return;
+    }
+    let balance = null;
+    try { balance = await erc20Contract(token, false).balanceOf(myJudge); }
+    catch (err) { log(`Judge fee balanceOf read failed: ${friendlyError(err)}`, 'err'); }
+    if (balance === null) {
+      feesLine.innerHTML = `<span class="hint">Claimable fees: could not read balance — retry.</span>`;
+      return;
+    }
+    let rate = { unavailable: true, decimals: 18 };
+    try { rate = await susdsRateForDisplay(token); }
+    catch (err) { log(`Judge fee rate read failed: ${friendlyError(err)}`, 'err'); }
+    const usd = susdsBigIntToUsdString(balance, rate);
+    feesLine.innerHTML = `<strong>Claimable fees:</strong> <span class="stat-val" id="judgeFeesAmount">$${usd}</span>`;
+    if (balance > 0n && isOperator) {
+      const w = document.createElement('button');
+      w.className = 'secondary';
+      w.id = 'withdrawFeesBtn';
+      w.textContent = `Withdraw fees ($${usd})`;
+      w.addEventListener('click', () => doWithdrawJudgeFees(myJudge, token, balance));
+      actions.appendChild(w);
+    }
+  }
+
+  // HIGH-1: withdraw the judge contract's accrued fees to the operator wallet.
+  // withdrawFees(token, to, amount) is operator-gated on-chain; we pull the full
+  // claimable balance to the connected account. Routed through the sanctioned
+  // manualJudgeContract(addr,true) write factory (G3) — no raw signer binding.
+  async function doWithdrawJudgeFees(judgeAddr, token, amount) {
+    const msg = $('judgeFeesMsg');
+    try {
+      if (!signer) { await connectWallet(); if (!signer) return; }
+      if (msg) msg.innerHTML = `<div class="msg msg-info"><span class="spinner"></span>Withdrawing fees…</div>`;
+      const judge = manualJudgeContract(judgeAddr, true);
+      const tx = await judge.withdrawFees(token, account, amount);
+      await waitForTx(tx);
+      log(`Withdrew judge fees from ${judgeAddr}.`);
+      if (msg) msg.innerHTML = `<div class="msg msg-success">Fees withdrawn to your wallet.</div>`;
+      // Refresh so the now-zeroed claimable balance + button disappear.
+      renderJudgeStatusCard(getMyJudgeContract());
+    } catch (err) {
+      if (msg) msg.innerHTML = `<div class="msg msg-error">${escapeHtml(friendlyError(err))}</div>`;
+      log(`Withdraw fees failed: ${friendlyError(err)}`, 'err');
+    }
   }
 
   async function deployFreshJudge() {
@@ -2562,12 +2709,24 @@
         }
         const start = Math.max(0, count - 50);
         const entries = [];
+        let profileReadErr = null;
         for (let i = count - 1; i >= start; i--) {
           try {
             const [owner, judgeContract, contentHash, content] = await reg.getProfile(i);
             entries.push({ entryId: i, owner, judgeContract, contentHash, content });
             judgeProfileEntryCache[`${activeChainId}:${i}`] = { entryId: i, owner, judgeContract, contentHash, content };
-          } catch (_) {}
+          } catch (err) { profileReadErr = err; }
+        }
+        // MED-5: entryCount said there ARE profiles (count > 0) but EVERY getProfile
+        // read failed, so `entries` is empty. Rendering entries.map(...) here would
+        // paint a SILENT BLANK list — indistinguishable from "no profiles" and with
+        // no way to recover. Treat it as a (retryable) load failure: record the error
+        // and fall through to the retry loop / error+Retry banner below, NEVER a blank
+        // list. (When count > 0 and at least one read succeeded, we render normally.)
+        if (entries.length === 0) {
+          lastErr = profileReadErr || new Error(`All ${count} judge profile reads failed.`);
+          if (attempt === 0) { await new Promise(r => setTimeout(r, 800)); }
+          continue;
         }
         judgeState.entries = entries;
         listEl.innerHTML = entries.map(e => judgeEntryHtml(e)).join('');
@@ -3391,7 +3550,13 @@
         let hint = '';
         if (role === 'poster' && b.pendingCount > 0n) hint = `${b.pendingCount} pending challenge${b.pendingCount > 1n ? 's' : ''} — review action`;
         else if (role === 'challenger' && !b.settled) hint = 'Challenge active — check ruling window';
-        else if (role === 'judge' && b.pendingCount > 0n) hint = 'Pending challenges to rule';
+        // MED-6: the As-Judge hint was UNCONDITIONALLY "Pending challenges to rule"
+        // whenever pendingCount>0 — but the judge can only RULE inside the ruling
+        // window. During the concession window there is nothing to rule yet, and
+        // after the ruling deadline the window has TIMED OUT. judgeRowHint() reads
+        // the pending challenges' on-chain timing and (via phaseFor) returns wording
+        // that matches the actual phase, so the hint never says "to rule" off-window.
+        else if (role === 'judge' && b.pendingCount > 0n) hint = await judgeRowHint(bc, id, b);
         // Resolve the per-bond sUSDS→USD rate so My-Bonds rows show the SAME
         // canonical USD value as Browse and the detail page (unit-drift fix:
         // these rows used to render raw sUSDS via fmtUnits, so a bond read
@@ -3405,6 +3570,51 @@
     el.querySelectorAll('.bond-list-item').forEach(item => {
       item.addEventListener('click', () => navigate('#view/' + item.dataset.bondid));
     });
+  }
+
+  // MED-6: derive the My-Bonds "As Judge" row hint from the ACTUAL phase of the
+  // bond's pending challenges, not just pendingCount. We read each pending
+  // challenge's timing and classify it with the SAME pure phaseFor() the detail
+  // page uses, then pick the most action-relevant wording:
+  //   - any pending challenge in its RULING window -> "Pending challenges to rule"
+  //     (the ONLY phase where the judge can actually rule);
+  //   - else any in the CONCESSION window -> "Pending challenges — ruling window not
+  //     open yet" (reject/awaiting wording; no "to rule");
+  //   - else (all past the ruling deadline) -> "Pending challenges timed out — claim
+  //     timeout" (timed-out wording; the judge can no longer rule).
+  // On a timing-read failure we fall back to a neutral "pending challenges" hint
+  // that never claims "to rule". phaseFor is exposed on window by phase.js.
+  async function judgeRowHint(bc, id, b) {
+    const neutral = `${b.pendingCount} pending challenge${b.pendingCount > 1n ? 's' : ''}`;
+    if (typeof phaseFor !== 'function') return neutral;
+    let count = 0;
+    try { count = Number(await bc.getChallengeCount(id)); }
+    catch (err) { log(`Judge hint challenge-count read failed: ${friendlyError(err)}`, 'err'); return neutral; }
+    const now = Math.floor(Date.now() / 1000);
+    let anyRuling = false, anyConcession = false, anyPending = false;
+    for (let i = 0; i < count; i++) {
+      let ch;
+      try { ch = await bc.getChallenge(id, i); }
+      catch (err) { log(`Judge hint challenge read failed: ${friendlyError(err)}`, 'err'); continue; }
+      if (Number(ch.status) !== 0) continue; // only Pending challenges matter
+      anyPending = true;
+      let timing = null;
+      try {
+        const [cd, rs, rd] = await Promise.all([
+          bc.concessionDeadline(id, i),
+          bc.rulingWindowStart(id, i),
+          bc.rulingDeadline(id, i),
+        ]);
+        timing = { concessionDeadline: cd, rulingWindowStart: rs, rulingDeadline: rd };
+      } catch (err) { log(`Judge hint timing read failed: ${friendlyError(err)}`, 'err'); }
+      const ph = phaseFor(timing || {}, 0, now, 'judge');
+      if (ph.phase === PHASE.PENDING_RULING) anyRuling = true;
+      else if (ph.phase === PHASE.PENDING_CONCESSION) anyConcession = true;
+    }
+    if (!anyPending) return neutral;
+    if (anyRuling) return 'Pending challenges to rule';
+    if (anyConcession) return 'Pending challenges — ruling window not open yet';
+    return 'Pending challenges timed out — claim timeout';
   }
 
   function myRowHtml({ id, b, hint, rate }) {
@@ -3625,6 +3835,25 @@
       // isPoster/isJudgeOperator/canChallenge + settled/closed/pendingCount — so
       // its one-line headline can never contradict the buttons rendered below it.
       // It SUMMARIZES; the cards remain the actionable controls.
+      //
+      // HIGH-2: the judge's per-challenge Rule buttons are TIMING-GATED (they render
+      // only inside [rulingWindowStart, rulingDeadline]); reject-out-of-scope has no
+      // timing gate. So the banner must know whether ANY pending challenge is rulable
+      // RIGHT NOW, else it over-claims "rule" during the concession window and after
+      // the ruling deadline (contradicting the per-challenge cards + phaseFor). We
+      // derive judgeCanRuleSomePending from the SAME per-challenge timing already
+      // read into each challenge's `.timing` above, with the SAME bounds the Rule
+      // buttons use (now >= rulingWindowStart && now <= rulingDeadline) for any still-
+      // Pending challenge. hasChallengeCapacity is the SAME version-aware gate the
+      // Challenge card uses, so the bystander line never claims "anyone can challenge"
+      // on a capacity-full (but still-labelled-open) v6 bond.
+      const nowSec = Math.floor(Date.now() / 1000);
+      const judgeCanRuleSomePending = challenges.some(({ ch, timing }) => {
+        if (Number(ch.status) !== 0 || !timing) return false;
+        const rs = Number(timing.rulingWindowStart);
+        const rd = Number(timing.rulingDeadline);
+        return rs > 0 && rd > 0 && nowSec >= rs && nowSec <= rd;
+      });
       const banner = (typeof bondBanner === 'function')
         ? bondBanner({
             settled: b.settled,
@@ -3633,6 +3862,8 @@
             isPoster,
             isJudgeOperator,
             canChallenge,
+            judgeCanRuleSomePending,
+            hasChallengeCapacity: window.hasChallengeCapacity({ bondVersion: chain() && chain().bondVersion, pendingCount: b.pendingCount, challengeCount, maxChallenges: b.maxChallenges }),
           })
         : null;
 
@@ -3847,9 +4078,15 @@
     }
     let timingHtml = '';
     if (timing) {
+      // LOW-8: concessionDeadline === rulingWindowStart on-chain (== T0, see
+      // phase.js). The grid previously rendered them as TWO separate rows showing
+      // the IDENTICAL timestamp — visual noise that implied two distinct instants.
+      // Collapse to ONE "concession ends / ruling opens (T0)" row, then keep the
+      // distinct "ruling deadline" row. Prefer concessionDeadline as T0; fall back
+      // to rulingWindowStart if only it loaded.
+      const t0 = (Number(timing.concessionDeadline) > 0) ? timing.concessionDeadline : timing.rulingWindowStart;
       timingHtml = `<div class="ci-grid">
-        <div>concession deadline</div><div>${fmtTime(timing.concessionDeadline)} (${fmtCountdown(timing.concessionDeadline)})</div>
-        <div>ruling window start</div><div>${fmtTime(timing.rulingWindowStart)} (${fmtCountdown(timing.rulingWindowStart)})</div>
+        <div>concession ends / ruling opens (T0)</div><div>${fmtTime(t0)} (${fmtCountdown(t0)})</div>
         <div>ruling deadline</div><div>${fmtTime(timing.rulingDeadline)} (${fmtCountdown(timing.rulingDeadline)})</div>
       </div>`;
     }
@@ -4117,9 +4354,27 @@
       if (!signer) { await connectWallet(); if (!signer) return; }
       const c = chain();
       const content = $(`rule-${i}`)?.value || '';
-      const feeStr = $(`fee-${i}`)?.value || ethers.formatUnits(b.judgeFee, 18);
-      let fee = ethers.parseUnits(feeStr, 18);
-      if (fee > b.judgeFee) fee = b.judgeFee;
+      // MED-3: the fee INPUT is rendered with the token's REAL decimals
+      // (challengeHtml uses ethers.formatUnits(b.judgeFee, tokenDec)), so parsing
+      // it back with a HARDCODED 18 here corrupted the on-chain amount for any
+      // non-18-decimal token (e.g. a 6-decimal token: "0.5" -> 0.5e18 instead of
+      // 0.5e6, far exceeding b.judgeFee, so the clamp silently capped it to the
+      // full judgeFee — or, displayed differently, charged the wrong amount).
+      // Re-fetch the token's decimals and parse (and the fallback default) with
+      // THAT, matching the render. Falls back to 18 only if the meta read fails.
+      let tokenDec = 18;
+      try { tokenDec = (await tokenMeta(b.token)).decimals; }
+      catch (err) { log(`Fee decimals read failed, defaulting to 18: ${friendlyError(err)}`, 'err'); }
+      // parseRuleFee (frontend/rule-fee.js) does the version-correct parse + the
+      // SAME judgeFee clamp using the token's REAL decimals — matching how the input
+      // was rendered (formatUnits(b.judgeFee, tokenDec)). An empty input falls back
+      // to the full judgeFee.
+      const fee = window.parseRuleFee({
+        feeStr: $(`fee-${i}`)?.value,
+        judgeFee: b.judgeFee,
+        tokenDec,
+        parseUnits: ethers.parseUnits,
+      });
       const judge = manualJudgeContract(b.judge, true);
       const fn = side === 'poster' ? 'ruleForPoster' : 'ruleForChallenger';
       if (msg) msg.innerHTML = `<div class="msg msg-info"><span class="spinner"></span>Submitting ${fn} for challenge ${i}…</div>`;

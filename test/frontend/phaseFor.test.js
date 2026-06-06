@@ -180,6 +180,19 @@ describe("phaseFor — pure per-challenge phase classifier", function () {
             expect(out.reason).to.match(/reject this challenge as out-of-scope/i);
         });
 
+        // LOW-10: the POSTER timeout branch previously ended with a dangling
+        // "...as out-of-scope until then." — "until then" had no antecedent (the
+        // prior sentence offers the timeout refund, not a deadline). The corrected
+        // wording closes the clause: "...until a timeout claim settles the bond."
+        it("poster timeout reason ends with the corrected phrase, not the dangling 'until then.'", function () {
+            const out = phaseFor(TIMING, 0, NOW.afterRulingEnd, ROLES.POSTER);
+            expect(out.phase).to.equal(PHASE.TIMEOUT_CLAIMABLE);
+            expect(out.reason).to.include("until a timeout claim settles the bond.");
+            // The old dangling phrase must be gone.
+            expect(out.reason).to.not.match(/as out-of-scope until then\.?\s*$/i);
+            expect(out.reason).to.not.include("out-of-scope until then");
+        });
+
         it("unknown / omitted viewerRole degrades to the bystander reason", function () {
             const withUnknown = phaseFor(TIMING, 0, NOW.beforeT0, "weirdo");
             const withNone = phaseFor(TIMING, 0, NOW.beforeT0);

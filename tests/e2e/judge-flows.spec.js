@@ -8,6 +8,7 @@ const { ethers } = require("ethers");
 const {
     createBondViaUI,
     gotoBondDetail,
+    gotoMyBonds,
     readBond,
     readChallenge,
     timeTravel,
@@ -117,8 +118,9 @@ test.describe("E — judge flows", () => {
         // Become that judge's operator (marks myJudgeContract in localStorage).
         await asOperator(page, deployed, switchAccount);
         // As the operator, the bond must populate under "As Judge"...
-        await page.goto("/#my");
-        await page.locator('button.tab[data-route="my"]').click({ timeout: 5000 }).catch(() => {});
+        // gotoMyBonds re-navigates until the CONNECTED role sections render
+        // (order-independent under full-suite load).
+        await gotoMyBonds(page);
         await expect(
             page.locator(`#myJudge .bond-list-item[data-bondid="${id}"]`)
         ).toBeVisible({ timeout: 20_000 });
@@ -270,6 +272,161 @@ test.describe("E — judge flows", () => {
         }
         const c = await readChallenge(deployed, id, 0);
         expect(c.status).toBe(4n);
+    });
+
+    // HIGH-1: a judge earns feeCharged on every ruling (the bond contract transfers
+    // it to the judge CONTRACT). The v6 frontend previously had ZERO callers of
+    // withdrawFees and never read the judge contract's balance, so those earnings
+    // were invisible AND unwithdrawable. This test rules a challenge with a NON-ZERO
+    // fee, asserts the #judges "Your judge contract" card shows the charged fee as
+    // claimable, clicks Withdraw, and asserts the judge contract balance drops to 0,
+    // the operator wallet rises by the fee, and the UI then shows $0.00 claimable.
+    test("E7 — judge operator sees claimable fees and withdraws them", async ({
+        page,
+        deployed,
+        switchAccount,
+    }) => {
+        test.setTimeout(180_000);
+        const provider = new ethers.JsonRpcProvider(deployed.rpc);
+        const token = new ethers.Contract(
+            deployed.approvedToken,
+            ["function balanceOf(address) view returns (uint256)"],
+            provider
+        );
+        // Default wizard bond: bondAmount 10, challengeAmount 3, judgeFee 0.5 (USD;
+        // 1:1 mock rate, 18 decimals => 0.5e18). Rule for the poster charging the
+        // full 0.5 fee so the judge contract accrues exactly 0.5e18.
+        const id = await bondWithPendingChallenge(page, deployed, switchAccount);
+        await asOperator(page, deployed, switchAccount);
+        await page.reload();
+        await syncDateToChain(deployed, page);
+        await page.reload();
+        await gotoBondDetail(page, id);
+        // Leave the rendered default fee (0.5) — do NOT zero it. Rule for poster.
+        await page.fill('textarea[id="rule-0"]', "challenger argument was unsound");
+        await page.locator('button[data-act="ruleForPoster"][data-i="0"]').click();
+        // Wait until the challenge resolves Lost and the judge contract is funded.
+        const expectedFee = ethers.parseEther("0.5");
+        let start = Date.now();
+        while (Date.now() - start < 60_000) {
+            const c = await readChallenge(deployed, id, 0);
+            if (c.status === 2n /* Lost */) break;
+            await new Promise((r) => setTimeout(r, 500));
+        }
+        // On-chain truth: the judge contract now holds exactly the charged fee.
+        const judgeBalBefore = await token.balanceOf(deployed.manualJudgeV6);
+        expect(judgeBalBefore).toBe(expectedFee);
+
+        // Visit the Judges tab as the operator — the hoisted "Your judge contract"
+        // status card surfaces the claimable fees WITHOUT expanding the accordion.
+        await page.goto("/#judges");
+        await page.reload();
+        await page.waitForSelector("#judgeStatusCard #judgeFeesAmount", { timeout: 30_000 });
+        // The claimable-fees figure shows the charged fee ($0.50).
+        await expect(page.locator("#judgeFeesAmount")).toHaveText("$0.50", { timeout: 20_000 });
+        // And the Withdraw button is offered to the operator.
+        await expect(page.locator("#withdrawFeesBtn")).toBeVisible({ timeout: 20_000 });
+
+        const opAddr = new ethers.Wallet(KEYS.judgeOperator).address;
+        const opBalBefore = await token.balanceOf(opAddr);
+
+        // Withdraw.
+        await page.locator("#withdrawFeesBtn").click();
+        // Wait for the on-chain effect: judge contract balance drains to 0.
+        start = Date.now();
+        while (Date.now() - start < 60_000) {
+            const bal = await token.balanceOf(deployed.manualJudgeV6);
+            if (bal === 0n) break;
+            await new Promise((r) => setTimeout(r, 500));
+        }
+        const judgeBalAfter = await token.balanceOf(deployed.manualJudgeV6);
+        expect(judgeBalAfter).toBe(0n);
+        // The operator wallet rose by exactly the fee.
+        const opBalAfter = await token.balanceOf(opAddr);
+        expect(opBalAfter - opBalBefore).toBe(expectedFee);
+
+        // The UI now shows $0.00 claimable (and no Withdraw button).
+        await expect(page.locator("#judgeFeesAmount")).toHaveText("$0.00", { timeout: 20_000 });
+        await expect(page.locator("#withdrawFeesBtn")).toHaveCount(0);
+    });
+
+    // MED-6: the My-Bonds "As Judge" row hint said "Pending challenges to rule"
+    // whenever pendingCount>0, even during the concession window (nothing to rule
+    // yet). The fix makes the hint phase-aware. In the CONCESSION window the hint
+    // must NOT say "to rule"; once the RULING window opens it must say "to rule".
+    test("E8 — As-Judge row hint is phase-aware (concession: not 'to rule'; ruling: 'to rule')", async ({
+        page,
+        deployed,
+        switchAccount,
+    }) => {
+        test.setTimeout(180_000);
+        // Long acceptanceDelay so the challenge sits in its concession window.
+        const id = await createBondViaUI(page, { acceptanceDelay: 3600, rulingBuffer: 600 });
+        await asChallenger(page, switchAccount, KEYS.challenger1);
+        await page.reload();
+        await gotoBondDetail(page, id);
+        await page.fill("#chContent", "med6-concession");
+        await page.locator("#challengeBtn").click();
+        let cstart = Date.now();
+        while (Date.now() - cstart < 30_000) {
+            if ((await readBond(deployed, id)).pendingCount === 1n) break;
+            await new Promise((r) => setTimeout(r, 500));
+        }
+        expect((await readBond(deployed, id)).pendingCount).toBe(1n);
+
+        // Become the judge operator and open My Bonds — the challenge is still in its
+        // concession window (we have NOT advanced time), so the hint must not say
+        // "to rule".
+        await asOperator(page, deployed, switchAccount);
+        await gotoMyBonds(page);
+        const row = page.locator(`#myJudge .bond-list-item[data-bondid="${id}"]`);
+        await expect(row).toBeVisible({ timeout: 20_000 });
+        const concessionHint = row.locator(".role-hint");
+        await expect(concessionHint).toBeVisible({ timeout: 20_000 });
+        await expect(concessionHint).not.toContainText("to rule");
+        await expect(concessionHint).toContainText("ruling window not open yet");
+
+        // Advance into the RULING window (past acceptanceDelay) and reload My Bonds —
+        // now the hint must say "to rule".
+        await timeTravel(deployed, 3600 + 60, page);
+        await gotoMyBonds(page);
+        const row2 = page.locator(`#myJudge .bond-list-item[data-bondid="${id}"]`);
+        await expect(row2).toBeVisible({ timeout: 20_000 });
+        await expect(row2.locator(".role-hint")).toContainText("Pending challenges to rule", {
+            timeout: 20_000,
+        });
+    });
+
+    // MED-5: loadJudgeEntries rendered a SILENT BLANK list when entryCount > 0 but
+    // every getProfile read failed (an empty entries[] mapped to ""). The fix shows
+    // the error + Retry banner instead. We arm the fixture RPC fault to fail ONLY
+    // getProfile (selector 0xf08f4f64) while entryCount (the fixture pre-seeds 1
+    // profile) still succeeds, then assert the Retry banner — not a blank list.
+    test("E9 — entryCount>0 but every getProfile fails -> error+Retry banner, not a blank list", async ({
+        page,
+        deployed,
+        switchAccount,
+    }) => {
+        test.setTimeout(60_000);
+        // Load the page FIRST so the init script defines window.__setMockAccount,
+        // then switch the signing account.
+        await page.goto("/#judges");
+        await switchAccount(KEYS.judgeOperator);
+        // Fail every getProfile (0xf08f4f64) read; entryCount (0x0cbb0f83) still works.
+        page.injectRpcFault({ bodyIncludes: "f08f4f64", status: 500 });
+        await page.reload();
+        // The error+Retry banner must appear (NOT the "No judge profiles" empty state
+        // and NOT a silently blank list).
+        const list = page.locator("#judgesList");
+        await expect(list.locator("#judgesRetryBtn")).toBeVisible({ timeout: 30_000 });
+        await expect(list).toContainText(/Couldn't load profiles/i, { timeout: 30_000 });
+        await expect(list).not.toContainText("No judge profiles registered yet");
+
+        // Clearing the fault and clicking Retry recovers the list (the pre-seeded
+        // canonical profile renders), proving the banner is a live recovery path.
+        page.clearRpcFault();
+        await list.locator("#judgesRetryBtn").click();
+        await expect(page.locator("#judgesList .judge-item").first()).toBeVisible({ timeout: 30_000 });
     });
 
     test("E6 — judge operator voids the entire bond (rejectBond)", async ({

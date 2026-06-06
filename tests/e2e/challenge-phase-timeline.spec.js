@@ -264,4 +264,59 @@ test.describe("challenge phase timeline — highlight + reason + button gating",
         await expect(page.locator('#ch-0 button[data-act="claimTimeout"]')).toHaveCount(1);
         await expect(page.locator('#ch-0 button[data-act="claimTimeout"]')).toBeVisible();
     });
+
+    // LOW-8: concessionDeadline === rulingWindowStart on-chain (== T0), so the timing
+    // grid used to render TWO rows ("concession deadline" and "ruling window start")
+    // showing the IDENTICAL timestamp — confusing visual noise implying two distinct
+    // instants. The fix collapses them into ONE "concession ends / ruling opens (T0)"
+    // row plus the distinct "ruling deadline" row: exactly TWO deadline rows, and no
+    // two identical timestamps. We use the ruling phase where rulingDeadline != T0.
+    test("timing grid collapses the identical T0 rows: exactly two deadline rows, no duplicate timestamps", async ({
+        page,
+    }) => {
+        // PHASES.ruling: concessionDeadline == rulingWindowStart == NOW-1000 (T0),
+        // rulingDeadline == NOW+1000 — so T0 and the ruling deadline are DISTINCT.
+        await openBondInPhase(page, PHASES.ruling);
+        // Wait until the enrich has loaded the live timing (phase resolves to ruling).
+        // Until then the timing grid isn't rendered (phase is TIMING_UNAVAILABLE).
+        await expect(page.locator("#ch-0 .ci-phase")).toHaveAttribute("data-active", "pending-ruling", {
+            timeout: 15_000,
+        });
+
+        // The timing grid is the .ci-grid that carries the deadline labels (the other
+        // .ci-grid in the challenge item holds challenger/filed-at metadata).
+        const grids = page.locator("#ch-0 .ci-grid");
+        // Find the grid whose text includes "ruling deadline" — that's the timing grid.
+        let timingIdx = -1;
+        const count = await grids.count();
+        for (let i = 0; i < count; i++) {
+            const txt = await grids.nth(i).innerText();
+            if (/ruling deadline/i.test(txt)) { timingIdx = i; break; }
+        }
+        expect(timingIdx, "timing grid not found").toBeGreaterThanOrEqual(0);
+        const timingGrid = grids.nth(timingIdx);
+        const gridText = await timingGrid.innerText();
+
+        // The collapsed single T0 row is present.
+        expect(gridText).toMatch(/concession ends \/ ruling opens \(T0\)/i);
+        // The distinct ruling-deadline row is present.
+        expect(gridText).toMatch(/ruling deadline/i);
+        // The OLD separate rows are GONE (this is the regression guard).
+        expect(gridText).not.toMatch(/ruling window start/i);
+        // "concession deadline" as a STANDALONE label is gone too (it now only
+        // appears inside the combined "concession ends / ruling opens" label).
+        expect(gridText).not.toMatch(/concession deadline/i);
+
+        // Exactly TWO label rows (T0 + ruling deadline). The grid is a 2-col layout:
+        // label, value, label, value -> 4 cells for 2 rows.
+        const cells = timingGrid.locator("div");
+        await expect(cells).toHaveCount(4);
+
+        // No two IDENTICAL rendered timestamps among the two value cells. With T0 !=
+        // rulingDeadline the two timestamp strings must differ (the old grid rendered
+        // T0 twice -> a duplicate).
+        const v0 = (await cells.nth(1).innerText()).trim();
+        const v1 = (await cells.nth(3).innerText()).trim();
+        expect(v0).not.toBe(v1);
+    });
 });

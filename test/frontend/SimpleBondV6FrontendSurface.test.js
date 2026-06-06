@@ -713,4 +713,127 @@ describe("SimpleBond v0.6 frontend surface", function () {
             });
         }
     });
+
+    // MED-3 — doRule parsed the ruling fee with a HARDCODED 18 decimals while the
+    // input was rendered with the token's real decimals (tokenDec), corrupting the
+    // on-chain amount for any non-18-decimal token. The fix routes the parse through
+    // the pure parseRuleFee (frontend/rule-fee.js) using the token's real decimals.
+    // Locked in BOTH the canonical file and the v6 mirror.
+    describe("ruling fee parse uses the token decimals via parseRuleFee (MED-3) wiring", function () {
+        it("frontend/rule-fee.js exports the pure helper with the dual-export idiom", function () {
+            const src = readFileSync(resolve(__dirname, "..", "..", "frontend", "rule-fee.js"), "utf8");
+            expect(src).to.include("module.exports");
+            expect(src).to.include("root.parseRuleFee");
+            expect(src).to.match(/function parseRuleFee\s*\(/);
+            // It clamps to judgeFee and uses an INJECTED parseUnits (no bundled ethers).
+            expect(src).to.match(/if \(fee > judgeFee\) fee = judgeFee/);
+            expect(src).to.include("requires an injected ethers.parseUnits");
+        });
+
+        for (const [label, html] of [["frontend/index.html", () => mainHtml], ["frontend/v6/index.html", () => v6html]]) {
+            describe(label, function () {
+                it("loads rule-fee.js as a script", function () {
+                    expect(html()).to.match(/<script src="\.{1,2}\/rule-fee\.js"><\/script>/);
+                });
+                it("doRule reads the token decimals and parses the fee via parseRuleFee (NOT a hardcoded 18)", function () {
+                    const start = html().indexOf("async function doRule(");
+                    expect(start, "doRule not found").to.not.equal(-1);
+                    const after = html().indexOf("async function ", start + 1);
+                    const body = html().slice(start, after === -1 ? html().length : after);
+                    // It fetches the token's real decimals.
+                    expect(body).to.match(/tokenMeta\(b\.token\)\)\.decimals/);
+                    // It routes the parse + clamp through the pure helper with the
+                    // token decimals and ethers.parseUnits (NOT parseUnits(feeStr, 18)).
+                    expect(body).to.match(/window\.parseRuleFee\(\{[\s\S]{0,200}tokenDec[\s\S]{0,120}parseUnits: ethers\.parseUnits/);
+                    // The OLD hardcoded-18 parse must be gone.
+                    expect(body).to.not.match(/ethers\.parseUnits\(feeStr, 18\)/);
+                    expect(body).to.not.match(/ethers\.formatUnits\(b\.judgeFee, 18\)/);
+                });
+            });
+        }
+    });
+
+    // HIGH-1 + MED-7 — the judge operator's accrued fees were invisible and
+    // unwithdrawable (withdrawFees had ZERO frontend callers), and the "Your judge
+    // contract" status was buried inside the collapsed "Offer judging services"
+    // accordion. The fix hoists a compact #judgeStatusCard ABOVE the profiles list
+    // (outside the accordion) that reads the judge contract's claimable token balance
+    // and offers a Withdraw button wired to manualJudgeContract(judge,true)
+    // .withdrawFees(token, account, balance). Locked in BOTH files.
+    describe("hoisted judge status card + claimable fees / withdraw (HIGH-1 + MED-7) wiring", function () {
+        for (const [label, html] of [["frontend/index.html", () => mainHtml], ["frontend/v6/index.html", () => v6html]]) {
+            describe(label, function () {
+                it("renders the #judgeStatusCard container ABOVE the Registered judge profiles list, OUTSIDE the accordion", function () {
+                    // The hoisted card appears before the profiles heading + list, and
+                    // before the <details id="judgeOfferDetails"> accordion.
+                    expect(html()).to.match(
+                        /<div id="judgeStatusCard"><\/div>[\s\S]{0,200}<h3[^>]*>Registered judge profiles<\/h3>/
+                    );
+                    expect(html()).to.match(
+                        /<div id="judgeStatusCard"><\/div>[\s\S]{0,400}<details class="card" id="judgeOfferDetails"/
+                    );
+                });
+                it("refreshOnboarding keeps the hoisted card in sync via renderJudgeStatusCard", function () {
+                    expect(html()).to.match(/renderJudgeStatusCard\(myJudge\)/);
+                });
+                it("renderJudgeStatusCard reads the judge contract's token balance and offers a Withdraw button (HIGH-1)", function () {
+                    const start = html().indexOf("async function renderJudgeStatusCard(");
+                    expect(start, "renderJudgeStatusCard not found").to.not.equal(-1);
+                    const after = html().indexOf("async function ", start + 1);
+                    const body = html().slice(start, after === -1 ? html().length : after);
+                    // Reads the claimable fees = the judge contract's ERC-20 balance.
+                    expect(body).to.match(/erc20Contract\(token, false\)\.balanceOf\(myJudge\)/);
+                    // Renders the amount through the canonical USD formatter.
+                    expect(body).to.match(/susdsBigIntToUsdString\(balance, rate\)/);
+                    // Only offers Withdraw when there is a balance AND the viewer is the operator.
+                    expect(body).to.match(/balance > 0n && isOperator/);
+                    expect(body).to.include("withdrawFeesBtn");
+                    expect(body).to.match(/doWithdrawJudgeFees\(myJudge, token, balance\)/);
+                    // MED-4 null-first branch is mirrored here too (no false "Active").
+                    expect(body).to.match(/if \(isActive === null\)[\s\S]{0,120}Could not read judge state/);
+                });
+                it("doWithdrawJudgeFees calls withdrawFees(token, account, amount) through the manualJudgeContract write factory", function () {
+                    const start = html().indexOf("async function doWithdrawJudgeFees(");
+                    expect(start, "doWithdrawJudgeFees not found").to.not.equal(-1);
+                    const after = html().indexOf("async function ", start + 1);
+                    const body = html().slice(start, after === -1 ? html().length : after);
+                    expect(body).to.match(/manualJudgeContract\(judgeAddr, true\)/);
+                    expect(body).to.match(/withdrawFees\(token, account, amount\)/);
+                    expect(body).to.match(/await waitForTx\(tx\)/);
+                    // Refreshes the card so the zeroed balance + button disappear.
+                    expect(body).to.match(/renderJudgeStatusCard\(getMyJudgeContract\(\)\)/);
+                });
+            });
+        }
+    });
+
+    // MED-4 — the in-accordion "Your judge contract" status labelled an UNKNOWN
+    // judge state (active() RPC read returned null) as "Active". The fix branches on
+    // isActive === null FIRST. Locked in BOTH files.
+    describe("refreshOnboarding null judge state (MED-4) wiring", function () {
+        for (const [label, html] of [["frontend/index.html", () => mainHtml], ["frontend/v6/index.html", () => v6html]]) {
+            it(`${label}: refreshOnboarding branches on isActive === null first -> retry (not Active)`, function () {
+                const start = html().indexOf("async function refreshOnboarding(");
+                expect(start, "refreshOnboarding not found").to.not.equal(-1);
+                const after = html().indexOf("async function ", start + 1);
+                const body = html().slice(start, after === -1 ? html().length : after);
+                // The null branch comes BEFORE the isActive === false / Active branches.
+                expect(body).to.match(/if \(isActive === null\) \{[\s\S]{0,120}Could not read judge state — retry\.[\s\S]{0,200}\} else if \(isActive === false\)/);
+            });
+        }
+    });
+
+    // MED-6 — the My-Bonds "As Judge" row hint said "Pending challenges to rule"
+    // regardless of phase. The fix gates the "to rule" wording on the pending
+    // challenge being in its ruling window (reusing phaseFor). Locked in BOTH files.
+    describe("My-Bonds As-Judge hint is phase-aware (MED-6) wiring", function () {
+        for (const [label, html] of [["frontend/index.html", () => mainHtml], ["frontend/v6/index.html", () => v6html]]) {
+            it(`${label}: the judge-role hint is derived via phaseFor, not an unconditional 'to rule'`, function () {
+                // The old unconditional string must be gone from the my-row hint path.
+                expect(html()).to.not.include("hint = 'Pending challenges to rule'");
+                // The judge-role hint now consults phaseFor on the pending challenges.
+                expect(html()).to.match(/judgeRowHint/);
+            });
+        }
+    });
 });
