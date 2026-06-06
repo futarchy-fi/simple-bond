@@ -601,3 +601,25 @@ crosses 0.05 ETH, run the live V7 capability journey; otherwise no new code chan
 - All 3 of the user's RPC/health/monitoring steps now done: #1 bond→shared proxy (verified), #2 honest health (deployed),
   #3 status-bot Bond Indexer (committed). REMAINING for #3 go-live = owner-gated: target Telegram chat ID + OK to host the
   bot on the futarchy-indexers VM (the bot itself died in the AWS→GCP migration and is not yet running anywhere).
+
+## Iteration 39 — 2026-06-06 — integrate Bond Indexer into fi's canonical bot + adversarial fix
+- COORDINATION: user said agent "fi" is restoring the telegram bot and will include the Bond Indexer. Found fi mid-flight in
+  the CANONICAL clone (~/futarchy/workspace, the GitHub/CI/deploy-backed one) with uncommitted RPC_POOLS rewiring in
+  lib/checker.js. My #38 component was only in ~/fleet (a LOCAL-only symlinked clone, no remote) → it would NOT have reached
+  the deployed bot. fleet-channel MCP was down, so coordinated via the repo, not agent-to-agent.
+- INTEGRATED: generated a clean additive patch (checkBondIndexer + formatBondIndexer + handler wiring) and applied it onto
+  fi's canonical tree — UNCOMMITTED + additive, so it rides along when fi commits the restoration without bundling fi's WIP
+  into a commit of mine. Verified no symbol collisions (fi had added no bond check yet). Durable copy committed at
+  deploy/status-bot-bond-indexer.patch (reverse-checks identical to what's applied in canonical).
+- ADVERSARIAL VERIFY (workflow w4t682bvs, 14 agents, 3 lenses + per-finding refute panel): 11 raised, 7 confirmed. Core bug
+  (flagged by 2 independent lenses): checkBondIndexer derived `status` from the multi-chain AGGREGATE data.status but
+  `description` from the mainnet entry — a "Bond Indexer (Mainnet)" component whose alert/icon tracked the aggregate, so a
+  Sepolia hiccup fired a FALSE mainnet alert and status/description could contradict (🟢 + "unhealthy" text).
+- FIXED [1][2][3][4][7]: status now derived from the chain-1 entry (Number() coercion for string chainId); res.ok gated
+  (503-with-ok-body no longer reports operational); absent-mainnet is never green (degraded/outage); non-JSON-on-200 → outage;
+  warn on unmapped status; 8s→5s timeout. 9/9 edge-case unit checks pass incl. the core bug + the Sepolia-masking case.
+  Live still 🟢 (lag 12). Both clones now byte-identical on checkBondIndexer.
+- DEFERRED to fi (their handler/state policy, did not touch unilaterally): [5] run checkBondIndexer concurrently with the RPC
+  check (currently sequential 5s+8s) and [6] cold-start state loss means the first post-cold-start tick won't alert an
+  already-bad bond (matches the EXISTING rpc/components change-detection pattern — a cross-cutting choice for fi).
+- STILL owner-gated for go-live: Telegram chat ID + host OK (unchanged).
