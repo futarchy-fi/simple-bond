@@ -643,3 +643,27 @@ crosses 0.05 ETH, run the live V7 capability journey; otherwise no new code chan
   (proxy fails over). Working as intended.
 - NET RESULT of the whole RPC/health/monitoring effort: #1 bond→shared proxy (no more single-key SPOF), #2 honest
   /api/notify/health (deployed), #3 bond.futarchy.ai now monitored (Mainnet+Sepolia) by the live @azhermes status bot.
+
+## Iteration 41 — 2026-06-07 — status-label overhaul (user-requested, keeps v0.6 contracts)
+- TRIGGER: user noticed bond #1 reads "settled" when it was judge-VOIDED (rejectBond); asked to relabel + "make the UI
+  labels as good as possible" + "include them all in tests". The v0.6 struct/indexer carry only settled/closed — the settle
+  REASON lives only in the events, so (per the user's own proposal) the frontend derives it from the settle events.
+- NEW pure helper frontend/bond-status.js (UMD, dual-export, like phase.js): bondStatus() fans `settled` into
+  Cancelled (rejectBond) / Withdrawn (withdrawBond) / Settled (timed out) (claimTimeout) / Challenge upheld
+  (ruleForChallenger), with a generic "Settled" fallback + a plain-English tooltip on every state; challengeStatusLabel()
+  fixes the DANGEROUS per-challenge labels — Won→"Challenger won", Lost→"Challenger lost" (a poster read bare "Won" as
+  THEIR win), RejectedByJudge→"Dismissed (out of scope)". Also "N pending"→"N open challenge(s)".
+- DERIVATION: deriveSettleReason() over the settle events via queryFilterChunked (added an opt-in stopOnMatch early-stop;
+  newest-first so a recent settle is found in the first window; G4-compliant). Applied on the detail view + My-Bonds rows
+  (small N); Browse stays coarse-but-honest for perf (up to 200 rows, no per-bond getLogs).
+- Wired into BOTH index.html mirrors (bodies kept byte-identical, verified), + 3 new CSS badge classes. Error handling
+  uses console.warn (not a swallowing one-liner) so lint stays at 39 ≤ baseline 40.
+- ADVERSARIAL VERIFY (workflow w0fsjzqt6, 10 agents, 3 lenses): 7 raised, 3 confirmed + FIXED — (1) the free
+  ruled-challenger inference was DEAD because callers pass {i,ch:{status},timing} but the helper read top-level c.status
+  (made shape-tolerant + added a real-shape unit test); (2) deriveSettleReason negative-cached null permanently, so a
+  transient RPC failure locked a bond to generic "Settled" for the session (now caches only a truthy reason); (3) no
+  My-Bonds e2e for the derived label (added one).
+- GATES (re-run after fixes): hardhat 1105 passing; lint 39 (G4 ok); full local docker e2e 82 + 7 new status-label specs
+  (every settle path + relabeled challenge badges + the My-Bonds row), all green; index.html↔v6 byte-identical; screenshots
+  + metrics churn restored. Files: frontend/bond-status.js (new), test/frontend/bondStatus.test.js (new),
+  tests/e2e/status-labels.spec.js (new), frontend/index.html, frontend/v6/index.html, SimpleBondV6FrontendSurface.test.js.

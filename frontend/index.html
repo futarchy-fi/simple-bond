@@ -18,6 +18,7 @@
 <script src="./challenge-capacity.js"></script>
 <script src="./credits-banner.js"></script>
 <script src="./rule-fee.js"></script>
+<script src="./bond-status.js"></script>
 <style>
   :root {
     --bg: #ffffff;
@@ -175,6 +176,9 @@
   .status-conceded { background: #fff7ed; color: #c2410c; border-color: #fed7aa; }
   .status-rejectedbyjudge { background: #f5f3ff; color: #6d28d9; border-color: #ddd6fe; }
   .status-refunded { background: #f3f4f6; color: #4b5563; border-color: #d1d5db; }
+  .status-cancelled { background: #f3f4f6; color: #6b7280; border-color: #d1d5db; }
+  .status-withdrawn { background: #f3f4f6; color: #4b5563; border-color: #d1d5db; }
+  .status-upheld { background: #fee2e2; color: #b91c1c; border-color: #fecaca; }
   .status-timedout { background: #fef3c7; color: #92400e; border-color: #fde68a; }
   .status-expired { background: #fef3c7; color: #92400e; border-color: #fde68a; }
 
@@ -540,8 +544,10 @@
   const _contractAbsentMsg = {};      // key -> user-facing absent message
   let _contractTransportMsg = null;   // last 'unknown' transport message (non-sticky)
 
-  const STATUS_NAMES = ["Pending", "Won", "Lost", "Conceded", "RejectedByJudge", "Refunded"];
-  const STATUS_CLASSES = ["pending", "won", "lost", "conceded", "rejectedbyjudge", "refunded"];
+  // Per-challenge ChallengeStatus labels now live in the pure helper
+  // frontend/bond-status.js (challengeStatusLabel) so "Won"/"Lost" render as the
+  // unambiguous "Challenger won"/"Challenger lost" and the CamelCase
+  // "RejectedByJudge" no longer leaks to users.
 
   function log(msg, level) {
     const line = (typeof msg === 'string') ? msg : JSON.stringify(msg, null, 2);
@@ -705,10 +711,11 @@
   // "Bonds judged" showed 0. This walks the range in safe windows and
   // concatenates. Newest-first so early results render fast.
   const LOG_CHUNK = 9000;
-  async function queryFilterChunked(contract, filter, fromBlock) {
+  async function queryFilterChunked(contract, filter, fromBlock, opts) {
     const provider = contract.runner?.provider || readProvider();
     const latest = await provider.getBlockNumber();
     const start = Math.max(0, fromBlock || 0);
+    const stopOnMatch = !!(opts && opts.stopOnMatch);
     const out = [];
     for (let hi = latest; hi >= start; hi -= (LOG_CHUNK + 1)) {
       const lo = Math.max(start, hi - LOG_CHUNK);
@@ -716,9 +723,50 @@
         const logs = await contract.queryFilter(filter, lo, hi);
         if (logs.length) out.push(...logs);
       } catch (_) { /* skip a bad window rather than abort the whole scan */ }
+      // Newest-first: for a single-occurrence event (e.g. a bond's settle event)
+      // the first non-empty window IS the match, so a caller asking for one hit
+      // can stop scanning the rest of history.
+      if (stopOnMatch && out.length) break;
       if (lo === start) break;
     }
     return out;
+  }
+
+  // The v0.6 struct/indexer expose only `settled` — not WHICH of the four
+  // settled() paths fired. Recover the discriminated reason from the settle
+  // events (newest-first, stop at the first match) so the badge can say
+  // Cancelled / Withdrawn / Settled (timed out) / Challenge upheld instead of a
+  // bare "Settled". Cached per (chainId, bondId); resolves null on any failure
+  // so callers fall back to the generic label. G4: routes through queryFilterChunked.
+  const _settleReasonCache = new Map();
+  async function deriveSettleReason(bc, bondId) {
+    const key = `${activeChainId}:${bondId}`;
+    if (_settleReasonCache.has(key)) return _settleReasonCache.get(key);
+    const fromBlock = (chain() && chain().deployBlock) || 0;
+    const candidates = [
+      ['cancelled', bc.filters.BondRejectedByJudge(bondId)],
+      ['withdrawn', bc.filters.BondWithdrawn(bondId)],
+      ['timed-out', bc.filters.BondTimedOut(bondId)],
+      ['ruled-challenger', bc.filters.RuledForChallenger(bondId)],
+    ];
+    let reason = null;
+    try {
+      const hits = await Promise.all(candidates.map(([r, f]) =>
+        queryFilterChunked(bc, f, fromBlock, { stopOnMatch: true })
+          .then(logs => (logs && logs.length) ? r : null)
+          .catch((e) => { console.warn(`settle-reason scan failed (bond ${bondId}):`, e && e.message); return null; })
+      ));
+      reason = hits.find(Boolean) || null;
+    } catch (e) {
+      console.warn(`deriveSettleReason failed (bond ${bondId}):`, e && e.message);
+      reason = null;
+    }
+    // Cache ONLY a successfully-derived reason. A null can mean "the scan
+    // transiently failed" (queryFilterChunked swallows per-window RPC errors),
+    // so caching it would lock a settled bond to the generic "Settled" badge for
+    // the whole session even after the RPC recovers. Let null re-derive instead.
+    if (reason) _settleReasonCache.set(key, reason);
+    return reason;
   }
   function isUserRejection(err) {
     if (!err) return false;
@@ -2148,8 +2196,8 @@
     return `<div class="bond-list-item" data-bondid="${r.bondId}">
       <div class="bli-head">
         <span class="bli-id">Bond #${r.bondId}</span>
-        <span class="status-badge status-${r.status}">${r.status}</span>
-        ${r.pendingCount > 0 ? `<span class="status-badge status-pending">${r.pendingCount} pending</span>` : ''}
+        ${(() => { const _bs = bondStatus({ settled: r.status === 'settled', closed: r.status === 'closed', pendingCount: r.pendingCount }); return `<span class="status-badge status-${_bs.cls}" title="${escapeHtml(_bs.title)}">${_bs.label}</span>`; })()}
+        ${r.pendingCount > 0 ? `<span class="status-badge status-pending">${r.pendingCount} open challenge${r.pendingCount > 1 ? 's' : ''}</span>` : ''}
         <span style="font-size:12px;color:var(--muted);">claim v${r.claimVersion}</span>
       </div>
       <div class="bli-claim">${claim || '<em>No claim preview</em>'}</div>
@@ -3563,7 +3611,8 @@
         // "$10" on Browse but "9.78" here). On a rate miss susdsBigIntToUsdString
         // renders the shared "—" placeholder, identical to the other views.
         const rate = await susdsRateForDisplay(b.token);
-        rows.push({ id, b, hint, rate });
+        const settleReason = b.settled ? await deriveSettleReason(bc, id) : null;
+        rows.push({ id, b, hint, rate, settleReason });
       } catch (_) {}
     }
     el.innerHTML = rows.map(r => myRowHtml(r)).join('');
@@ -3617,19 +3666,16 @@
     return 'Pending challenges timed out — claim timeout';
   }
 
-  function myRowHtml({ id, b, hint, rate }) {
-    let status = 'open';
-    if (b.settled) status = 'settled';
-    else if (b.closed) status = 'closed';
-    else if (b.pendingCount > 0n) status = 'disputed';
+  function myRowHtml({ id, b, hint, rate, settleReason }) {
+    const _bs = bondStatus({ settled: b.settled, closed: b.closed, pendingCount: b.pendingCount, settleReason });
     // Canonical USD via susdsBigIntToUsdString — same formatter Browse rows and
     // the detail page use, so the same bond reads the identical amount here.
     const rowRate = rate || { unavailable: true, decimals: 18 };
     return `<div class="bond-list-item" data-bondid="${id}">
       <div class="bli-head">
         <span class="bli-id">Bond #${id}</span>
-        <span class="status-badge status-${status}">${status}</span>
-        ${b.pendingCount > 0n ? `<span class="status-badge status-pending">${b.pendingCount} pending</span>` : ''}
+        <span class="status-badge status-${_bs.cls}" title="${escapeHtml(_bs.title)}">${_bs.label}</span>
+        ${b.pendingCount > 0n ? `<span class="status-badge status-pending">${b.pendingCount} open challenge${b.pendingCount > 1n ? 's' : ''}</span>` : ''}
       </div>
       <div class="bli-meta">
         <span>bond <span class="stat-val">$${susdsBigIntToUsdString(b.bondAmount, rowRate)}</span></span>
@@ -3706,12 +3752,12 @@
     const claimContent = String(b.claimContent || '');
     const claimVersion = Number(b.claimVersion || 0);
     const challengeCount = challenges.length;
-    const statusName = b.settled ? 'settled' : (b.closed ? 'closed' : (Number(b.pendingCount) > 0 ? 'disputed' : 'open'));
+    const _bs = bondStatus({ settled: b.settled, closed: b.closed, pendingCount: b.pendingCount, challenges });
 
     $('view').innerHTML = `
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
         <h2 style="margin:0;">Bond #${bondId}</h2>
-        <span class="status-badge status-${statusName}">${statusName}</span>
+        <span class="status-badge status-${_bs.cls}" title="${escapeHtml(_bs.title)}">${_bs.label}</span>
         <span style="color:var(--muted);font-size:13px;">claim v${claimVersion}</span>
       </div>
 
@@ -3745,6 +3791,7 @@
       const nextId = Number(await bc.nextBondId());
       if (bondId >= nextId) throw new Error(`Bond #${bondId} does not exist yet (next id is ${nextId}).`);
       const b = await bc.bonds(bondId);
+      const settleReason = b.settled ? await deriveSettleReason(bc, bondId) : null;
       const challengeCount = Number(await bc.getChallengeCount(bondId));
       let challenges = [];
       for (let i = 0; i < challengeCount; i++) {
@@ -3802,7 +3849,7 @@
       const isNonPoster = signer && account && account.toLowerCase() !== b.poster.toLowerCase();
       const bondOpen = !b.settled && !b.closed;
       const canChallenge = isNonPoster && bondOpen && window.hasChallengeCapacity({ bondVersion: chain() && chain().bondVersion, pendingCount: b.pendingCount, challengeCount, maxChallenges: b.maxChallenges });
-      const statusName = b.settled ? 'settled' : (b.closed ? 'closed' : (Number(b.pendingCount) > 0 ? 'disputed' : 'open'));
+      const _bs = bondStatus({ settled: b.settled, closed: b.closed, pendingCount: b.pendingCount, settleReason, challenges });
 
       // Refunds affordance — VERSION-AWARE.
       //
@@ -3872,7 +3919,7 @@
 
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
           <h2 style="margin:0;">Bond #${bondId}</h2>
-          <span class="status-badge status-${statusName}">${statusName}</span>
+          <span class="status-badge status-${_bs.cls}" title="${escapeHtml(_bs.title)}">${_bs.label}</span>
           <span style="color:var(--muted);font-size:13px;">claim v${b.claimVersion}</span>
         </div>
 
@@ -4030,8 +4077,9 @@
 
   function challengeHtml(bondId, { i, ch, timing }, b, tokenSym, tokenDec, isPoster, isJudgeOperator) {
     const statusIdx = Number(ch.status);
-    const statusName = STATUS_NAMES[statusIdx] || 'Unknown';
-    const statusClass = STATUS_CLASSES[statusIdx] || 'pending';
+    const _cs = challengeStatusLabel(statusIdx);
+    const statusName = _cs.label;
+    const statusClass = _cs.cls;
     const now = Math.floor(Date.now() / 1000);
     let actions = [];
     if (statusIdx === 0 /* Pending */) {
@@ -4140,7 +4188,7 @@
     return `<div class="challenge-item" id="ch-${i}">
       <div class="ci-head">
         <span class="ci-idx">#${i}</span>
-        <span class="status-badge status-${statusClass}">${statusName}</span>
+        <span class="status-badge status-${statusClass}" title="${escapeHtml(_cs.title)}">${statusName}</span>
       </div>
       <div class="ci-grid">
         <div>challenger</div><div>${addressLink(ch.challenger)}</div>

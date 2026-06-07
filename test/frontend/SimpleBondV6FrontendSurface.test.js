@@ -114,9 +114,22 @@ describe("SimpleBond v0.6 frontend surface", function () {
         expect(v6html).to.include("registerProfile");
         expect(v6html).to.include("judgeProfileRegistry");
 
-        // Hash+content pattern visible: status badges named after ChallengeStatus enum.
-        for (const s of ["Pending", "Won", "Lost", "Conceded", "RejectedByJudge", "Refunded"]) {
-            expect(v6html, `missing status name ${s}`).to.include(s);
+        // Per-challenge + bond status labels are produced by the pure helper
+        // frontend/bond-status.js (challengeStatusLabel / bondStatus), wired into
+        // BOTH mirrors. The helper renders unambiguous labels — "Won"/"Lost" become
+        // "Challenger won"/"Challenger lost", "RejectedByJudge" becomes a human
+        // "Dismissed (out of scope)", and a settled bond fans out into
+        // Cancelled / Withdrawn / Settled (timed out) / Challenge upheld — so the
+        // raw enum identifiers no longer leak to users.
+        for (const [label, html] of [["frontend/index.html", mainHtml], ["frontend/v6/index.html", v6html]]) {
+            expect(html, `${label} must load bond-status.js`).to.match(/bond-status\.js/);
+            expect(html, `${label} must use challengeStatusLabel`).to.include("challengeStatusLabel(");
+            expect(html, `${label} must use bondStatus`).to.include("bondStatus(");
+            expect(html, `${label} must NOT hardcode the old STATUS_NAMES enum array`).to.not.include('["Pending", "Won", "Lost"');
+        }
+        const bondStatusSrc = readFileSync(resolve(__dirname, "..", "..", "frontend", "bond-status.js"), "utf8");
+        for (const friendly of ["Challenger won", "Challenger lost", "Dismissed (out of scope)", "Cancelled", "Withdrawn", "Challenge upheld"]) {
+            expect(bondStatusSrc, `bond-status.js must define label "${friendly}"`).to.include(friendly);
         }
     });
 
