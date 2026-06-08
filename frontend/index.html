@@ -712,6 +712,13 @@
   // concatenates. Newest-first so early results render fast.
   const LOG_CHUNK = 9000;
   async function queryFilterChunked(contract, filter, fromBlock, opts) {
+    // `filter` may be a single filter OR an array of filters. With an array we
+    // query EVERY filter per window (newest-first); combined with stopOnMatch
+    // this finds the first window holding ANY of them and stops — so
+    // deriveSettleReason can locate a bond's single settle event near the head
+    // in ~one window instead of scanning ALL of history for the 3 event types
+    // that never match (which made a settled-bond page block ~9s on mainnet).
+    const filters = Array.isArray(filter) ? filter : [filter];
     const provider = contract.runner?.provider || readProvider();
     const latest = await provider.getBlockNumber();
     const start = Math.max(0, fromBlock || 0);
@@ -719,10 +726,11 @@
     const out = [];
     for (let hi = latest; hi >= start; hi -= (LOG_CHUNK + 1)) {
       const lo = Math.max(start, hi - LOG_CHUNK);
-      try {
-        const logs = await contract.queryFilter(filter, lo, hi);
-        if (logs.length) out.push(...logs);
-      } catch (_) { /* skip a bad window rather than abort the whole scan */ }
+      // Query all filters for this window in parallel; skip a bad window for a
+      // given filter rather than aborting the whole scan.
+      const perFilter = await Promise.all(filters.map((f) =>
+        contract.queryFilter(f, lo, hi).catch(() => [])));
+      for (const logs of perFilter) if (logs.length) out.push(...logs);
       // Newest-first: for a single-occurrence event (e.g. a bond's settle event)
       // the first non-empty window IS the match, so a caller asking for one hit
       // can stop scanning the rest of history.
@@ -739,32 +747,40 @@
   // bare "Settled". Cached per (chainId, bondId); resolves null on any failure
   // so callers fall back to the generic label. G4: routes through queryFilterChunked.
   const _settleReasonCache = new Map();
+  const _SETTLE_EVENT_REASON = {
+    BondRejectedByJudge: 'cancelled',
+    BondWithdrawn: 'withdrawn',
+    BondTimedOut: 'timed-out',
+    RuledForChallenger: 'ruled-challenger',
+  };
   async function deriveSettleReason(bc, bondId) {
     const key = `${activeChainId}:${bondId}`;
     if (_settleReasonCache.has(key)) return _settleReasonCache.get(key);
     const fromBlock = (chain() && chain().deployBlock) || 0;
-    const candidates = [
-      ['cancelled', bc.filters.BondRejectedByJudge(bondId)],
-      ['withdrawn', bc.filters.BondWithdrawn(bondId)],
-      ['timed-out', bc.filters.BondTimedOut(bondId)],
-      ['ruled-challenger', bc.filters.RuledForChallenger(bondId)],
+    // ONE windowed, newest-first scan over all four settle events together: the
+    // first window with any hit holds the bond's single settle event, so a
+    // recently-settled bond resolves in ~one window (~4 getLogs) instead of
+    // scanning all of history for the 3 event types that never match.
+    const filters = [
+      bc.filters.BondRejectedByJudge(bondId),
+      bc.filters.BondWithdrawn(bondId),
+      bc.filters.BondTimedOut(bondId),
+      bc.filters.RuledForChallenger(bondId),
     ];
     let reason = null;
     try {
-      const hits = await Promise.all(candidates.map(([r, f]) =>
-        queryFilterChunked(bc, f, fromBlock, { stopOnMatch: true })
-          .then(logs => (logs && logs.length) ? r : null)
-          .catch((e) => { console.warn(`settle-reason scan failed (bond ${bondId}):`, e && e.message); return null; })
-      ));
-      reason = hits.find(Boolean) || null;
+      const logs = await queryFilterChunked(bc, filters, fromBlock, { stopOnMatch: true });
+      let best = null;
+      for (const ev of logs) { if (!best || ev.blockNumber > best.blockNumber) best = ev; }
+      const name = best && (best.eventName || (best.fragment && best.fragment.name));
+      reason = (name && _SETTLE_EVENT_REASON[name]) || null;
     } catch (e) {
       console.warn(`deriveSettleReason failed (bond ${bondId}):`, e && e.message);
       reason = null;
     }
-    // Cache ONLY a successfully-derived reason. A null can mean "the scan
-    // transiently failed" (queryFilterChunked swallows per-window RPC errors),
-    // so caching it would lock a settled bond to the generic "Settled" badge for
-    // the whole session even after the RPC recovers. Let null re-derive instead.
+    // Cache ONLY a successfully-derived reason: a null can mean the scan
+    // transiently failed (windows skipped on RPC error), so we must let it
+    // re-derive next time rather than locking the bond to a generic "Settled".
     if (reason) _settleReasonCache.set(key, reason);
     return reason;
   }

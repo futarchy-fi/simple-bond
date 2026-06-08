@@ -667,3 +667,11 @@ crosses 0.05 ETH, run the live V7 capability journey; otherwise no new code chan
   (every settle path + relabeled challenge badges + the My-Bonds row), all green; index.html↔v6 byte-identical; screenshots
   + metrics churn restored. Files: frontend/bond-status.js (new), test/frontend/bondStatus.test.js (new),
   tests/e2e/status-labels.spec.js (new), frontend/index.html, frontend/v6/index.html, SimpleBondV6FrontendSurface.test.js.
+- FOLLOW-UP (user: "still shows settled, not cancelled" on live mainnet): root cause = the derivation used
+  Promise.all over 4 separate full-history scans; the 1 matching filter early-stopped (2 getLogs) but the 3
+  NON-matching scanned all ~15 chunks, and Promise.all waited for them → ~8.8s block + 47 getLogs on mainnet, so
+  users saw the indexer's instant "Settled" and the precise label only ~9s later (e2e missed it: tiny local range).
+  FIX: queryFilterChunked now accepts an ARRAY of filters and queries them per-window (newest-first); deriveSettleReason
+  does ONE windowed scan that stops at the first window holding any settle event and maps it by event name. Measured on
+  mainnet bond #1: 8.8s/47 getLogs → 0.7s/8 getLogs, reason 'cancelled'. Still G4-compliant (queryFilter stays inside
+  queryFilterChunked). Re-verified: lint 39, unit 124, e2e 7/7.
