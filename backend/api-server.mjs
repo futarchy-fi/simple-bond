@@ -452,6 +452,7 @@ function serializeBond(row) {
     challengeCount: row.challenge_count,
     settled: !!row.settled,
     closed: !!row.closed,
+    settleReason: row.settle_reason || null,
     updatedAt: row.updated_at,
   };
 }

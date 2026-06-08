@@ -97,6 +97,16 @@ async function indexBondState(contract, chainId, bondId, claim) {
 //   • Claimed has NO `bondId` (it is a per-token aggregate pull) → the
 //     `parsed.args.bondId == null` guard below skips it cleanly. There is no bond
 //     to re-snapshot from a Claimed event, so skipping is correct and crash-free.
+// Maps a settle EVENT to the discriminated reason the read model stores, so the
+// UI can label a settled bond Cancelled / Withdrawn / Settled (timed out) /
+// Challenge upheld instead of a bare "settled". A bond settles exactly once.
+const SETTLE_REASON_BY_EVENT = {
+  BondRejectedByJudge: 'cancelled',
+  BondWithdrawn: 'withdrawn',
+  BondTimedOut: 'timed-out',
+  RuledForChallenger: 'ruled-challenger',
+};
+
 async function indexLogs(contract, chainId, logs, iface) {
   for (const log of logs) {
     let parsed;
@@ -121,6 +131,10 @@ async function indexLogs(contract, chainId, logs, iface) {
         content: String(parsed.args.content || ''),
       });
     }
+
+    // Record which settle path ended the bond (set-once in the read model).
+    const settleReason = SETTLE_REASON_BY_EVENT[parsed.name];
+    if (settleReason) db.setSettleReason(chainId, bondId, settleReason);
   }
 }
 
@@ -441,6 +455,48 @@ async function pollChain(chainId, provider, contract, iface) {
 // `providers` is an optional chainId->provider map (mirrors how `sleep` is
 // threaded into getLogsWithRetry/indexChain): tests inject fakes; production
 // leaves it empty and gets a per-chain FallbackProvider from buildProvider.
+// One-time backfill: tag bonds that settled BEFORE settle_reason existed. For
+// each settled-but-untagged bond, scan its settle events newest-first (windowed,
+// stop at the first match) and record the reason. Best-effort: never throws into
+// the tick loop. Uses the chunking the free-tier RPCs require.
+const BACKFILL_CHUNK = 9000;
+async function scanSettleReason(contract, chainId, bondId) {
+  const provider = contract.runner.provider;
+  const latest = await provider.getBlockNumber();
+  const start = Math.max(0, (CHAINS[chainId] || {}).startBlock || 0);
+  const filters = [
+    contract.filters.BondRejectedByJudge(bondId),
+    contract.filters.BondWithdrawn(bondId),
+    contract.filters.BondTimedOut(bondId),
+    contract.filters.RuledForChallenger(bondId),
+  ];
+  for (let hi = latest; hi >= start; hi -= (BACKFILL_CHUNK + 1)) {
+    const lo = Math.max(start, hi - BACKFILL_CHUNK);
+    const perFilter = await Promise.all(filters.map(f =>
+      contract.queryFilter(f, lo, hi).catch((e) => { console.warn(`[backfill] window ${lo}-${hi} failed:`, e && e.message); return []; })));
+    let best = null;
+    for (const logs of perFilter) for (const ev of logs) if (!best || ev.blockNumber > best.blockNumber) best = ev;
+    if (best) return SETTLE_REASON_BY_EVENT[best.eventName || (best.fragment && best.fragment.name)] || null;
+    if (lo === start) break;
+  }
+  return null;
+}
+
+async function backfillSettleReasons(chainId, contract) {
+  try {
+    const ids = db.listSettledBondsWithoutReason(chainId);
+    if (!ids.length) return;
+    console.log(`[backfill] chain ${chainId}: ${ids.length} settled bond(s) need a settle reason`);
+    for (const bondId of ids) {
+      try {
+        const reason = await scanSettleReason(contract, chainId, bondId);
+        if (reason) { db.setSettleReason(chainId, bondId, reason); console.log(`[backfill] chain ${chainId} bond #${bondId} -> ${reason}`); }
+        else console.warn(`[backfill] chain ${chainId} bond #${bondId}: no settle event found in range`);
+      } catch (e) { console.warn(`[backfill] chain ${chainId} bond #${bondId} failed:`, e.message); }
+    }
+  } catch (e) { console.warn(`[backfill] chain ${chainId} skipped:`, e.message); }
+}
+
 export function startWatcher(providers = {}) {
   const chainEntries = Object.entries(CHAINS).map(([id, cfg]) => {
     const chainId = parseInt(id, 10);
@@ -465,6 +521,13 @@ export function startWatcher(providers = {}) {
 
   // Initial poll
   tick().catch(err => console.error('[watcher] Initial poll error:', err.message));
+
+  // One-time backfill of settle reasons for bonds that settled before the
+  // settle_reason field existed (e.g. mainnet bond #1). Best-effort, off the
+  // critical path; the DB already holds these bonds so it doesn't wait on tick.
+  for (const { chainId, contract } of chainEntries) {
+    backfillSettleReasons(chainId, contract).catch(err => console.error(`[backfill] chain ${chainId} error:`, err.message));
+  }
 
   // Recurring
   setInterval(() => {

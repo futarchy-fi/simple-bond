@@ -1991,6 +1991,7 @@
       judgeProfileId: Number(b.judgeProfileId || 0),
       pendingCount,
       status: b.settled ? 'settled' : (b.closed ? 'closed' : (pendingCount > 0 ? 'disputed' : 'open')),
+      settleReason: b.settleReason || null,
       settled: !!b.settled,
       closed: !!b.closed,
       claimPreview: b.claimContent || '',
@@ -2212,7 +2213,7 @@
     return `<div class="bond-list-item" data-bondid="${r.bondId}">
       <div class="bli-head">
         <span class="bli-id">Bond #${r.bondId}</span>
-        ${(() => { const _bs = bondStatus({ settled: r.status === 'settled', closed: r.status === 'closed', pendingCount: r.pendingCount }); return `<span class="status-badge status-${_bs.cls}" title="${escapeHtml(_bs.title)}">${_bs.label}</span>`; })()}
+        ${(() => { const _bs = bondStatus({ settled: r.status === 'settled', closed: r.status === 'closed', pendingCount: r.pendingCount, settleReason: r.settleReason }); return `<span class="status-badge status-${_bs.cls}" title="${escapeHtml(_bs.title)}">${_bs.label}</span>`; })()}
         ${r.pendingCount > 0 ? `<span class="status-badge status-pending">${r.pendingCount} open challenge${r.pendingCount > 1 ? 's' : ''}</span>` : ''}
         <span style="font-size:12px;color:var(--muted);">claim v${r.claimVersion}</span>
       </div>
@@ -3768,7 +3769,7 @@
     const claimContent = String(b.claimContent || '');
     const claimVersion = Number(b.claimVersion || 0);
     const challengeCount = challenges.length;
-    const _bs = bondStatus({ settled: b.settled, closed: b.closed, pendingCount: b.pendingCount, challenges });
+    const _bs = bondStatus({ settled: b.settled, closed: b.closed, pendingCount: b.pendingCount, settleReason: b.settleReason, challenges });
 
     $('view').innerHTML = `
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;">

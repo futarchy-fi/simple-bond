@@ -67,6 +67,7 @@ db.exec(`
     challenge_count INTEGER DEFAULT 0,
     settled INTEGER DEFAULT 0,
     closed INTEGER DEFAULT 0,
+    settle_reason TEXT,
     created_block INTEGER,
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now')),
@@ -118,6 +119,14 @@ db.exec(`
     PRIMARY KEY (chain_id, from_block, to_block)
   );
 `);
+
+// Idempotent migration: CREATE TABLE IF NOT EXISTS won't alter a pre-existing
+// bonds table, so add settle_reason here for older DBs (records WHICH settle
+// path fired so the read model can label a bond precisely). Guarded by a column
+// check rather than a swallowing try/catch.
+if (!db.prepare(`PRAGMA table_info(bonds)`).all().some((c) => c.name === 'settle_reason')) {
+  db.exec(`ALTER TABLE bonds ADD COLUMN settle_reason TEXT`);
+}
 
 // --- Subscriptions ---
 
@@ -260,6 +269,10 @@ const listBondsAll = db.prepare(`SELECT * FROM bonds WHERE chain_id=? ORDER BY b
 const listBondsByPoster = db.prepare(`SELECT * FROM bonds WHERE chain_id=? AND poster=? ORDER BY bond_id DESC LIMIT ?`);
 const listBondsByJudge = db.prepare(`SELECT * FROM bonds WHERE chain_id=? AND judge=? ORDER BY bond_id DESC LIMIT ?`);
 const listBondIdsByChallenger = db.prepare(`SELECT DISTINCT bond_id FROM challenges WHERE chain_id=? AND challenger=?`);
+// Set-once: a bond settles exactly once, so the first settle event wins and a
+// later struct re-snapshot (which can't know the reason) never clobbers it.
+const setSettleReasonStmt = db.prepare(`UPDATE bonds SET settle_reason=? WHERE chain_id=? AND bond_id=? AND (settle_reason IS NULL OR settle_reason='')`);
+const listSettledNoReasonStmt = db.prepare(`SELECT bond_id FROM bonds WHERE chain_id=? AND settled=1 AND (settle_reason IS NULL OR settle_reason='')`);
 
 const upsertChallengeStmt = db.prepare(`
   INSERT INTO challenges (chain_id, bond_id, idx, challenger, status, content, updated_at)
@@ -424,6 +437,15 @@ export default {
   },
   getBond(chainId, bondId) {
     return getBondStmt.get(chainId, bondId);
+  },
+  // Record which settle event ended the bond (set-once). Called by the watcher
+  // when it indexes a settle event, and by the one-time backfill.
+  setSettleReason(chainId, bondId, reason) {
+    setSettleReasonStmt.run(reason, chainId, bondId);
+  },
+  // Bonds already settled but not yet tagged with a reason (for backfill).
+  listSettledBondsWithoutReason(chainId) {
+    return listSettledNoReasonStmt.all(chainId).map(r => r.bond_id);
   },
   listBonds(chainId, { poster, judge, challenger, limit = 200 } = {}) {
     if (poster) return listBondsByPoster.all(chainId, poster.toLowerCase(), limit);

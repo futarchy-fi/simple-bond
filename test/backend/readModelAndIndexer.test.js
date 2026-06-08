@@ -1089,4 +1089,76 @@ describe("indexer resilience", function () {
     });
     expect(r.status, r.stdout + r.stderr).to.equal(0);
   });
+
+  // The settle REASON is not on the struct or in the BondCreated snapshot — the
+  // watcher must record it from the settle EVENT so the read model (and thus
+  // Browse / My-Bonds / detail) can label the bond Cancelled instead of a bare
+  // "Settled". Drives a real BondCreated + BondRejectedByJudge through
+  // indexChain → indexLogs and asserts both the DB row and the API expose it.
+  it("E2E: BondRejectedByJudge tags settleReason='cancelled' in the DB + API (list and detail)", () => {
+    const src = `
+      import { ethers } from 'ethers';
+      import { indexChain } from './backend/watcher.mjs';
+      import db from './backend/db.mjs';
+      import { startApiServer } from './backend/api-server.mjs';
+      import { V6_CONTRACT_ABI, CHAINS } from './backend/config.mjs';
+      const assert = (c,m)=>{ if(!c){ console.error('FAIL', m); process.exit(2);} };
+      const chainId = 1;
+      const iface = new ethers.Interface(V6_CONTRACT_ABI);
+      const P = '0x'+'11'.repeat(20), J = '0x'+'22'.repeat(20), TOK = '0x'+'33'.repeat(20);
+      const bondId = 7n;
+      const encB = iface.encodeEventLog(iface.getEvent('BondCreated'),
+        [bondId, P, J, 0n, TOK, 1000n, 500n, 0n, 1n, 1n, 5n, '0x'+'ab'.repeat(32), 'void test claim']);
+      const encR = iface.encodeEventLog(iface.getEvent('BondRejectedByJudge'),
+        [bondId, J, '0x'+'ab'.repeat(32), 'voided as out-of-scope']);
+      const mk = (enc, bn, li) => ({ address: CHAINS[chainId].contract, topics: enc.topics, data: enc.data,
+        blockNumber: bn, blockHash:'0x'+'cc'.repeat(32), transactionHash:'0x'+'dd'.repeat(32),
+        transactionIndex:0, logIndex:li, removed:false });
+      const provider = {
+        getBlockNumber: async () => CHAINS[chainId].startBlock + 20,
+        getLogs: async () => [ mk(encB, CHAINS[chainId].startBlock+5, 0), mk(encR, CHAINS[chainId].startBlock+6, 1) ],
+      };
+      // After rejectBond the struct reads settled=true (poster refunded, 0 pending).
+      const bondStruct = { poster:P, judge:J, token:TOK, bondAmount:1000n, challengeAmount:500n,
+        judgeFee:0n, acceptanceDelay:1n, rulingBuffer:1n, maxChallenges:5n, claimHash:'0x'+'ab'.repeat(32),
+        claimVersion:0n, judgeProfileId:0n, pendingCount:0n, settled:true, closed:false };
+      const contract = {
+        bonds: async () => bondStruct,
+        getChallengeCount: async () => 0n,
+        getChallenge: async () => { throw new Error('unused'); },
+      };
+      await indexChain(chainId, provider, contract, iface, { sleep: async()=>{} });
+      const row = db.getBond(chainId, 7);
+      assert(row && row.settled === 1, 'db: bond 7 settled');
+      assert(row.settle_reason === 'cancelled', 'db: settle_reason=cancelled (got '+row.settle_reason+')');
+      // Non-vacuity: an OPEN bond (no settle event) stays untagged.
+      const encB0 = iface.encodeEventLog(iface.getEvent('BondCreated'),
+        [8n, P, J, 0n, TOK, 1000n, 500n, 0n, 1n, 1n, 5n, '0x'+'ab'.repeat(32), 'open bond']);
+      const open = { ...bondStruct, settled:false };
+      await indexChain(chainId, {
+        getBlockNumber: async () => CHAINS[chainId].startBlock + 40,
+        getLogs: async () => [ mk(encB0, CHAINS[chainId].startBlock+25, 0) ],
+      }, { bonds: async()=>open, getChallengeCount: async()=>0n, getChallenge: async()=>{throw new Error('x')} }, iface, { sleep: async()=>{} });
+      const row8 = db.getBond(chainId, 8);
+      assert(row8 && !row8.settle_reason, 'db: open bond 8 has NO settle_reason (got '+(row8&&row8.settle_reason)+')');
+
+      const srv = startApiServer({ port: 3398, host: '127.0.0.1', onListen: async () => {
+        const j = async (p) => (await fetch('http://127.0.0.1:3398'+p)).json();
+        const jPoll = async (p, ok) => { let r; for (let i=0;i<50;i++){ try { r = await j(p); if (ok(r)) return r; } catch(_){} await new Promise(x=>setTimeout(x,200)); } return r; };
+        const one = await jPoll('/api/bonds/7?chainId=1', (r)=>r && r.bond && r.bond.settleReason==='cancelled');
+        assert(one.bond.settled === true, 'API detail: bond 7 settled');
+        assert(one.bond.settleReason === 'cancelled', 'API detail: settleReason=cancelled (got '+(one.bond&&one.bond.settleReason)+')');
+        const list = await jPoll('/api/bonds?chainId=1', (r)=>r && r.bonds && r.bonds.some(b=>b.bondId===7 && b.settleReason==='cancelled'));
+        assert(list.bonds.some(b=>b.bondId===7 && b.settleReason==='cancelled'), 'API list: bond 7 settleReason=cancelled');
+        const b8 = (list.bonds||[]).find(b=>b.bondId===8);
+        assert(b8 && b8.settleReason===null, 'API list: open bond 8 settleReason=null');
+        console.log('OK settle reason cancelled in DB + API (list + detail)'); srv.close(); process.exit(0);
+      }});
+    `;
+    const r = runEsm(src, {
+      MAINNET_V6_CONTRACT: "0x6B24380B1980db3e2DfDd2b62f5ed3E7E88DFA43",
+      MAINNET_V6_START_BLOCK: "100",
+    });
+    expect(r.status, r.stdout + r.stderr).to.equal(0);
+  });
 });

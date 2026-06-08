@@ -675,3 +675,13 @@ crosses 0.05 ETH, run the live V7 capability journey; otherwise no new code chan
   does ONE windowed scan that stops at the first window holding any settle event and maps it by event name. Measured on
   mainnet bond #1: 8.8s/47 getLogs → 0.7s/8 getLogs, reason 'cancelled'. Still G4-compliant (queryFilter stays inside
   queryFilterChunked). Re-verified: lint 39, unit 124, e2e 7/7.
+- FOLLOW-UP 2 (user: "still shows Settled on /#browse … work on everything"): Browse was coarse-by-design (no
+  per-bond getLogs) so it never showed Cancelled/Withdrawn. The durable fix = compute the settle reason ONCE in the
+  indexer and serve it to every view. Backend: bonds.settle_reason column (+ idempotent PRAGMA-guarded migration);
+  watcher indexLogs tags it on each settle event (BondRejectedByJudge→cancelled, etc., set-once); a one-time
+  startup BACKFILL scans settle events for already-settled bonds (e.g. mainnet bond #1) and tags them;
+  api serializeBond exposes settleReason. Frontend: Browse rows (rowFromIndexerBond) + the detail indexer-paint now
+  read the indexer settleReason → precise label with ZERO per-bond getLogs; My-Bonds/detail-RPC keep the (now fast)
+  chain derivation as fallback. New backend E2E (BondRejectedByJudge → settleReason='cancelled' in DB + API list+detail,
+  open bond stays null). Gates: hardhat 1106; lint 39 (no backend G1 regression — migration uses a column check, backfill
+  catch logs); local e2e 81 + the 2 transient worker-flakes pass on retry. Deploying backend to VM + frontend to Netlify.
