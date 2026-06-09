@@ -685,3 +685,27 @@ crosses 0.05 ETH, run the live V7 capability journey; otherwise no new code chan
   chain derivation as fallback. New backend E2E (BondRejectedByJudge → settleReason='cancelled' in DB + API list+detail,
   open bond stays null). Gates: hardhat 1106; lint 39 (no backend G1 regression — migration uses a column check, backfill
   catch logs); local e2e 81 + the 2 transient worker-flakes pass on retry. Deploying backend to VM + frontend to Netlify.
+
+## Iteration 43 — 2026-06-09 — Codex security audit (v6 contracts + UI) + fix H2/H3/H4
+- Ran an 8-dimension security audit ALL on Codex agents (codex:codex-rescue backgrounds its task + returns a stub, so 5/8
+  dimensions came back empty in the workflow → re-ran those via direct `codex exec`; lesson: drive codex exec directly, not
+  via the rescue agent, for synchronous workflow results). Report: docs/security/AUDIT-v6-2026-06.md. No critical/reentrancy
+  drain; worst issues = integrity (H1) + UI over-trusting the indexer (H2/H3).
+- User dispositions: H1 intentional (documented); H2/H3/H4 fix.
+- H1: added an explanatory comment in SimpleBondV6.sol challenge() (lifetime challenge-cap is by design — bounds the
+  append-only array + claimRefunds scan; v7 gates on pendingCount). Source-only; no redeploy (contract immutable on mainnet).
+- H2 (untrusted-indexer XSS): hardened addressLink() (escape href+title, only link a valid ethers address, else escaped
+  span); rowFromIndexerBond() coerces bondId→Number, validates claimHash as 0x+64hex, parses amounts defensively; judge-
+  judged list coerces ids. Audited the other sinks (challenge content not rendered; hashes are on-chain/fixed; settleReason
+  → fixed labels).
+- H3 (claim text ↔ on-chain claimHash): new pure helper frontend/claim-verify.js; renderBondDetailRpc computes claimMismatch
+  and on mismatch shows a warning + suppresses canChallenge, the bond-level judge controls, AND the per-challenge judge
+  buttons (the adversarial pass caught the per-challenge gap — challengeHtml gets isJudgeOperator && !claimMismatch).
+- H4 (fake-sUSDS USDS approval): doSusdsDeposit() fails closed unless tokenAddr === MAINNET_SUSDS (real USDS can never be
+  approved to a symbol-matched token).
+- Bonus Q&A: confirmed ManualJudgeV6 is reusable with SimpleBondV7 unchanged (identical IBondJudgeV6/IBondJudgeTargetV6
+  signatures + per-call bond address) — only a new V7 core is deployed; judge stays (deploy V7 pointed at the existing
+  JudgeProfileRegistryV6, else re-register the profile once).
+- Gates: hardhat 1120 (claimVerify unit + both-mirror surface assertions + contract compiles with the comment); lint 39;
+  full local docker e2e 86 incl. new security-hardening.spec.js (H3 mismatch warning, H2 Browse XSS) + the per-challenge
+  judge paths; index.html↔v6 byte-identical; screenshots/metrics restored. Deploying frontend to Netlify.

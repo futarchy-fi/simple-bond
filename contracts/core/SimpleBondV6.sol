@@ -263,6 +263,18 @@ contract SimpleBondV6 {
         require(!b.settled, "Bond settled");
         require(!b.closed, "Bond closed");
         require(b.claimVersion == expectedVersion, "Stale claim version");
+        // INTENTIONAL (v0.6): the cap is on the TOTAL lifetime number of challenges
+        // ever filed (challenges[bondId].length), NOT the count currently pending.
+        // Slots are never reclaimed when a challenge resolves
+        // (Won/Lost/Conceded/RejectedByJudge/Refunded). This is by design: it bounds
+        // the append-only `challenges` array AND the claimRefunds() scan to a fixed
+        // `maxChallenges`, which is the desired storage/refund-loop DoS bound.
+        // Accepted consequence: a poster could fill every slot (e.g. via self- or
+        // colluding challenges that are then conceded) and afterwards modifyClaim()
+        // into an effectively unchallengeable state. This is acceptable for v0.6 — an
+        // exhausted bond is observable on-chain (challenges.length == maxChallenges).
+        // v0.7 deliberately changes this: it gates on the LIVE pending set
+        // (pendingCount < maxChallenges, "C1") and adds a MAX_CHALLENGES_CEILING.
         require(challenges[bondId].length < b.maxChallenges, "Max challenges reached");
 
         bytes32 metadataHash = keccak256(bytes(content));

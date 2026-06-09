@@ -485,8 +485,10 @@ describe("SimpleBond v0.6 frontend surface", function () {
                     // The capacity check routes through the pure helper, fed the
                     // active chain's bondVersion AND both pendingCount (v7) and
                     // challengeCount (v6) so the gate is version-correct.
+                    // (`!claimMismatch` was inserted by the H3 claim-hash gate; the
+                    // capacity check still routes through window.hasChallengeCapacity.)
                     expect(html()).to.match(
-                        /const canChallenge = isNonPoster && bondOpen && window\.hasChallengeCapacity\(\{[^}]*\}\)/
+                        /const canChallenge = isNonPoster && bondOpen && [^;]*window\.hasChallengeCapacity\(\{[^}]*\}\)/
                     );
                     // The single call site passes bondVersion, pendingCount,
                     // challengeCount and maxChallenges.
@@ -846,6 +848,29 @@ describe("SimpleBond v0.6 frontend surface", function () {
                 expect(html()).to.not.include("hint = 'Pending challenges to rule'");
                 // The judge-role hint now consults phaseFor on the pending challenges.
                 expect(html()).to.match(/judgeRowHint/);
+            });
+        }
+    });
+
+    // Security hardening (H2 untrusted-indexer XSS, H3 claim-text↔on-chain hash,
+    // H4 fake-sUSDS USDS approval). Pinned in BOTH mirrors so a regression in
+    // either file is caught. H4 has no e2e (mainnet-USDS only), so this is its
+    // primary guard.
+    describe("security hardening wiring (H2/H3/H4)", function () {
+        for (const [label, html] of [["frontend/index.html", () => mainHtml], ["frontend/v6/index.html", () => v6html]]) {
+            it(`${label}: H3 — loads claim-verify.js, gates actions + warns on a claim-hash mismatch`, function () {
+                expect(html()).to.match(/claim-verify\.js/);
+                expect(html()).to.include("window.claimVerification(");
+                expect(html()).to.include("!claimMismatch");           // challenge + judge controls suppressed on mismatch
+                expect(html()).to.match(/Unverified claim text/);      // visible warning banner
+            });
+            it(`${label}: H2 — addressLink escapes attributes + only links a valid address`, function () {
+                expect(html()).to.include('title="${escapeHtml(checksummed)}"'); // was raw title="${addr}"
+                expect(html()).to.include("window.ethers.isAddress(s)");
+            });
+            it(`${label}: H4 — doSusdsDeposit only approves USDS for the canonical sUSDS vault`, function () {
+                expect(html()).to.match(/String\(tokenAddr\)\.toLowerCase\(\) !== MAINNET_SUSDS/);
+                expect(html()).to.include("only available for the canonical sUSDS vault");
             });
         }
     });

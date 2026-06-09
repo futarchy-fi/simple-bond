@@ -19,6 +19,7 @@
 <script src="./credits-banner.js"></script>
 <script src="./rule-fee.js"></script>
 <script src="./bond-status.js"></script>
+<script src="./claim-verify.js"></script>
 <style>
   :root {
     --bg: #ffffff;
@@ -574,8 +575,19 @@
   }
   function addressLink(addr, label) {
     if (!addr) return '<span class="mono">—</span>';
-    const txt = label || short(addr);
-    return `<a class="mono" href="${explorerAddr(addr)}" target="_blank" rel="noopener" title="${addr}">${escapeHtml(txt)}</a>`;
+    // SECURITY (H2): `addr` may come from the (untrusted) indexer. Only build a
+    // real link for a VALID address — and even then escape it everywhere it lands
+    // in HTML (href + title), never interpolate it raw. A non-address value
+    // renders as plain escaped text with no link, so a crafted `poster`/`judge`/
+    // `challenger`/`token` field cannot break out of the attribute/element.
+    const s = String(addr);
+    let checksummed = null;
+    try { if (window.ethers && window.ethers.isAddress(s)) checksummed = window.ethers.getAddress(s); } catch (_) { checksummed = null; }
+    if (!checksummed) {
+      return `<span class="mono" title="${escapeHtml(s)}">${escapeHtml(label || short(s))}</span>`;
+    }
+    const txt = label || short(checksummed);
+    return `<a class="mono" href="${escapeHtml(explorerAddr(checksummed))}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(checksummed)}">${escapeHtml(txt)}</a>`;
   }
   function fmtUnits(amount, decimals) {
     try { return parseFloat(ethers.formatUnits(amount, decimals || 18)).toLocaleString(undefined, { maximumFractionDigits: 4 }); }
@@ -960,6 +972,13 @@
     if (btn) btn.disabled = true;
     try {
       if (!signer) throw new Error('Connect a wallet first');
+      // SECURITY (H4): this one-click flow APPROVES real USDS to `tokenAddr` and
+      // calls deposit() on it. Only ever do that for the canonical mainnet sUSDS
+      // vault — NEVER an arbitrary bond token. A malicious token whose symbol
+      // merely matches /USDS/i must not be able to receive a real USDS allowance.
+      if (String(tokenAddr).toLowerCase() !== MAINNET_SUSDS) {
+        throw new Error('USDS deposit is only available for the canonical sUSDS vault.');
+      }
       msg && (msg.innerHTML = `<div class="msg msg-info"><span class="spinner"></span>Approving USDS…</div>`);
       // Routed through the guarded writeContract factory so a wrong-chain
       // wallet can't fire approve()/deposit() at the wrong address (I4).
@@ -1979,14 +1998,20 @@
   // Map an indexer bond record into the row shape the list UI expects.
   function rowFromIndexerBond(b) {
     const pendingCount = Number(b.pendingCount || 0);
+    // SECURITY (H2): the indexer is untrusted. Coerce the id to a number, accept
+    // claimHash only if it's a real 32-byte hex (it is rendered raw via .slice),
+    // and parse amounts defensively so a crafted field can neither inject HTML
+    // (addresses go through the hardened addressLink) nor crash the whole list.
+    const big = (v) => { try { return BigInt(v || '0'); } catch (_) { return 0n; } };
+    const claimHash = (typeof b.claimHash === 'string' && /^0x[0-9a-fA-F]{64}$/.test(b.claimHash)) ? b.claimHash : '';
     return {
-      bondId: b.bondId,
+      bondId: Number(b.bondId),
       poster: b.poster,
       judge: b.judge,
       token: b.token,
-      bondAmount: BigInt(b.bondAmount || '0'),
-      challengeAmount: BigInt(b.challengeAmount || '0'),
-      claimHash: b.claimHash,
+      bondAmount: big(b.bondAmount),
+      challengeAmount: big(b.challengeAmount),
+      claimHash,
       claimVersion: Number(b.claimVersion || 0),
       judgeProfileId: Number(b.judgeProfileId || 0),
       pendingCount,
@@ -3832,6 +3857,13 @@
       // `opts.claimHint` is the indexer's claim content on the enrich path;
       // on the pure RPC fallback it is undefined and the view shows the hint.
       const claimContent = opts.claimHint != null ? String(opts.claimHint) : '';
+      // SECURITY (H3): the displayed claim text comes from the (untrusted) indexer
+      // and is NOT re-derived from chain logs. Verify it actually hashes to the
+      // on-chain claimHash (read live via RPC just above). On a mismatch the text
+      // is forged/stale — we warn and SUPPRESS the challenge + judge-ruling
+      // actions so nobody stakes against / rules on a claim other than what shown.
+      const _claimCheck = window.claimVerification(claimContent, b.claimHash, (s) => window.ethers.keccak256(window.ethers.toUtf8Bytes(s)));
+      const claimMismatch = _claimCheck.status === 'mismatch';
 
       let tokenSym = '???', tokenDec = 18;
       try { const m = await tokenMeta(b.token); tokenSym = m.symbol; tokenDec = m.decimals; } catch (_) {}
@@ -3865,7 +3897,7 @@
       }
       const isNonPoster = signer && account && account.toLowerCase() !== b.poster.toLowerCase();
       const bondOpen = !b.settled && !b.closed;
-      const canChallenge = isNonPoster && bondOpen && window.hasChallengeCapacity({ bondVersion: chain() && chain().bondVersion, pendingCount: b.pendingCount, challengeCount, maxChallenges: b.maxChallenges });
+      const canChallenge = isNonPoster && bondOpen && !claimMismatch && window.hasChallengeCapacity({ bondVersion: chain() && chain().bondVersion, pendingCount: b.pendingCount, challengeCount, maxChallenges: b.maxChallenges });
       const _bs = bondStatus({ settled: b.settled, closed: b.closed, pendingCount: b.pendingCount, settleReason, challenges });
 
       // Refunds affordance — VERSION-AWARE.
@@ -3978,6 +4010,7 @@
 
         <div class="card">
           <h3>Claim content <span style="font-size:12px;color:var(--muted);font-weight:normal;font-family:system-ui;">v${b.claimVersion}</span></h3>
+          ${claimMismatch ? `<div class="msg msg-error" style="text-align:left;"><strong>⚠️ Unverified claim text.</strong> The text below does NOT match this bond's on-chain claim hash (<code>${escapeHtml(b.claimHash)}</code>) — it may be forged or stale. Challenge and judge actions are disabled until it matches; do not act on this text.</div>` : ''}
           ${claimContent
             ? `<div style="white-space:pre-wrap;background:#fff;padding:12px;border-radius:6px;border:1px solid var(--border);">${escapeHtml(claimContent)}</div>`
             : `<div class="hint">Claim content not available from the indexer (hash: <code>${b.claimHash}</code>).</div>`}
@@ -4011,7 +4044,7 @@
 
         <div class="card">
           <h3>Challenges (${challengeCount})</h3>
-          <div id="challengeList">${challenges.length === 0 ? '<div class="hint">No challenges yet.</div>' : challenges.map(c => challengeHtml(bondId, c, b, tokenSym, tokenDec, isPoster, isJudgeOperator)).join('')}</div>
+          <div id="challengeList">${challenges.length === 0 ? '<div class="hint">No challenges yet.</div>' : challenges.map(c => challengeHtml(bondId, c, b, tokenSym, tokenDec, isPoster, isJudgeOperator && !claimMismatch)).join('')}</div>
         </div>
 
         ${isPoster && !b.settled ? `
@@ -4024,7 +4057,7 @@
           <div id="posterMsg"></div>
         </div>` : ''}
 
-        ${isJudgeOperator && !b.settled ? `
+        ${isJudgeOperator && !b.settled && !claimMismatch ? `
         <div class="card">
           <h3>Judge controls</h3>
           <p class="hint">As the operator of this bond's judge contract, you can void the entire bond out-of-scope. Use the per-challenge "Reject" buttons above to dismiss individual challenges.</p>
@@ -4523,7 +4556,7 @@
       let judgedErr = null;
       const idxJudged = await indexerBonds({ judge: entry.judgeContract });
       if (idxJudged) {
-        bondsJudged = idxJudged.map(b => ({ bondId: b.bondId, claim: String(b.claimContent || '') }));
+        bondsJudged = idxJudged.map(b => ({ bondId: Number(b.bondId), claim: String(b.claimContent || '') })); // H2: coerce untrusted indexer id to a number
       } else {
         try {
           const bc = bondReadContract();

@@ -30,6 +30,9 @@ const RPC_URL = "https://rpc.example.test/";
 
 const BOND_ID = 7;
 const INDEXER_CLAIM = "INDEXER-CLAIM: the sky is blue on 2026-06-04";
+// The on-chain claimHash MUST be keccak256(bytes(claimContent)) for a real bond,
+// so the H3 claim-hash check treats this as a VERIFIED claim (no mismatch warning).
+const ONCHAIN_HASH = ethers.keccak256(ethers.toUtf8Bytes(INDEXER_CLAIM));
 const INDEXER_CHALLENGE = "INDEXER-CHALLENGE: it was overcast";
 const ZERO32 = "0x" + "0".repeat(64);
 
@@ -61,7 +64,7 @@ function pointRead() {
             acceptanceDelay: "0",
             rulingBuffer: "0",
             maxChallenges: "1",
-            claimHash: "0x" + "ab".repeat(32),
+            claimHash: ONCHAIN_HASH,
             claimContent: INDEXER_CLAIM,
             claimVersion: 1,
             pendingCount: 1,
@@ -87,7 +90,7 @@ function encodeCallResult(data) {
             POSTER, JUDGE, TOKEN,
             1000000000000000000n, 2000000000000000000n, 0n,
             0n, 0n, 1n,
-            "0x" + "cd".repeat(32),
+            ONCHAIN_HASH,
             1n, 0n, 1n,
             false, false,
         ]);
