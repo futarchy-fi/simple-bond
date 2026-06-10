@@ -282,8 +282,10 @@ describe("SimpleBond v0.6 frontend surface", function () {
                     // accountsChanged handler body (between its definition and the
                     // chainChanged handler) so an unrelated clear elsewhere can't
                     // satisfy it.
+                    // (handler became async when the stale-signer rebuild was added,
+                    // which sits between the definition and the clear loop — hence 2000)
                     expect(html()).to.match(
-                        /_accountsHandler = \(accounts\) =>[\s\S]{0,700}for \(const k of Object\.keys\(allowanceCache\)\) delete allowanceCache\[k\];[\s\S]{0,300}_chainHandler =/
+                        /_accountsHandler = async \(accounts\) =>[\s\S]{0,2000}for \(const k of Object\.keys\(allowanceCache\)\) delete allowanceCache\[k\];[\s\S]{0,300}_chainHandler =/
                     );
                 });
             });
@@ -871,6 +873,27 @@ describe("SimpleBond v0.6 frontend surface", function () {
             it(`${label}: H4 — doSusdsDeposit only approves USDS for the canonical sUSDS vault`, function () {
                 expect(html()).to.match(/String\(tokenAddr\)\.toLowerCase\(\) !== MAINNET_SUSDS/);
                 expect(html()).to.include("only available for the canonical sUSDS vault");
+            });
+        }
+    });
+
+    // Stale-signer regression (mainnet incident 2026-06-10): the accountsChanged
+    // handler re-rendered the role-gated UI for the new account but kept the OLD
+    // signer (an ethers JsonRpcSigner is pinned to the address it was created
+    // with), so writes were sent FROM the previous account and reverted with the
+    // other account's role error ("Only operator"). The handler must rebuild
+    // provider+signer, exactly like the chainChanged handler always has.
+    // Behavior is covered end-to-end by tests/e2e/account-switch-signer.spec.js.
+    describe("accountsChanged rebinds the signer (stale-signer regression) wiring", function () {
+        // Old (buggy) shape: a SYNC handler that never touches the signer.
+        const LEGACY_SYNC_HANDLER_RE = /_accountsHandler = \(accounts\) =>/;
+        // Fixed shape: async handler that re-pins the signer to the new account.
+        const REBIND_RE = /_accountsHandler = async \(accounts\)[\s\S]{0,900}?getSigner\(account\)/;
+
+        for (const [label, html] of [["frontend/index.html", () => mainHtml], ["frontend/v6/index.html", () => v6html]]) {
+            it(`${label}: accountsChanged handler is async and re-pins the signer to the new account`, function () {
+                expect(html()).to.match(REBIND_RE);
+                expect(html()).to.not.match(LEGACY_SYNC_HANDLER_RE);
             });
         }
     });

@@ -1721,9 +1721,22 @@
     if (!window.ethereum || typeof window.ethereum.on !== 'function') return;
     if (_accountsHandler) { try { window.ethereum.removeListener('accountsChanged', _accountsHandler); } catch (_) {} }
     if (_chainHandler) { try { window.ethereum.removeListener('chainChanged', _chainHandler); } catch (_) {} }
-    _accountsHandler = (accounts) => {
+    _accountsHandler = async (accounts) => {
       if (!accounts || accounts.length === 0) { disconnectWallet(); return; }
       account = ethers.getAddress(accounts[0]);
+      // Rebuild provider + signer: an ethers JsonRpcSigner is PINNED to the
+      // address it was created with, so after an account switch a stale signer
+      // keeps sending writes FROM THE PREVIOUS account even though the UI
+      // re-renders its role-gated controls for the new one — the tx then
+      // reverts with the other account's role error ("Only operator" /
+      // "Not poster") and the user has to hard-refresh for no visible reason.
+      // Mirrors the rebuild the chainChanged handler below already does.
+      if (window.ethereum) {
+        try {
+          provider = new ethers.BrowserProvider(window.ethereum);
+          signer = await provider.getSigner(account);
+        } catch (err) { log(`Account switch: signer rebuild failed (${friendlyError(err)})`, 'err'); }
+      }
       // RCA gap #5 — allowance is read PER ACCOUNT on-chain, so a stored entry is
       // only valid for the account it was read for. Drop every cached allowance
       // on an account switch so the new account can never be served the previous
