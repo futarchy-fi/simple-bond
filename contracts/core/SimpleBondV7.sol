@@ -8,6 +8,12 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "../interfaces/IBondJudgeV6.sol";
 import "../profiles/JudgeProfileRegistryV6.sol";
 
+/// @notice Minimal view surface of `OfficialBondDirectory` consumed by the core's token gate
+///         (audit V7-1). Kept as a local interface so the core depends only on `hasToken`.
+interface IOfficialTokenList {
+    function hasToken(address token) external view returns (bool);
+}
+
 /// @title SimpleBondV7
 /// @notice v0.7 bond core. Same surface as v0.6 (versioned claims, per-challenge concession,
 ///         per-challenge timing, judge out-of-scope refunds, close/open toggle, maxChallenges,
@@ -23,12 +29,17 @@ import "../profiles/JudgeProfileRegistryV6.sol";
 ///      v0.6 stays deployed until an explicit cutover; this is a NEW contract.
 ///      Token assumption: standard ERC-20, NO fee-on-transfer / NO rebasing (the credit model
 ///      makes fee-on-transfer dangerous — a shortfall would surface later against a different
-///      claimant). Launch is gated to whitelisted tokens (sUSDS).
+///      claimant). Token gating is enforced ON-CHAIN (audit V7-1): `createBond` requires
+///      `officialDirectory.hasToken(token)`, so only directory-curated tokens can back bonds.
 contract SimpleBondV7 is ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     uint256 public constant MAX_ACCEPTANCE_DELAY = 365 days;
     uint256 public constant MAX_RULING_BUFFER = 365 days;
+    /// @notice Audit V7-2 (v6-M6): on-chain floor for the ruling window. Without it a poster
+    ///         could set a ~1s `rulingBuffer`, leaving no block in which the judge can rule, so
+    ///         `claimTimeout` would mechanically settle every challenge in the poster's favor.
+    uint256 public constant MIN_RULING_BUFFER = 1 hours;
     uint256 public constant MAX_CHALLENGES_CEILING = 100;
 
     enum ChallengeStatus {
@@ -70,6 +81,13 @@ contract SimpleBondV7 is ReentrancyGuard {
 
     JudgeProfileRegistryV6 public immutable judgeProfileRegistry;
 
+    /// @notice Audit V7-1: on-chain token whitelist. `createBond` only accepts tokens curated in
+    ///         the official directory, making the "whitelisted tokens" launch property a contract
+    ///         invariant instead of a UI convention. Membership is checked at CREATION only —
+    ///         challenge/payout paths never re-check, so de-listing a token cannot strand or
+    ///         alter existing bonds (it only blocks new ones).
+    IOfficialTokenList public immutable officialDirectory;
+
     uint256 public nextBondId;
     mapping(uint256 => Bond) public bonds;
     mapping(uint256 => Challenge[]) public challenges;
@@ -91,9 +109,11 @@ contract SimpleBondV7 is ReentrancyGuard {
     ///         is exact — the directory may approve multiple tokens.
     mapping(address => mapping(address => uint256)) public credits;
 
-    constructor(address judgeProfileRegistry_) {
+    constructor(address judgeProfileRegistry_, address officialDirectory_) {
         require(judgeProfileRegistry_ != address(0), "Zero registry");
+        require(officialDirectory_ != address(0), "Zero directory");
         judgeProfileRegistry = JudgeProfileRegistryV6(judgeProfileRegistry_);
+        officialDirectory = IOfficialTokenList(officialDirectory_);
     }
 
     event BondCreated(
@@ -191,9 +211,12 @@ contract SimpleBondV7 is ReentrancyGuard {
     /// @notice C2: `recipient` pulled their full `credits[recipient][token]` balance.
     event Claimed(address indexed token, address indexed recipient, uint256 amount);
 
-    /// @notice Create a new v0.6 bond, escrow the poster's bondAmount, and emit BondCreated.
-    /// @dev `judgeProfileId` is stored at creation but not yet validated against a registry.
-    ///      Registry wiring is added in a follow-up task. Callers may pass 0 in unit tests.
+    /// @notice Create a new v0.7 bond, escrow the poster's bondAmount, and emit BondCreated.
+    /// @dev `token` must be curated in the official directory (audit V7-1 on-chain whitelist).
+    ///      `judgeProfileId` must resolve in `judgeProfileRegistry` to a profile whose judge
+    ///      equals `judge`; the judge contract additionally screens the bond economics via
+    ///      `validateBond`. `rulingBuffer` has an on-chain floor (`MIN_RULING_BUFFER`, audit
+    ///      V7-2) so a poster cannot configure a ruling window too short for any judge to act.
     function createBond(
         address token,
         uint256 bondAmount,
@@ -214,8 +237,10 @@ contract SimpleBondV7 is ReentrancyGuard {
         require(maxChallenges > 0, "Zero maxChallenges");
         require(maxChallenges <= MAX_CHALLENGES_CEILING, "maxChallenges too large");
         require(acceptanceDelay <= MAX_ACCEPTANCE_DELAY, "Acceptance delay too long");
-        require(rulingBuffer > 0, "Zero ruling buffer");
+        require(rulingBuffer >= MIN_RULING_BUFFER, "Ruling buffer too short");
         require(rulingBuffer <= MAX_RULING_BUFFER, "Ruling buffer too long");
+        // V7-1: on-chain token whitelist (see `officialDirectory` natspec).
+        require(officialDirectory.hasToken(token), "Token not approved");
 
         (, address profileJudge, , ) = judgeProfileRegistry.getProfile(judgeProfileId);
         require(profileJudge == judge, "Profile judge mismatch");
@@ -325,10 +350,12 @@ contract SimpleBondV7 is ReentrancyGuard {
     ///         v0.6 `claimRefunds` drain: nobody is left stranded, but they must `claim()`.
     /// @dev Caller MUST have already flipped the winning/triggering challenge (if any) to terminal
     ///      AND removed it from the pending set BEFORE calling, so the loop never re-credits it
-    ///      (no double-credit). Caller sets `b.settled`. `terminal` is `Lost` when a real ruling
-    ///      settled the bond (ruleForChallenger), or `Refunded` when the bond was voided/timed out
-    ///      (rejectBond / claimTimeout). After the sweep the pending set is fully cleared.
-    function _creditPendingLosers(Bond storage b, uint256 bondId, ChallengeStatus terminal) internal {
+    ///      (no double-credit). Caller sets `b.settled`. Swept challengers are ALWAYS marked
+    ///      `Refunded` (audit V7-3, owner decision 2026-06-09): their stake comes back in full,
+    ///      and `Lost` is reserved for a challenge the judge actually ruled against (stake lost)
+    ///      — so the status is money-unambiguous, matching v0.6 semantics. After the sweep the
+    ///      pending set is fully cleared.
+    function _creditPendingLosers(Bond storage b, uint256 bondId) internal {
         uint256[] storage ids = pendingIds[bondId];
         uint256 n = ids.length; // == b.pendingCount, bounded by the C1 ceiling
         for (uint256 k = 0; k < n; k++) {
@@ -337,7 +364,7 @@ contract SimpleBondV7 is ReentrancyGuard {
             // Defensive: the live set should only ever hold Pending entries, but flip-before-credit
             // is the no-double-credit invariant, so we skip anything already terminal.
             if (cj.status == ChallengeStatus.Pending) {
-                cj.status = terminal;
+                cj.status = ChallengeStatus.Refunded;
                 pendingPos[bondId][j] = 0;
                 _credit(b.token, cj.challenger, b.challengeAmount, bondId, j);
             }
@@ -434,7 +461,9 @@ contract SimpleBondV7 is ReentrancyGuard {
         require(!b.settled, "Bond settled");
         Challenge storage c = challenges[bondId][i];
         require(c.status == ChallengeStatus.Pending, "Not pending");
-        require(block.timestamp >= rulingWindowStart(bondId, i), "Ruling window not open");
+        // V7-5 (v6-L5): strictly AFTER the window start — the concession window owns its final
+        // second (`concede` allows <=), so concede/rule can never both be valid in one block.
+        require(block.timestamp > rulingWindowStart(bondId, i), "Ruling window not open");
         require(block.timestamp <= rulingDeadline(bondId, i), "Ruling window closed");
         require(feeCharged <= b.judgeFee, "Fee > judgeFee");
 
@@ -468,7 +497,8 @@ contract SimpleBondV7 is ReentrancyGuard {
         require(!b.settled, "Bond settled");
         Challenge storage c = challenges[bondId][i];
         require(c.status == ChallengeStatus.Pending, "Not pending");
-        require(block.timestamp >= rulingWindowStart(bondId, i), "Ruling window not open");
+        // V7-5 (v6-L5): strictly AFTER the window start (see ruleForPoster).
+        require(block.timestamp > rulingWindowStart(bondId, i), "Ruling window not open");
         require(block.timestamp <= rulingDeadline(bondId, i), "Ruling window closed");
         require(feeCharged <= b.judgeFee, "Fee > judgeFee");
 
@@ -488,11 +518,11 @@ contract SimpleBondV7 is ReentrancyGuard {
         // Winner gets the bond + their own stake back, minus the fee. Credited (untrusted).
         _credit(b.token, c.challenger, b.bondAmount + b.challengeAmount - feeCharged, bondId, i);
 
-        // Settlement: every OTHER still-pending challenger loses (the bond is now settled in the
-        // winner's favor) but gets their stake back — matching v0.6 where claimRefunds returned
-        // challengeAmount to each still-Pending challenger after settlement. Effects-only loop,
-        // bounded by MAX_CHALLENGES_CEILING (no external call inside).
-        _creditPendingLosers(b, bondId, ChallengeStatus.Lost);
+        // Settlement: every OTHER still-pending challenger is swept `Refunded` with their stake
+        // back (audit V7-3) — exactly v0.6's claimRefunds semantics, where `Lost` unambiguously
+        // means the judge ruled against you AND your stake is gone. Effects-only loop, bounded
+        // by MAX_CHALLENGES_CEILING (no external call inside).
+        _creditPendingLosers(b, bondId);
 
         emit RuledForChallenger(bondId, i, c.challenger, feeCharged, contentHash, content);
     }
@@ -530,7 +560,7 @@ contract SimpleBondV7 is ReentrancyGuard {
         // Poster gets their bond back (credited; untrusted outbound).
         _credit(b.token, b.poster, b.bondAmount, bondId, 0);
         // Refund every still-pending challenger their stake (replaces the v0.6 claimRefunds path).
-        _creditPendingLosers(b, bondId, ChallengeStatus.Refunded);
+        _creditPendingLosers(b, bondId);
 
         emit BondRejectedByJudge(bondId, msg.sender, contentHash, content);
     }
@@ -585,7 +615,7 @@ contract SimpleBondV7 is ReentrancyGuard {
         _credit(b.token, b.poster, b.bondAmount, bondId, i);
         // Refund every still-pending challenger their stake (replaces the v0.6 claimRefunds path).
         // `i` is still Pending, so it is swept here too.
-        _creditPendingLosers(b, bondId, ChallengeStatus.Refunded);
+        _creditPendingLosers(b, bondId);
 
         emit BondTimedOut(bondId, i);
     }

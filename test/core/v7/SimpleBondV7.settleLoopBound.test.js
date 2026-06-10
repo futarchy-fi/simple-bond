@@ -41,7 +41,7 @@ async function setupBond(overrides = {}, { nSpammers = 4, nPending = 3 } = {}) {
     const spammers = signers.slice(1, 1 + nSpammers);
     const pendingPool = signers.slice(1 + nSpammers, 1 + nSpammers + nPending);
     const token = await deployMockSUSDS();
-    const { bond, judge, judgeProfileId } = await deployBondHarness({ withForwardingJudge: true });
+    const { bond, judge, judgeProfileId } = await deployBondHarness({ withForwardingJudge: true, tokens: [token] });
 
     for (const s of [poster, ...spammers, ...pendingPool]) {
         await fundAndApprove(token, bond, s, ethers.parseEther("1000000"));
@@ -203,7 +203,8 @@ describe("SimpleBondV7 — settle loop is bounded by the LIVE pending set, not c
         expect((await huge.bond.bonds(0)).settled).to.equal(true);
         expect((await huge.bond.bonds(0)).pendingCount).to.equal(0n);
 
-        // Winner credited bond + stake; the other pending challengers credited their stake (Lost).
+        // Winner credited bond + stake; the other pending challengers credited their stake
+        // and swept Refunded (V7-3: Lost is reserved for ruled-against-with-stake-lost).
         expect(await huge.bond.credits(huge.pendingPool[0].address, tokenAddr)).to.equal(
             huge.p.bondAmount + huge.p.challengeAmount
         );
@@ -212,7 +213,7 @@ describe("SimpleBondV7 — settle loop is bounded by the LIVE pending set, not c
             expect(await huge.bond.credits(huge.pendingPool[i].address, tokenAddr)).to.equal(
                 huge.p.challengeAmount
             );
-            expect((await huge.bond.getChallenge(0, firstNewIdx + i)).status).to.equal(2n); // Lost
+            expect((await huge.bond.getChallenge(0, firstNewIdx + i)).status).to.equal(5n); // Refunded (V7-3)
         }
 
         // Conservation: contract balance == sum of ALL unclaimed credits.

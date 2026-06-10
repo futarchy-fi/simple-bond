@@ -21,7 +21,7 @@ async function setupBond(overrides = {}, signerCount = 4) {
     const challengers = signers.slice(1, signerCount);
 
     const token = await deployMockSUSDS();
-    const { bond, judge, judgeProfileId } = await deployBondHarness({ withForwardingJudge: true });
+    const { bond, judge, judgeProfileId } = await deployBondHarness({ withForwardingJudge: true, tokens: [token] });
 
     await fundAndApprove(token, bond, poster, ethers.parseEther("1000"));
     for (const c of challengers) {
@@ -118,10 +118,11 @@ describe("SimpleBondV7.ruleForChallenger (credit model)", () => {
         expect(await bond.credits(c0.address, tokenAddr)).to.equal(params.challengeAmount);
         expect(await bond.credits(c2.address, tokenAddr)).to.equal(params.challengeAmount);
 
-        // Status: losers flipped to Lost, winner Won.
-        expect((await bond.getChallenge(0, 0)).status).to.equal(2n); // Lost
+        // Status (V7-3): swept challengers are Refunded (stake back, money-unambiguous —
+        // Lost is reserved for a challenge the judge actually ruled against); winner Won.
+        expect((await bond.getChallenge(0, 0)).status).to.equal(5n); // Refunded
         expect((await bond.getChallenge(0, 1)).status).to.equal(1n); // Won
-        expect((await bond.getChallenge(0, 2)).status).to.equal(2n); // Lost
+        expect((await bond.getChallenge(0, 2)).status).to.equal(5n); // Refunded
         // Settle loop swept pendingCount to 0.
         expect((await bond.bonds(0)).pendingCount).to.equal(0n);
 

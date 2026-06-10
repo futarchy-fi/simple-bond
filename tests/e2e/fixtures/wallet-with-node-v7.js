@@ -105,11 +105,19 @@ async function deployStack(rpcUrl) {
         deployer,
         "contracts/profiles/ChallengerProfileRegistry.sol/ChallengerProfileRegistry.json"
     );
+    // v0.7 core dependencies: the bond constructor takes the OfficialBondDirectory and
+    // gates createBond on directory.hasToken(token) (audit V7-1).
+    const deployerAddr = await deployer.getAddress();
+    const officialDirectory = await deployArtifact(
+        deployer,
+        "contracts/directory/OfficialBondDirectory.sol/OfficialBondDirectory.json",
+        [deployerAddr, deployerAddr]
+    );
     // The ONLY difference from the v6 fixture: deploy SimpleBondV7 as the bond core.
     const simpleBondV7 = await deployArtifact(
         deployer,
         "contracts/core/SimpleBondV7.sol/SimpleBondV7.json",
-        [judgeProfileRegistry.address]
+        [judgeProfileRegistry.address, officialDirectory.address]
     );
 
     // Canonical judge: operator is judgeOperator (key #4).
@@ -155,10 +163,20 @@ async function deployStack(rpcUrl) {
         await (await tokenAsDeployer.mint(addr, amount)).wait();
     }
 
+    // V7-1: register the e2e token in the directory so createBond accepts it.
+    const dirAbi = loadArtifact(
+        "contracts/directory/OfficialBondDirectory.sol/OfficialBondDirectory.json"
+    ).abi;
+    const dirAsDeployer = new ethers.Contract(officialDirectory.address, dirAbi, deployer);
+    await (await dirAsDeployer.setToken(
+        mockToken.address, true, true, false, 18, 0, "msUSDS", "Mock sUSDS"
+    )).wait();
+
     return {
         chainId: CHAIN_ID,
         rpc: rpcUrl,
         bondContract: simpleBondV7.address,
+        officialDirectory: officialDirectory.address,
         judgeProfileRegistry: judgeProfileRegistry.address,
         posterProfileRegistry: posterProfileRegistry.address,
         challengerProfileRegistry: challengerProfileRegistry.address,
@@ -210,7 +228,7 @@ const test = base.extend({
                                 posterProfileRegistry: deployed.posterProfileRegistry,
                                 challengerProfileRegistry: deployed.challengerProfileRegistry,
                                 manualJudgeV6: deployed.manualJudgeV6,
-                                officialDirectory: deployed.bondContract,
+                                officialDirectory: deployed.officialDirectory,
                                 approvedToken: deployed.approvedToken,
                                 explorer: "http://localhost",
                                 // v0.7 chain — selects the credits()/claim() refund UI.

@@ -27,13 +27,24 @@ async function main() {
   const rec = JSON.parse(fs.readFileSync(recPath, "utf8"));
   const registry = rec.contracts?.judgeProfileRegistry?.address;
   if (!registry) throw new Error("No judgeProfileRegistry in the record to reuse");
+  const directory = rec.contracts?.officialBondDirectory?.address;
+  if (!directory) throw new Error("No officialBondDirectory in the record to reuse (v0.7 createBond gates on directory.hasToken)");
+
+  // V7-1 pre-flight: the directory MUST already curate the approved token, or every
+  // createBond on the new core would revert "Token not approved". Fail closed here.
+  const dirContract = await hre.ethers.getContractAt("OfficialBondDirectory", directory);
+  const approved = rec.approvedToken;
+  if (!approved) throw new Error("No approvedToken in the record to pre-flight the directory gate");
+  if (!(await dirContract.hasToken(approved))) {
+    throw new Error(`DIRECTORY-GATE-BLOCKED: directory ${directory} has no token entry for approvedToken ${approved}. Register it (setToken) before deploying v0.7.`);
+  }
 
   const [deployer] = await hre.ethers.getSigners();
   const prov = hre.ethers.provider;
   const bal = await prov.getBalance(deployer.address);
 
   const F = await hre.ethers.getContractFactory("SimpleBondV7");
-  const deployTx = await F.getDeployTransaction(registry);
+  const deployTx = await F.getDeployTransaction(registry, directory);
   const gas = await prov.estimateGas({ from: deployer.address, data: deployTx.data });
   const fee = await prov.getFeeData();
   const price = fee.maxFeePerGas || fee.gasPrice;
@@ -42,13 +53,14 @@ async function main() {
   console.log(`Network ${net} (chainId ${chainId})`);
   console.log(`Deployer ${deployer.address}  balance ${hre.ethers.formatEther(bal)} ETH`);
   console.log(`Reusing JudgeProfileRegistryV6 ${registry}`);
+  console.log(`Reusing OfficialBondDirectory ${directory} (hasToken(${approved}) ✅)`);
   console.log(`Estimated deploy: gas ${gas} @ ${hre.ethers.formatUnits(price, "gwei")} gwei = ${hre.ethers.formatEther(est)} ETH (need ${hre.ethers.formatEther(need)} w/ margin)`);
   if (bal < need) {
     throw new Error(`GAS-BLOCKED: balance ${hre.ethers.formatEther(bal)} < ${hre.ethers.formatEther(need)} ETH needed. Fund the deployer with Sepolia ETH and retry.`);
   }
 
   console.log("Deploying SimpleBondV7…");
-  const c = await F.deploy(registry);
+  const c = await F.deploy(registry, directory);
   await c.waitForDeployment();
   const addr = await c.getAddress();
   const block = (await c.deploymentTransaction().wait()).blockNumber;
@@ -59,6 +71,7 @@ async function main() {
     approvedToken: rec.approvedToken,
     reusedFromV6: {
       judgeProfileRegistry: registry,
+      officialBondDirectoryAsConstructorDep: directory,
       posterProfileRegistry: rec.contracts?.posterProfileRegistry?.address,
       challengerProfileRegistry: rec.contracts?.challengerProfileRegistry?.address,
       manualJudgeV6: rec.contracts?.manualJudgeV6?.address,

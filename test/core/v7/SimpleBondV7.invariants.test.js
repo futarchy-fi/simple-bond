@@ -18,6 +18,8 @@ const {
     deployBondHarness,
     deployBond,
     deployJudgeProfileRegistry,
+    deployOfficialDirectory,
+    directoryRegisterToken,
     deployForwardingJudge,
     createDefaultBond,
     fundAndApprove,
@@ -29,7 +31,7 @@ async function setupBond(overrides = {}, signerCount = 5) {
     const [poster] = signers;
     const challengers = signers.slice(1, signerCount);
     const token = await deployMockSUSDS();
-    const { bond, judge, judgeProfileId } = await deployBondHarness({ withForwardingJudge: true });
+    const { bond, judge, judgeProfileId } = await deployBondHarness({ withForwardingJudge: true, tokens: [token] });
 
     await fundAndApprove(token, bond, poster, ethers.parseEther("1000"));
     for (const c of challengers) await fundAndApprove(token, bond, c, ethers.parseEther("1000"));
@@ -340,7 +342,8 @@ describe("SimpleBondV7 — reentrancy mock cannot drain claim()", () => {
         const signers = await ethers.getSigners();
         const [poster] = signers;
         const registry = await deployJudgeProfileRegistry();
-        const bond = await deployBond(await registry.getAddress());
+        const directory = await deployOfficialDirectory();
+        const bond = await deployBond(await registry.getAddress(), await directory.getAddress());
         const judge = await deployForwardingJudge();
         const tx = await registry.registerProfile(await judge.getAddress(), "reentrant judge");
         const r = await tx.wait();
@@ -350,6 +353,7 @@ describe("SimpleBondV7 — reentrancy mock cannot drain claim()", () => {
         const Tok = await ethers.getContractFactory("MockReentrantToken");
         const token = await Tok.deploy();
         await token.waitForDeployment();
+        await directoryRegisterToken(directory, token);
 
         return { poster, bond, judge, judgeProfileId, token };
     }
@@ -403,16 +407,21 @@ describe("SimpleBondV7 — fee-on-transfer token surfaces a clean revert", () =>
         const signers = await ethers.getSigners();
         const [poster] = signers;
         const registry = await deployJudgeProfileRegistry();
-        const bond = await deployBond(await registry.getAddress());
+        const directory = await deployOfficialDirectory();
+        const bond = await deployBond(await registry.getAddress(), await directory.getAddress());
         const judge = await deployForwardingJudge();
         const tx = await registry.registerProfile(await judge.getAddress(), "fee judge");
         const r = await tx.wait();
         const judgeProfileId = r.logs.find((l) => l.fragment && l.fragment.name === "ProfileRegistered")
             .args.entryId;
 
+        // NOTE (V7-1): a fee-on-transfer token in the curated directory models CURATION FAILURE —
+        // the on-chain gate only checks membership, not transfer-exactness, so this test still
+        // proves the credit model fails CLOSED (revert, not silent loss) if curation ever slips.
         const Tok = await ethers.getContractFactory("MockFeeToken");
         const token = await Tok.deploy(feeBps);
         await token.waitForDeployment();
+        await directoryRegisterToken(directory, token);
         return { poster, bond, judge, judgeProfileId, token };
     }
 

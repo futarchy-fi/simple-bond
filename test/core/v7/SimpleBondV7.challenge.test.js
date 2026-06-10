@@ -12,7 +12,7 @@ async function setupWithBond(overrides = {}, { withForwardingJudge = false } = {
     const signers = await ethers.getSigners();
     const [poster, challenger1, challenger2, challenger3] = signers;
     const token = await deployMockSUSDS();
-    const { bond, judge, judgeProfileId } = await deployBondHarness({ withForwardingJudge });
+    const { bond, judge, judgeProfileId } = await deployBondHarness({ withForwardingJudge, tokens: [token] });
 
     // Fund the poster + a handful of challengers generously (C1 tests file repeatedly).
     await fundAndApprove(token, bond, poster, ethers.parseEther("1000"));
@@ -188,7 +188,7 @@ describe("SimpleBondV7.challenge", () => {
     it("createBond reverts 'maxChallenges too large' above the ceiling; succeeds at 100", async () => {
         const [poster] = await ethers.getSigners();
         const token = await deployMockSUSDS();
-        const { bond, judge, judgeProfileId } = await deployBondHarness();
+        const { bond, judge, judgeProfileId } = await deployBondHarness({ tokens: [token] });
         await fundAndApprove(token, bond, poster, ethers.parseEther("1000"));
 
         // Sanity: the on-chain ceiling constant is 100.
