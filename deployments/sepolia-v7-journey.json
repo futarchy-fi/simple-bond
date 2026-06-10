@@ -1,54 +1,112 @@
 {
   "network": "sepolia",
   "chainId": 11155111,
-  "date": "2026-06-05",
-  "contract": "0x71e15D42bE15BAE117096E12C9dBA25E67d14C67",
+  "contract": "0xA2aAD4DeAddc984ea359C5151683EA55eA824276",
   "signer": "0x693E3FB46Bb36eE43C702FE94f9463df0691b43d",
-  "note": "Live v0.7 capability journey vs the deployed Sepolia SimpleBondV7. Single funded key acts as poster, self-challenger, and (active) ManualJudgeV6 operator. Verified create/challenge/rule/concede/claim(C2 pull-payment)/close/withdraw end-to-end on-chain. claimTimeout omitted (requires waiting past the ruling window; covered by unit + local e2e).",
-  "explorer": "https://sepolia.etherscan.io/address/0x71e15D42bE15BAE117096E12C9dBA25E67d14C67",
-  "judgeProfileId": 2,
-  "setup": {
-    "registerProfile": "0xddcceb074cad04020168191f05b20c4dc9c0deeaa8feebc3c40d9bc7372c93b6",
-    "mint": "0xe3ec8c16a009fe14d03910b80e3f0a8653b047844ab17a9ce8ae17fb9e11b6e8",
-    "approve": "0xf06be7e38c572bd481964ca8b9d30a110d2b6f568d0967d4d41f4380ce194c70"
-  },
+  "steps": [
+    {
+      "label": "registerProfile",
+      "tx": "0xa1c1d27f90e0c4212cd1c767031d754dc3a06dbd2be47bc266e4c2fc69a41ac0",
+      "gas": "120506",
+      "judgeProfileId": "3"
+    },
+    {
+      "label": "mint",
+      "tx": "0x7f676965be5216c5bb004fc33e07bc5f744eb9ecfd6a2709cecb0b5c90be423c",
+      "gas": "33948"
+    },
+    {
+      "label": "approve",
+      "tx": "0x2e3fbfd58f507ac355df3e850c2837d14a20ac758769652b45206e9fa9b2b578",
+      "gas": "45993"
+    },
+    {
+      "label": "createBond.A",
+      "tx": "0xa5f936d09c136c475b7947b65c910e482dcdeff691b6055bfb86252e9fc240ce",
+      "gas": "368183",
+      "bondId": "0"
+    },
+    {
+      "label": "challenge.A",
+      "tx": "0x2e8205043d06db5d3ec1ff8842186e66541fa52a3b44fb53a1134aab47f5a9bb",
+      "gas": "267561"
+    },
+    {
+      "label": "ruleForChallenger.A",
+      "tx": "0xaa2dfb5c49f0749e52bae0e0a1530fd5ae7ffdbd201217a10463b94235e36d5f",
+      "gas": "148249"
+    },
+    {
+      "label": "claim.A",
+      "tx": "0xf2558a80f262d012e51ae2924b978f77f237df7bbfa457e8254e6db91bbba021",
+      "gas": "39413"
+    },
+    {
+      "label": "createBond.B",
+      "tx": "0xbdadcefd39116f2dd8b2eca1bbbe28556b2a47eb06782cf5aced8e1afe81226d",
+      "gas": "370875",
+      "bondId": "1"
+    },
+    {
+      "label": "challenge.B",
+      "tx": "0x9d522ba07fe34d6cab5da437a8807ed9d46664cc621762d27a5e6095c713e112",
+      "gas": "267573"
+    },
+    {
+      "label": "concede.B",
+      "tx": "0xf0707fa8f8d6d5ee27da833f21133c3bec9354412011336c936295a406d48fd1",
+      "gas": "97397"
+    },
+    {
+      "label": "claim.B",
+      "tx": "0x351f263c589c08196d38a3fcb380402d023931f8b49c624dacd2fd1ed48ff2af",
+      "gas": "41666"
+    },
+    {
+      "label": "createBond.C",
+      "tx": "0xf476bf727848c2463de934d2df737099130a87f1e54fc4d40148083a48abd9b1",
+      "gas": "333935",
+      "bondId": "2"
+    },
+    {
+      "label": "closeBond.C",
+      "tx": "0xcaee65e6c281a9538bf44afe0d78c8186babbd00d312bb6eafbab119a032e156",
+      "gas": "46914"
+    },
+    {
+      "label": "withdrawBond.C",
+      "tx": "0xb5946ec2c2270c3e647d85a3f2a88849df898968d2a2e1e0ad4763519bb5bc29",
+      "gas": "61577"
+    },
+    {
+      "label": "claim.C",
+      "tx": "0x913adf2790549f40cd86c8cdc990fbc4c9d5c8a1aec28187e2f0bb6e2d49288c",
+      "gas": "41666"
+    }
+  ],
   "bonds": {
-    "A_judgeRuling": {
-      "bondId": 4,
-      "createBond": "0xd670e8c7c9a4af314c73afc72f764936b03daaaff913f27c9b716e300c6e70dd",
-      "challenge": "0x9d33213e745dfaa26d5eb2dc8372a2f0339d38fff62e7f62e4de251a7887e969",
-      "ruleForChallenger": "0x00d04684c7bfc1bf8b8be503d7b636a351435e00db38880ba83a42fcff3420c1",
-      "claim": "0xa5f62f792219700423ec08423d673e54c8f2ed4767ed18b540f8ee8b08c5701d",
+    "A": {
+      "bondId": "0",
       "creditAfterRule": "12.5",
       "claimedDelta": "12.5"
     },
-    "B_concede": {
-      "bondId": 5,
-      "createBond": "0xc5fb9a8642160ab85e3138cdf4fd107f04c46f4527ac3d708d48afb2326e94e5",
-      "challenge": "0x85813a277ace9d872a29ee612c509df93451914573743958e05ab2994e8d7507",
-      "concede": "0x1523e3749a9a110516b45492ecb344f53c23c70b45207a18abb48c4a1f3066db",
-      "claim": "0xd3acfa19aeca7f6814c9d062408b5528195762107a2aa74733337f43e53efab0",
+    "B": {
+      "bondId": "1",
       "creditAfterConcede": "3.0",
       "claimedDelta": "3.0"
     },
-    "C_withdraw": {
-      "bondId": 6,
-      "createBond": "0x929282a426ee8e01c7fe48d6bc19c6015b16b7c315fdd11b4fbb905361c98a28",
-      "closeBond": "0x24eb12558ab99c7be45f0a60e062104f917a27f15baab83035d3a0c6f913f994",
-      "withdrawBond": "0xafa5bef36e297822d13c62dfe195ef811297c47793a9173b0259fce97c665a67",
-      "claim": "0x7409085f40cd44fd939b4ba0bf64488395807d44147216575ca46feeb06fb69e",
-      "creditAfterWithdraw": "10.0",
+    "C": {
+      "bondId": "2",
       "claimedDelta": "10.0"
     }
   },
-  "capabilitiesLiveVerified": {
+  "gasSpentEth": "0.002936059619113513",
+  "capabilities": {
     "createBond": true,
     "challenge": true,
     "ruleForChallenger": true,
     "concede": true,
     "claim": true,
-    "closeBond": true,
-    "withdrawBond": true,
-    "claimTimeout": false
+    "withdrawBond": true
   }
 }

@@ -118,6 +118,28 @@ if (process.env.SEPOLIA_V7_CONTRACT) {
   };
 }
 
+// Mainnet v0.7 cutover gate: chain 1 flips to bondVersion 7 ONLY when
+// MAINNET_V7_CONTRACT is explicitly set (takes precedence over the v6 entry).
+// Cutover runbook (AUDIT-v7-2026-06.md §6, owner decision 2026-06-10: old bonds
+// are NOT re-served; judges keep working — judge_profiles and the on-chain
+// registries are untouched by the cutover):
+//   1. settle/withdraw any live v6 bonds (v6 stays on-chain regardless),
+//   2. back up the DB, purge chain-1 rows from bonds/challenges ONLY,
+//   3. reset chain-1 checkpoints + index_checkpoints to v7 deployBlock-1,
+//   4. set MAINNET_V7_CONTRACT / MAINNET_V7_START_BLOCK and restart.
+if (process.env.MAINNET_V7_CONTRACT) {
+  const rpcs = resolveRpcs(process.env.MAINNET_RPCS, process.env.MAINNET_RPC, 'https://eth.llamarpc.com');
+  _CHAINS[1] = {
+    name: 'Ethereum',
+    rpcs,
+    rpc: rpcs[0],
+    contract: process.env.MAINNET_V7_CONTRACT,
+    startBlock: parseInt(process.env.MAINNET_V7_START_BLOCK || '0', 10),
+    explorer: 'https://etherscan.io',
+    bondVersion: 7,
+  };
+}
+
 export const CHAINS = _CHAINS;
 
 // SimpleBondV5 ABI subset — only events + view functions the email watcher needs.

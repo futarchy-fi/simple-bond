@@ -63,6 +63,47 @@ describe("backend v0.7 surface", function () {
     expect(JSON.parse(r.stdout)).to.deep.equal({ six: true, gnosis: true, unknown: true });
   });
 
+  it("MAINNET_V7_CONTRACT env flips chain 1 to bondVersion 7 + the V7 ABI (cutover gate)", () => {
+    const r = runEsm(`
+      import { CHAINS, abiForChain, V7_CONTRACT_ABI } from './backend/config.mjs';
+      const c = CHAINS[1] || {};
+      const out = {
+        contract: c.contract,
+        bondVersion: c.bondVersion,
+        startBlock: c.startBlock,
+        v7abi: abiForChain(1) === V7_CONTRACT_ABI,
+      };
+      process.stdout.write(JSON.stringify(out));
+    `, {
+      // v6 env ALSO set: the v7 gate must take precedence, mirroring Sepolia.
+      MAINNET_V6_CONTRACT: "0x0000000000000000000000000000000000000001",
+      MAINNET_V7_CONTRACT: "0x0000000000000000000000000000000000000007",
+      MAINNET_V7_START_BLOCK: "12345",
+    });
+    if (r.status !== 0) throw new Error(r.stdout + r.stderr);
+    expect(JSON.parse(r.stdout)).to.deep.equal({
+      contract: "0x0000000000000000000000000000000000000007",
+      bondVersion: 7,
+      startBlock: 12345,
+      v7abi: true,
+    });
+  });
+
+  it("without MAINNET_V7_CONTRACT, mainnet stays the v6 entry (no accidental cutover)", () => {
+    const r = runEsm(`
+      import { CHAINS } from './backend/config.mjs';
+      const c = CHAINS[1] || {};
+      process.stdout.write(JSON.stringify({ contract: c.contract, bondVersion: c.bondVersion }));
+    `, {
+      MAINNET_V6_CONTRACT: "0x0000000000000000000000000000000000000001",
+    });
+    if (r.status !== 0) throw new Error(r.stdout + r.stderr);
+    expect(JSON.parse(r.stdout)).to.deep.equal({
+      contract: "0x0000000000000000000000000000000000000001",
+      bondVersion: 6,
+    });
+  });
+
   it("V7_CONTRACT_ABI declares Credited + Claimed and does NOT declare ChallengeRefunded", () => {
     const r = runEsm(`
       import { V7_CONTRACT_ABI } from './backend/config.mjs';
