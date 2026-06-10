@@ -43,8 +43,10 @@ window.SIMPLE_BOND_CONFIG = Object.assign(
         // v0.7 cutover (staging only): Sepolia runs SimpleBondV7. The registries,
         // judge and token are reused from the v6 deploy. Mainnet (chain 1)
         // stays on v0.6 — its cutover is a separate later gate.
-        bondContract: "0x71e15D42bE15BAE117096E12C9dBA25E67d14C67",
-        deployBlock: 10992602,
+        // 2026-06-09: pre-production audit fixes V7-1..V7-5 (AUDIT-v7-2026-06.md);
+        // this core gates createBond on officialDirectory.hasToken(token).
+        bondContract: "0xA2aAD4DeAddc984ea359C5151683EA55eA824276",
+        deployBlock: 11026543,
         judgeProfileRegistry: "0x5C182867862c061a32C7621c0e3529FF682bbF22",
         posterProfileRegistry: "0x7644dfE83B1e1e9E466644557606Ff28916fCc15",
         challengerProfileRegistry: "0xA6c22430CB34AC5403D6f2a01BecD90c91e09C23",

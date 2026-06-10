@@ -301,7 +301,7 @@ Mainnet (chain 1) stays on `v0.6` — its `v0.7` cutover is a separate later gat
 
 | Asset | Chain | Address |
 |-------|-------|---------|
-| SimpleBond v0.7 (`SimpleBondV7`) | Sepolia | `0x71e15D42bE15BAE117096E12C9dBA25E67d14C67` |
+| SimpleBond v0.7 (`SimpleBondV7`) | Sepolia | `0xA2aAD4DeAddc984ea359C5151683EA55eA824276` |
 | JudgeProfileRegistryV6 (reused) | Sepolia | `0x5C182867862c061a32C7621c0e3529FF682bbF22` |
 | PosterProfileRegistry (reused) | Sepolia | `0x7644dfE83B1e1e9E466644557606Ff28916fCc15` |
 | ChallengerProfileRegistry (reused) | Sepolia | `0xA6c22430CB34AC5403D6f2a01BecD90c91e09C23` |
