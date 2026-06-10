@@ -218,6 +218,9 @@ const upsertChainHead = db.prepare(`
 `);
 const getAllChainHeads = db.prepare(`SELECT chain_id, head_block, updated_at FROM chain_heads`);
 const getAllIndexCheckpoints = db.prepare(`SELECT chain_id, last_block FROM index_checkpoints`);
+// Email cursor (the 'checkpoints' table) exposed to health (audit AUDIT-v7 §6 B2):
+// a frozen email path was previously invisible while the index cursor kept advancing.
+const getAllEmailCheckpoints = db.prepare(`SELECT chain_id, last_block FROM checkpoints`);
 
 // --- Dead letters (poison-block ranges that fail even at the 1-block floor) ---
 const upsertDeadLetterStmt = db.prepare(`
@@ -379,11 +382,13 @@ export default {
   indexerStatus() {
     const heads = {}; for (const r of getAllChainHeads.all()) heads[r.chain_id] = r;
     const cps = {}; for (const r of getAllIndexCheckpoints.all()) cps[r.chain_id] = r.last_block;
+    const ecps = {}; for (const r of getAllEmailCheckpoints.all()) ecps[r.chain_id] = r.last_block;
     const dls = {}; for (const r of countDeadLettersByChainStmt.all()) dls[r.chain_id] = r;
     const chainIds = new Set([...Object.keys(heads), ...Object.keys(cps), ...Object.keys(dls)].map(Number));
     return [...chainIds].sort((a, b) => a - b).map((chainId) => {
       const head = heads[chainId] ? heads[chainId].head_block : null;
       const indexed = cps[chainId] ?? null;
+      const emailCp = ecps[chainId] ?? null;
       const dl = dls[chainId] || null;
       const headUpdatedAt = heads[chainId] ? heads[chainId].updated_at : null;
       return {
@@ -391,6 +396,11 @@ export default {
         indexedThroughBlock: indexed,
         headBlock: head,
         blocksBehindHead: head != null && indexed != null ? Math.max(0, head - indexed) : null,
+        // Email-notification cursor lag relative to the read-model cursor
+        // (audit AUDIT-v7 §6 B2): a persistently-failing email path shows up
+        // here while blocksBehindHead still looks healthy.
+        emailCheckpoint: emailCp,
+        emailLagBlocks: indexed != null && emailCp != null ? Math.max(0, indexed - emailCp) : null,
         headUpdatedAt,
         headAgeSeconds: headAgeSeconds(headUpdatedAt),
         deadLetters: dl ? dl.n : 0,
@@ -452,7 +462,10 @@ export default {
     if (judge) return listBondsByJudge.all(chainId, judge.toLowerCase(), limit);
     if (challenger) {
       const ids = listBondIdsByChallenger.all(chainId, challenger.toLowerCase()).map(r => r.bond_id);
-      return ids.map(id => getBondStmt.get(chainId, id)).filter(Boolean).sort((a, b) => b.bond_id - a.bond_id);
+      // Honor `limit` like every other branch (audit AUDIT-v7 §6 B5): newest
+      // bonds first, then cap — otherwise this branch is unbounded.
+      return ids.map(id => getBondStmt.get(chainId, id)).filter(Boolean)
+        .sort((a, b) => b.bond_id - a.bond_id).slice(0, limit);
     }
     return listBondsAll.all(chainId, limit);
   },

@@ -462,8 +462,13 @@ async function pollChain(chainId, provider, contract, iface) {
 const BACKFILL_CHUNK = 9000;
 async function scanSettleReason(contract, chainId, bondId) {
   const provider = contract.runner.provider;
-  const latest = await provider.getBlockNumber();
+  // Scan only CONFIRMED blocks (audit AUDIT-v7 §6 B3): settle_reason is set-once,
+  // so tagging from a reorg-able head could persist a reason whose event was
+  // reorged away. Mirrors the confirmation buffer the live indexer uses.
+  const confirmations = CONFIRMATION_BLOCKS[chainId] || 12;
+  const latest = (await provider.getBlockNumber()) - confirmations;
   const start = Math.max(0, (CHAINS[chainId] || {}).startBlock || 0);
+  if (latest < start) return null;
   const filters = [
     contract.filters.BondRejectedByJudge(bondId),
     contract.filters.BondWithdrawn(bondId),
@@ -509,13 +514,27 @@ export function startWatcher(providers = {}) {
 
   console.log(`[watcher] Starting event watcher for chains: ${chainEntries.map(c => c.chainId).join(', ')}`);
 
+  // In-flight guard (audit AUDIT-v7 §6 B1): setInterval keeps firing even when a
+  // slow RPC makes one tick outlast the interval; overlapping ticks would race
+  // each other's per-chunk checkpoint writes (regression + duplicate emails).
+  // Skip the new tick instead — the next interval resumes from the checkpoint.
+  let tickInFlight = false;
   async function tick() {
-    for (const { chainId, provider, contract, iface } of chainEntries) {
-      // Index first so the read-model is fresh, then emails. Index errors
-      // must not block the email path (and vice-versa).
-      try { await indexChain(chainId, provider, contract, iface); }
-      catch (err) { console.error(`[index] chain ${chainId} tick error:`, err.message); }
-      await pollChain(chainId, provider, contract, iface);
+    if (tickInFlight) {
+      console.warn('[watcher] previous tick still in flight; skipping this interval');
+      return;
+    }
+    tickInFlight = true;
+    try {
+      for (const { chainId, provider, contract, iface } of chainEntries) {
+        // Index first so the read-model is fresh, then emails. Index errors
+        // must not block the email path (and vice-versa).
+        try { await indexChain(chainId, provider, contract, iface); }
+        catch (err) { console.error(`[index] chain ${chainId} tick error:`, err.message); }
+        await pollChain(chainId, provider, contract, iface);
+      }
+    } finally {
+      tickInFlight = false;
     }
   }
 

@@ -288,16 +288,17 @@ describe("bonds read-model API", function () {
         const posLim2 = await j('/api/bonds?chainId='+chainId+'&poster='+P+'&limit=2');
         assert(posLim2.bonds.length===2, 'limit=2 clamps poster-path count to 2 (got '+posLim2.bonds.length+')');
 
-        // --- REAL BEHAVIOR (asserted as-is): the CHALLENGER path IGNORES limit. ---
-        // db.listBonds' challenger branch maps every DISTINCT bond_id from the
-        // challenges table and does not thread the limit param into that query, so
-        // limit=2 still returns all 6. This is the current contract; the test pins it.
+        // --- limit clamps the COUNT on the challenger path too (audit AUDIT-v7 §6 B5:
+        // this branch USED to ignore limit and return everything; now it sorts
+        // bondId DESC first and caps, like every other branch). ---
         const chalLim2 = await j('/api/bonds?chainId='+chainId+'&challenger='+C+'&limit=2');
-        assert(chalLim2.bonds.length===6, 'challenger path IGNORES limit (returns all 6 even with limit=2; got '+chalLim2.bonds.length+')');
-        // ordering on the challenger path is still bondId DESC.
-        assert(JSON.stringify(chalLim2.bonds.map(b=>b.bondId))===JSON.stringify([5,4,3,2,1,0]), 'challenger path ordered bondId DESC (got '+JSON.stringify(chalLim2.bonds.map(b=>b.bondId))+')');
+        assert(chalLim2.bonds.length===2, 'limit=2 clamps challenger-path count to 2 (got '+chalLim2.bonds.length+')');
+        assert(JSON.stringify(chalLim2.bonds.map(b=>b.bondId))===JSON.stringify([5,4]), 'challenger path keeps the DESC head (got '+JSON.stringify(chalLim2.bonds.map(b=>b.bondId))+')');
+        // unlimited challenger query still returns everything, DESC.
+        const chalAll = await j('/api/bonds?chainId='+chainId+'&challenger='+C);
+        assert(JSON.stringify(chalAll.bonds.map(b=>b.bondId))===JSON.stringify([5,4,3,2,1,0]), 'challenger path ordered bondId DESC (got '+JSON.stringify(chalAll.bonds.map(b=>b.bondId))+')');
 
-        console.log('OK meta lag + limit clamp + ordering (challenger ignores limit)'); srv.close(); process.exit(0);
+        console.log('OK meta lag + limit clamp + ordering (challenger honors limit)'); srv.close(); process.exit(0);
       }});
     `;
     const r = runEsm(src);

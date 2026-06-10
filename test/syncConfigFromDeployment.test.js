@@ -29,8 +29,16 @@ function sampleRecord(chainId) {
 
 describe("syncConfigFromDeployment", function () {
     let original;
+    let v6Baseline;
     before(() => {
         original = fs.readFileSync(RUNTIME_CONFIG, "utf8");
+        // The LIVE config's Sepolia entry is bondVersion 7 (v0.7 staging cutover),
+        // which the script now refuses to downgrade (audit AUDIT-v7 §6 TD2). The
+        // v6 patch-path tests run against a v6-Sepolia baseline instead.
+        v6Baseline = original.replace(
+            /(11155111:\s*\{[\s\S]*?bondVersion:\s*)7/,
+            "$16"
+        );
     });
     after(() => {
         fs.writeFileSync(RUNTIME_CONFIG, original);
@@ -43,7 +51,17 @@ describe("syncConfigFromDeployment", function () {
         }
     });
 
+    it("REFUSES to re-sync a chain whose live entry is bondVersion 7 (v7-downgrade guard)", () => {
+        // Runs against the REAL (v7-Sepolia) config: this is the exact footgun
+        // the guard exists for — a v6 re-sync silently reverting the cutover.
+        expect(() => patchRuntimeConfig("sepolia", sampleRecord(11155111)))
+            .to.throw(/V7-DOWNGRADE-BLOCKED/);
+        // And the file was not touched.
+        expect(fs.readFileSync(RUNTIME_CONFIG, "utf8")).to.equal(original);
+    });
+
     it("patches runtime-config.js with a new sepolia chain entry", () => {
+        fs.writeFileSync(RUNTIME_CONFIG, v6Baseline); // v6-Sepolia baseline
         const rec = sampleRecord(11155111);
         patchRuntimeConfig("sepolia", rec);
         const patched = fs.readFileSync(RUNTIME_CONFIG, "utf8");
@@ -56,7 +74,7 @@ describe("syncConfigFromDeployment", function () {
     });
 
     it("idempotent — running twice produces the same file (no duplicate entries)", () => {
-        fs.writeFileSync(RUNTIME_CONFIG, original); // reset
+        fs.writeFileSync(RUNTIME_CONFIG, v6Baseline); // reset to v6-Sepolia baseline
         patchRuntimeConfig("sepolia", sampleRecord(11155111));
         const first = fs.readFileSync(RUNTIME_CONFIG, "utf8");
         patchRuntimeConfig("sepolia", sampleRecord(11155111));
@@ -65,12 +83,23 @@ describe("syncConfigFromDeployment", function () {
     });
 
     it("can patch mainnet without removing sepolia", () => {
-        fs.writeFileSync(RUNTIME_CONFIG, original); // reset
+        fs.writeFileSync(RUNTIME_CONFIG, v6Baseline); // reset to v6-Sepolia baseline
         patchRuntimeConfig("sepolia", sampleRecord(11155111));
         patchRuntimeConfig("mainnet", sampleRecord(1));
         const patched = fs.readFileSync(RUNTIME_CONFIG, "utf8");
         expect(patched).to.include("1:");
         expect(patched).to.include("11155111:");
         expect(patched).to.include("etherscan.io");
+    });
+
+    it("mainnet (chain 1) patch does NOT false-trigger the v7 guard on the live v7-Sepolia config", () => {
+        // Regression for the substring hazard: '1: {' must not match inside
+        // '11155111: {'. Patching mainnet on the REAL config (Sepolia = v7)
+        // must succeed and leave the Sepolia v7 entry untouched.
+        fs.writeFileSync(RUNTIME_CONFIG, original);
+        patchRuntimeConfig("mainnet", sampleRecord(1));
+        const patched = fs.readFileSync(RUNTIME_CONFIG, "utf8");
+        expect(patched).to.include("0x0000000000000000000000000000000000000004"); // mainnet patched
+        expect(patched).to.match(/11155111:\s*\{[\s\S]*?bondVersion:\s*7/); // Sepolia v7 intact
     });
 });

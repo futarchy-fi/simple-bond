@@ -29,6 +29,20 @@ function patchRuntimeConfig(network, record) {
     const cfgPath = path.resolve(__dirname, "..", "..", "frontend", "runtime-config.js");
     const src = fs.readFileSync(cfgPath, "utf8");
     const chainId = record.chainId;
+
+    // v7-downgrade guard (audit AUDIT-v7 §6 TD2): this is a v6 sync script. If the
+    // runtime-config entry for this chain is already bondVersion 7 (a completed v7
+    // cutover), blindly re-syncing from the v6 record would silently REVERT the
+    // cutover. Refuse unless explicitly forced. Anchored to the entry's 6-space
+    // indentation (same as chainBlockRegex below) so chain 1 never substring-matches
+    // inside 11155111, and only THIS chain's block is inspected.
+    const guardMatch = src.match(new RegExp(`      ${chainId}:\\s*\\{[\\s\\S]*?\\n      \\}`, "m"));
+    if (guardMatch && /bondVersion:\s*7/.test(guardMatch[0]) && process.env.FORCE_V6_DOWNGRADE !== "1") {
+        throw new Error(
+            `V7-DOWNGRADE-BLOCKED: runtime-config chain ${chainId} is bondVersion 7 (live v0.7 cutover). ` +
+            `Re-syncing from the v6 record would revert it. Set FORCE_V6_DOWNGRADE=1 only if that is intended.`
+        );
+    }
     const explorer =
         chainId === 1
             ? "https://etherscan.io"

@@ -25,6 +25,22 @@ async function main() {
   const recPath = path.join(dir, recordName(chainId));
   if (!fs.existsSync(recPath)) throw new Error(`No deployment record ${recPath} — need the v6 stack first`);
   const rec = JSON.parse(fs.readFileSync(recPath, "utf8"));
+
+  // Overwrite guard (audit AUDIT-v7 §6 TD0): a re-run would silently clobber the
+  // canonical record of an already-live core. Require an explicit FORCE, and even
+  // then keep a timestamped backup of the old record. Checked BEFORE deploying so
+  // a refusal doesn't waste a deploy.
+  const outPath = path.join(dir, recordName(chainId).replace(".json", "-v7.json"));
+  if (fs.existsSync(outPath)) {
+    if (process.env.FORCE_V7_RECORD !== "1") {
+      const prev = JSON.parse(fs.readFileSync(outPath, "utf8"));
+      throw new Error(`RECORD-EXISTS: ${outPath} already records SimpleBondV7 ${prev.contracts?.simpleBondV7?.address}. Re-deploying replaces the canonical staging core. Set FORCE_V7_RECORD=1 to proceed (old record will be backed up).`);
+    }
+    const bak = outPath.replace(/\.json$/, `.bak-${Date.now()}.json`);
+    fs.copyFileSync(outPath, bak);
+    console.log(`FORCE_V7_RECORD=1: backed up existing record to ${bak}`);
+  }
+
   const registry = rec.contracts?.judgeProfileRegistry?.address;
   if (!registry) throw new Error("No judgeProfileRegistry in the record to reuse");
   const directory = rec.contracts?.officialBondDirectory?.address;
@@ -79,7 +95,6 @@ async function main() {
     },
     contracts: { simpleBondV7: { address: addr, blockNumber: block } },
   };
-  const outPath = path.join(dir, recordName(chainId).replace(".json", "-v7.json"));
   fs.writeFileSync(outPath, JSON.stringify(out, null, 2) + "\n");
   console.log(`Wrote ${outPath}`);
 }

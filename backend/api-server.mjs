@@ -15,6 +15,12 @@ const rateBuckets = new Map(); // ip -> { count, resetAt }
 
 function checkRateLimit(ip) {
   const now = Date.now();
+  // Bound the bucket map (audit AUDIT-v7 §6 B4): a caller cycling spoofed
+  // identities must not grow memory without limit between sweeps.
+  if (rateBuckets.size >= 50_000 && !rateBuckets.has(ip)) {
+    for (const [k, b] of rateBuckets) if (now > b.resetAt) rateBuckets.delete(k);
+    if (rateBuckets.size >= 50_000) return false; // fail closed for NEW identities under flood
+  }
   let bucket = rateBuckets.get(ip);
   if (!bucket || now > bucket.resetAt) {
     bucket = { count: 0, resetAt: now + 3600_000 };
@@ -61,7 +67,16 @@ function readBody(req) {
 }
 
 function getClientIp(req) {
-  return req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket.remoteAddress;
+  // Take the LAST X-Forwarded-For entry (audit AUDIT-v7 §6 B4): Caddy APPENDS the
+  // address it saw, so the rightmost hop is proxy-attested; the first entry is
+  // client-supplied and lets a caller mint fresh rate-limit buckets per request.
+  const xff = req.headers['x-forwarded-for'];
+  if (xff) {
+    const parts = xff.split(',');
+    const last = parts[parts.length - 1]?.trim();
+    if (last) return last;
+  }
+  return req.socket.remoteAddress;
 }
 
 function buildJudgeProfileMessage({ address, chainId, statement, linkUrl, timestamp }) {
@@ -264,12 +279,26 @@ export function healthFromIndexer(entries, { lagThreshold = HEALTH_LAG_THRESHOLD
     }
 
     // Lag unknown means we cannot even compute distance-from-head (missing head
-    // or checkpoint) — treat as down-class, like a missing heartbeat.
+    // or checkpoint) — treat as down-class, like a missing heartbeat. EXCEPT a
+    // fresh chain whose watcher is demonstrably alive (recent head write) but
+    // hasn't written its first checkpoint yet: that's "starting", a degraded
+    // state, not a hard-down 503 page (audit AUDIT-v7 §6 B6).
     if (e.blocksBehindHead == null) {
-      reasons.push('lag unknown (head/checkpoint missing)');
-      down = true;
+      const tickFresh = e.headAgeSeconds != null && e.headAgeSeconds <= tickThreshold;
+      if (tickFresh && e.headBlock != null && e.indexedThroughBlock == null) {
+        reasons.push('starting: first checkpoint not yet written');
+      } else {
+        reasons.push('lag unknown (head/checkpoint missing)');
+        down = true;
+      }
     } else if (e.blocksBehindHead > lagThreshold) {
       reasons.push(`lag ${e.blocksBehindHead} > ${lagThreshold}`);
+    }
+
+    // Email-notification cursor stalling behind the read-model cursor is a real
+    // degradation even while indexing looks healthy (audit AUDIT-v7 §6 B2).
+    if (e.emailLagBlocks != null && e.emailLagBlocks > lagThreshold) {
+      reasons.push(`email cursor lag ${e.emailLagBlocks} > ${lagThreshold}`);
     }
 
     // Dead-lettered (poison-block) ranges freeze the read-model behind them —
@@ -452,7 +481,9 @@ function serializeBond(row) {
     challengeCount: row.challenge_count,
     settled: !!row.settled,
     closed: !!row.closed,
-    settleReason: row.settle_reason || null,
+    // Only meaningful once settled — a stale reason row (e.g. reorg artifact)
+    // must not label a live bond (audit AUDIT-v7 §6 B9).
+    settleReason: row.settled ? (row.settle_reason || null) : null,
     updatedAt: row.updated_at,
   };
 }

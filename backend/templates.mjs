@@ -1,8 +1,16 @@
-import { createHmac } from 'crypto';
+import { createHmac, timingSafeEqual } from 'crypto';
 import { NOTIFY_BASE_URL, FRONTEND_BASE_URL, HMAC_SECRET } from './config.mjs';
 
 function hmacToken(data) {
   return createHmac('sha256', HMAC_SECRET).update(data).digest('hex');
+}
+
+// Constant-time hex comparison (audit AUDIT-v7 §6 B8): `!==` short-circuits on
+// the first differing byte, leaking match-prefix length to a timing oracle.
+function safeEqualHex(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string' || a.length !== b.length) return false;
+  try { return timingSafeEqual(Buffer.from(a, 'hex'), Buffer.from(b, 'hex')); }
+  catch (_) { return false; }
 }
 
 export function verifyToken(address, chainId) {
@@ -20,7 +28,7 @@ export function parseToken(token) {
   if (parts.length !== 4) return null;
   const [action, address, chainIdStr, sig] = parts;
   const payload = `${action}:${address}:${chainIdStr}`;
-  if (hmacToken(payload) !== sig) return null;
+  if (!safeEqualHex(hmacToken(payload), sig)) return null;
   return { action, address, chainId: parseInt(chainIdStr, 10) };
 }
 
