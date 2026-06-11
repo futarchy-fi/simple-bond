@@ -104,6 +104,14 @@ module.exports = {
         },
     },
     etherscan: {
+        // Enabled only when a key is present; Etherscan signup is human-gated.
+        enabled: !!process.env.ETHERSCAN_API_KEY,
         apiKey: process.env.ETHERSCAN_API_KEY || "",
+    },
+    // Keyless public source verification (Sourcify). Etherscan imports/displays
+    // Sourcify-verified sources, so this verifies the contract without an
+    // Etherscan account. `npx hardhat verify --network ethereum <addr> <args>`.
+    sourcify: {
+        enabled: true,
     },
 };
