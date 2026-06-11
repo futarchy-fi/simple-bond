@@ -3933,7 +3933,6 @@
       // capacity-exhausted state would be invisible. v0.7 caps on the live pending
       // set, so this only fires for a genuinely full pending queue there.
       const challengeCapacityFull = bondOpen && !claimMismatch && !_hasCapacity;
-      const isV7 = chain() && chain().bondVersion === 7;
       const _bs = bondStatus({ settled: b.settled, closed: b.closed, pendingCount: b.pendingCount, settleReason, challenges });
 
       // Refunds affordance — VERSION-AWARE.
