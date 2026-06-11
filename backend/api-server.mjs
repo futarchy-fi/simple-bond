@@ -8,7 +8,7 @@ import {
   FRONTEND_BASE_URL,
 } from './config.mjs';
 import db from './db.mjs';
-import { sendEmail } from './mailer.mjs';
+import { sendEmail, emailEnabled } from './mailer.mjs';
 import { verificationEmail, parseToken } from './templates.mjs';
 
 const rateBuckets = new Map(); // ip -> { count, resetAt }
@@ -337,7 +337,9 @@ function handleHealth(req, res) {
   // Keep HTTP 200 for ok/degraded so existing r.ok consumers and
   // scripts/monitor.mjs keep working; only a fully "down" indexer returns 503.
   const httpStatus = status === 'down' ? 503 : 200;
-  json(res, httpStatus, { status, uptime: process.uptime(), indexer, thresholds });
+  // email.enabled lets the status page render "Bond Email Delivery" honestly
+  // (delivery is provider-key-gated; per-chain emailLagBlocks live in indexer[]).
+  json(res, httpStatus, { status, uptime: process.uptime(), email: { enabled: emailEnabled() }, indexer, thresholds });
 }
 
 function handleJudgeProfileGet(req, res) {

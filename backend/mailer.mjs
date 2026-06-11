@@ -15,6 +15,12 @@ const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
 const EMAIL_ENABLED = RESEND_API_KEY.length > 0;
 const SEND_TIMEOUT_MS = 15_000;
 
+/** Whether a delivery provider is configured — surfaced by /api/notify/health
+ *  so the status page can show "Bond Email Delivery" honestly. */
+export function emailEnabled() {
+  return EMAIL_ENABLED;
+}
+
 /**
  * Send an HTML email. Returns the Resend message id on success, or null on
  * failure / when disabled. Never throws: the email path must not be able to

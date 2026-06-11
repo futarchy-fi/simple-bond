@@ -646,6 +646,9 @@ describe("indexer resilience", function () {
         const h = await (await fetch('http://127.0.0.1:3392/api/notify/health')).json();
         assert(Array.isArray(h.indexer), 'health.indexer array');
         assert(h.indexer.find(x=>x.chainId===1).blocksBehindHead === 500, 'health lag');
+        // Status-page contract: delivery state is reported honestly (this suite
+        // runs with RESEND_API_KEY force-emptied, so enabled must be false).
+        assert(h.email && h.email.enabled === false, 'health.email.enabled false when no provider key');
         console.log('OK'); srv.close(); process.exit(0);
       }});
     `;
