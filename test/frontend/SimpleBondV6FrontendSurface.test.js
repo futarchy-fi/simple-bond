@@ -354,9 +354,11 @@ describe("SimpleBond v0.6 frontend surface", function () {
                     // fallback survives (covers My-Bonds + Bonds-judged).
                     expect(LEGACY_FALLBACK_RE.test(html()), "found legacy withTimeout(queryFilterChunked, 25000, [])").to.equal(false);
                     // All three roles thread a per-role error into renderMySection.
-                    expect(html()).to.match(/renderMySection\('myPoster', 'myPosterCount', posterIds, 'poster', posterErr\)/);
-                    expect(html()).to.match(/renderMySection\('myChallenger', 'myChallengerCount', challengerIds, 'challenger', challengerErr\)/);
-                    expect(html()).to.match(/renderMySection\('myJudge', 'myJudgeCount', judgeIds, 'judge', judgeErr\)/);
+                    // Per-role error threaded in; trailing args (idxBonds, sharedRate
+                    // for the indexer-payload fast path) may follow the error param.
+                    expect(html()).to.match(/renderMySection\('myPoster', 'myPosterCount', posterIds, 'poster', posterErr[^)]*\)/);
+                    expect(html()).to.match(/renderMySection\('myChallenger', 'myChallengerCount', challengerIds, 'challenger', challengerErr[^)]*\)/);
+                    expect(html()).to.match(/renderMySection\('myJudge', 'myJudgeCount', judgeIds, 'judge', judgeErr[^)]*\)/);
                     // Each fallback branch only fills ids on ok, else records the
                     // per-role error (so a timeout can't leave ids silently empty).
                     expect(html()).to.match(/const r = await withTimeoutResult\(queryFilterChunked\(bc, filter, fromBlock\), 25000\);[\s\S]{0,160}posterErr = fallbackErr\(r\)/);
@@ -367,7 +369,9 @@ describe("SimpleBond v0.6 frontend surface", function () {
                 it("MY BONDS: renderMySection has an error branch DISTINCT from the empty-state hint", function () {
                     // renderMySection takes the loadError param and, when set,
                     // renders a retryable msg-error INSTEAD of the empty hint.
-                    expect(html()).to.match(/async function renderMySection\(containerId, countId, ids, role, loadError\)/);
+                    // Core params pinned; trailing optional params (idxBonds, sharedRate
+                    // for the indexer-payload fast path) may follow loadError.
+                    expect(html()).to.match(/async function renderMySection\(containerId, countId, ids, role, loadError[^)]*\)/);
                     // The error branch is checked BEFORE the ids.length === 0 empty
                     // branch and renders the retryable copy via msg-error. Deleting
                     // the branch (falling back to the empty hint) fails this.
