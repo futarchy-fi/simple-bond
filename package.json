@@ -15,6 +15,9 @@
     "e2e:live": "playwright test --project live-mainnet --project live-sepolia",
     "e2e:local": "playwright test --project local",
     "e2e:report": "playwright show-report",
+    "frontend:parse": "node scripts/check-inline-scripts.mjs",
+    "e2e:smoke": "node scripts/render-smoke.mjs",
+    "e2e:smoke:docker": "docker run --rm -v \"$PWD\":/work -w /work mcr.microsoft.com/playwright:v1.60.0-noble node scripts/render-smoke.mjs",
     "capabilities": "node scripts/aggregate-capabilities.mjs",
     "lint": "node scripts/lint-guardrails.mjs"
   },

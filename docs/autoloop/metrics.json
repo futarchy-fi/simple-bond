@@ -1,6 +1,7 @@
 {
-  "iteration": 33,
-  "updated": "2026-06-06",
+  "iteration": 34,
+  "updated": "2026-06-11",
+  "updatedNote": "Gates re-verified LIVE this session against current HEAD: npx hardhat test (1169 passing, incl. new inline-script parse gate) + scripts/e2e-docker.sh --project local (87 passed / 4 skipped / 0 failed) + render-smoke (proven RED-on-broken). NOT a fossil — see scoreboard staleness guard.",
   "liveJourneySepolia": {
     "date": "2026-06-05",
     "contract": "0x71e15D42bE15BAE117096E12C9dBA25E67d14C67",
