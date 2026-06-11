@@ -1,27 +1,56 @@
 import { FROM_EMAIL } from './config.mjs';
 
-// Email delivery is temporarily stubbed.
+// Email delivery via Resend (https://resend.com) — plain HTTPS API, no SDK.
 //
-// The original implementation sent mail through AWS SES, but the AWS account
-// behind it was decommissioned during the GCP migration. Until a replacement
-// provider is wired up, sendEmail() is a no-op that logs what *would* have been
-// sent so the API and chain watcher can run end-to-end without a mail backend.
+// History: the original implementation sent through AWS SES; that account was
+// decommissioned during the GCP migration, and sendEmail() was a logged no-op
+// until 2026-06-11. Delivery is gated on RESEND_API_KEY: without it (dev, CI,
+// tests) sendEmail() stays the same honest no-op, so the API keeps reporting
+// "delivery is not yet enabled" instead of claiming mail was sent.
 //
-// To re-enable email, replace the body of sendEmail() with a real provider
-// (Resend, SMTP via nodemailer, SES on a live account, ...) and return its
-// message id on success / null on failure. No other module needs to change.
-const EMAIL_ENABLED = false;
+// Contract (unchanged): returns the provider message id on success, or null on
+// failure / when disabled. Callers (handleRegister, the event watcher) treat
+// null as "not delivered" and must stay honest about it.
+const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
+const EMAIL_ENABLED = RESEND_API_KEY.length > 0;
+const SEND_TIMEOUT_MS = 15_000;
 
 /**
- * Send an HTML email. Currently a logged no-op (see note above).
- * Returns a message id on success, or null on failure / when disabled.
+ * Send an HTML email. Returns the Resend message id on success, or null on
+ * failure / when disabled. Never throws: the email path must not be able to
+ * crash the watcher tick or an API request.
  */
-export async function sendEmail(to, subject, _htmlBody) {
+export async function sendEmail(to, subject, htmlBody) {
   if (!EMAIL_ENABLED) {
     console.warn(
       `[mailer] email disabled — skipped send from=${FROM_EMAIL} to=${to} subject=${JSON.stringify(subject)}`
     );
     return null;
   }
-  return null;
+  try {
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${RESEND_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from: `SimpleBond <${FROM_EMAIL}>`,
+        to: [to],
+        subject,
+        html: htmlBody,
+      }),
+      // A hung provider must not wedge the watcher's email pass.
+      signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok || !body.id) {
+      console.error(`[mailer] send failed (${res.status}) to=${to}:`, body.message || body.name || 'unknown error');
+      return null;
+    }
+    return body.id;
+  } catch (err) {
+    console.error(`[mailer] send error to=${to}:`, err.message);
+    return null;
+  }
 }

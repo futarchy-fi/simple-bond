@@ -14,7 +14,9 @@ function runEsm(src, extraEnv = {}) {
   const r = spawnSync(process.execPath, ["--input-type=module", "-e", src], {
     cwd: ROOT,
     encoding: "utf8",
-    env: { ...process.env, BOND_NOTIFY_DB_PATH: dbPath, ...extraEnv },
+    // RESEND_API_KEY is force-emptied: these tests assert the email-DISABLED
+    // honesty path, and a dev box with a real key must never make them send.
+    env: { ...process.env, RESEND_API_KEY: "", BOND_NOTIFY_DB_PATH: dbPath, ...extraEnv },
   });
   return r;
 }
