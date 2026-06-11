@@ -352,6 +352,31 @@ async function resolveRecipients(contract, eventName, parsedLog, bondId) {
   return [...addresses];
 }
 
+// Human-readable one-liner stored on each notify_events row, so the Telegram
+// feed renders without re-deriving from raw event names. Chain label keeps
+// mainnet/sepolia legible in the bot.
+const CHAIN_LABEL = { 1: 'Ethereum', 11155111: 'Sepolia', 100: 'Gnosis' };
+const NOTIFY_VERB = {
+  BondCreated: 'created',
+  Challenged: 'challenged',
+  ClaimConceded: 'conceded',
+  ClaimModified: 'claim updated',
+  RuledForChallenger: 'ruled for challenger',
+  RuledForPoster: 'ruled for poster',
+  ChallengeRejected: 'challenge rejected',
+  ChallengeRefunded: 'challenge refunded',
+  BondWithdrawn: 'withdrawn',
+  BondTimedOut: 'timed out',
+  BondRejectedByJudge: 'rejected by judge',
+  BondClosed: 'closed',
+  BondOpened: 'opened',
+};
+export function notifySummary(eventName, bondId, chainId) {
+  const chain = CHAIN_LABEL[chainId] || `chain ${chainId}`;
+  const verb = NOTIFY_VERB[eventName] || eventName;
+  return `Bond #${bondId} ${verb} on ${chain}`;
+}
+
 /**
  * Process a batch of logs from a single chain.
  */
@@ -369,6 +394,26 @@ async function processLogs(contract, chainId, logs, iface) {
     if (!EVENT_RECIPIENTS[eventName]) continue;
 
     const bondId = Number(parsed.args.bondId);
+
+    // Record the event into the append-only notification outbox FIRST, before any
+    // delivery attempt — this is the canonical "notification index" and the
+    // source for the Telegram feed. Idempotent on (chain, tx, logIndex), so a
+    // reorg replay / re-scan never double-counts. Recorded regardless of whether
+    // any subscriber exists, so new bonds/challenges always surface on the bot.
+    try {
+      db.recordNotifyEvent({
+        chain_id: chainId,
+        block_number: typeof log.blockNumber === 'number' ? log.blockNumber : Number(log.blockNumber ?? 0) || null,
+        tx_hash: log.transactionHash || null,
+        log_index: log.index ?? log.logIndex ?? null,
+        event_type: eventName,
+        bond_id: Number.isFinite(bondId) ? bondId : null,
+        summary: notifySummary(eventName, bondId, chainId),
+      });
+    } catch (err) {
+      console.error(`[watcher] notify-outbox write failed for ${eventName} bond #${bondId}:`, err.message);
+    }
+
     const recipients = await resolveRecipients(contract, eventName, parsed, bondId);
     if (recipients.length === 0) continue;
 

@@ -118,6 +118,26 @@ db.exec(`
     attempts INTEGER NOT NULL DEFAULT 1,
     PRIMARY KEY (chain_id, from_block, to_block)
   );
+
+  -- Append-only notification outbox: the canonical "notification index". One row
+  -- per notifiable on-chain event, written by the watcher INDEPENDENT of whether
+  -- any email/Telegram delivery later succeeds — so a failed delivery is never a
+  -- silent gap (the event is still recorded with a monotonic seq). The seq is the
+  -- "index of the last notification"; since=<seq> drives the Telegram feed pull.
+  -- UNIQUE(chain_id, tx_hash, log_index) makes re-scans / reorg replays idempotent.
+  CREATE TABLE IF NOT EXISTS notify_events (
+    seq INTEGER PRIMARY KEY AUTOINCREMENT,
+    chain_id INTEGER NOT NULL,
+    block_number INTEGER,
+    tx_hash TEXT,
+    log_index INTEGER,
+    event_type TEXT NOT NULL,
+    bond_id INTEGER,
+    summary TEXT DEFAULT '',
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE (chain_id, tx_hash, log_index)
+  );
+  CREATE INDEX IF NOT EXISTS idx_notify_events_chain_block ON notify_events(chain_id, block_number);
 `);
 
 // Idempotent migration: CREATE TABLE IF NOT EXISTS won't alter a pre-existing
@@ -239,6 +259,43 @@ const getDeadLettersForChainStmt = db.prepare(`
 const countDeadLettersByChainStmt = db.prepare(`
   SELECT chain_id, COUNT(*) AS n, MIN(from_block) AS min_from FROM dead_letters GROUP BY chain_id
 `);
+
+// --- Notification outbox (notify_events) ---
+// Idempotent insert: a re-scanned / reorg-replayed log (same chain+tx+logIndex)
+// is ignored rather than duplicated. On-chain rows carry tx/log; synthetic rows
+// (e.g. off-chain judge registration) pass a stable synthetic tx_hash/log_index.
+const insertNotifyEventStmt = db.prepare(`
+  INSERT INTO notify_events (chain_id, block_number, tx_hash, log_index, event_type, bond_id, summary)
+  VALUES (@chain_id, @block_number, @tx_hash, @log_index, @event_type, @bond_id, @summary)
+  ON CONFLICT(chain_id, tx_hash, log_index) DO NOTHING
+`);
+const getNotifyEventsSinceStmt = db.prepare(`
+  SELECT seq, chain_id, block_number, tx_hash, log_index, event_type, bond_id, summary, created_at
+  FROM notify_events WHERE seq > ? ORDER BY seq ASC LIMIT ?
+`);
+const getNotifyEventsSinceForChainsStmt = db.prepare(`
+  SELECT seq, chain_id, block_number, tx_hash, log_index, event_type, bond_id, summary, created_at
+  FROM notify_events
+  WHERE seq > ? AND chain_id IN (SELECT value FROM json_each(?))
+  ORDER BY seq ASC LIMIT ?
+`);
+const maxNotifySeqStmt = db.prepare(`SELECT COALESCE(MAX(seq), 0) AS seq FROM notify_events`);
+const lastNotifiedBlockByChainStmt = db.prepare(`
+  SELECT chain_id, MAX(block_number) AS last_block FROM notify_events GROUP BY chain_id
+`);
+
+// --- Email delivery liveness (derived from email_log) ---
+// "Real or heartbeat" send recency: the newest row with a non-null provider
+// message id, across BOTH organic event emails and the synthetic heartbeat
+// (event_type='__heartbeat__'). This — not "is a key configured" — is the green
+// signal: green ⟺ a real send was provider-accepted recently.
+const lastEmailSendStmt = db.prepare(`
+  SELECT MAX(sent_at) AS at FROM email_log WHERE ses_message_id IS NOT NULL
+`);
+const lastHeartbeatStmt = db.prepare(`
+  SELECT MAX(sent_at) AS at FROM email_log WHERE ses_message_id IS NOT NULL AND event_type='__heartbeat__'
+`);
+export const HEARTBEAT_EVENT_TYPE = '__heartbeat__';
 
 // --- Bonds read-model ---
 
@@ -407,6 +464,56 @@ export default {
         blockedFromBlock: dl ? dl.min_from : null,
       };
     });
+  },
+
+  // --- Notification outbox ---
+  // Record a notifiable event (idempotent on chain+tx+logIndex). `bondId` may be
+  // null for non-bond events (e.g. judge registration). Returns nothing useful;
+  // the row's seq is the monotonic notification index read back via notifyStatus.
+  recordNotifyEvent({ chain_id, block_number = null, tx_hash = null, log_index = null, event_type, bond_id = null, summary = '' }) {
+    insertNotifyEventStmt.run({
+      chain_id,
+      block_number: block_number ?? null,
+      tx_hash: tx_hash ?? null,
+      log_index: log_index ?? null,
+      event_type,
+      bond_id: bond_id ?? null,
+      summary: summary ?? '',
+    });
+  },
+  // Feed pull for the Telegram bot: events with seq > `since`, oldest-first,
+  // capped at `limit`. `chains` (optional array of chain ids) filters to e.g.
+  // mainnet-only so staging noise stays out of the public channel.
+  getNotifyEventsSince(since, { limit = 50, chains = null } = {}) {
+    const lim = Math.max(1, Math.min(500, Number(limit) || 50));
+    if (Array.isArray(chains) && chains.length) {
+      return getNotifyEventsSinceForChainsStmt.all(Number(since) || 0, JSON.stringify(chains.map(Number)), lim);
+    }
+    return getNotifyEventsSinceStmt.all(Number(since) || 0, lim);
+  },
+  // Notification cursor health: the last (max) seq = "index of the last
+  // notification", and per-chain last-notified block so a monitor can ask
+  // "did the last notification go out within the last X blocks of the head?".
+  notifyStatus() {
+    const lastSeq = maxNotifySeqStmt.get().seq;
+    const perChain = {};
+    for (const r of lastNotifiedBlockByChainStmt.all()) perChain[r.chain_id] = r.last_block;
+    return { lastSeq, lastNotifiedBlockByChain: perChain };
+  },
+
+  // --- Email delivery liveness ---
+  // { lastSendAt, lastSendAgeSeconds, lastHeartbeatAt, lastHeartbeatAgeSeconds }
+  // derived from email_log. Ages are null when nothing has ever sent. This is the
+  // signal that makes "green ⟺ a real send happened recently" honest.
+  emailDeliveryStatus(now = Date.now()) {
+    const lastSendAt = lastEmailSendStmt.get().at || null;
+    const lastHeartbeatAt = lastHeartbeatStmt.get().at || null;
+    return {
+      lastSendAt,
+      lastSendAgeSeconds: headAgeSeconds(lastSendAt, now),
+      lastHeartbeatAt,
+      lastHeartbeatAgeSeconds: headAgeSeconds(lastHeartbeatAt, now),
+    };
   },
 
   // --- Dead letters ---

@@ -8,7 +8,7 @@ import {
   FRONTEND_BASE_URL,
 } from './config.mjs';
 import db from './db.mjs';
-import { sendEmail, emailEnabled } from './mailer.mjs';
+import { sendEmail, emailEnabled, providerInUse } from './mailer.mjs';
 import { verificationEmail, parseToken } from './templates.mjs';
 
 const rateBuckets = new Map(); // ip -> { count, resetAt }
@@ -247,6 +247,31 @@ function handleUnsubscribe(req, res) {
 //                                and tick age is the real frozen-indexer signal.
 export const HEALTH_LAG_THRESHOLD = Number(process.env.HEALTH_LAG_THRESHOLD || 200);
 export const HEALTH_TICK_AGE_THRESHOLD = Number(process.env.HEALTH_TICK_AGE_THRESHOLD || 180);
+// Max age of the last real-or-heartbeat email send before delivery is considered
+// stale (default 8h). The 6h heartbeat keeps a healthy pipeline well inside this.
+export const EMAIL_FRESHNESS_THRESHOLD = Number(process.env.BOND_EMAIL_FRESHNESS_SECONDS || 8 * 60 * 60);
+
+// Compose the `notify` health block from the outbox cursor + per-chain heads:
+// lastSeq is the "index of the last notification"; notifyLagBlocks is how far the
+// last notified block trails the chain head (the "within the last X blocks?"
+// guarantee). Pure for unit testing.
+export function notifyHealthFrom(notify, indexerEntries) {
+  const heads = {};
+  for (const e of indexerEntries || []) heads[e.chainId] = e.headBlock;
+  const byChain = (notify && notify.lastNotifiedBlockByChain) || {};
+  const chainIds = new Set([...Object.keys(heads), ...Object.keys(byChain)].map(Number));
+  const perChain = [...chainIds].sort((a, b) => a - b).map((chainId) => {
+    const head = heads[chainId] ?? null;
+    const lastNotifiedBlock = byChain[chainId] ?? null;
+    return {
+      chainId,
+      lastNotifiedBlock,
+      headBlock: head,
+      notifyLagBlocks: head != null && lastNotifiedBlock != null ? Math.max(0, head - lastNotifiedBlock) : null,
+    };
+  });
+  return { lastSeq: (notify && notify.lastSeq) || 0, perChain };
+}
 
 // Pure, unit-testable status logic. Takes the db.indexerStatus() entries and
 // returns { status, indexer } where `indexer` is the SAME entries with an
@@ -337,9 +362,28 @@ function handleHealth(req, res) {
   // Keep HTTP 200 for ok/degraded so existing r.ok consumers and
   // scripts/monitor.mjs keep working; only a fully "down" indexer returns 503.
   const httpStatus = status === 'down' ? 503 : 200;
-  // email.enabled lets the status page render "Bond Email Delivery" honestly
-  // (delivery is provider-key-gated; per-chain emailLagBlocks live in indexer[]).
-  json(res, httpStatus, { status, uptime: process.uptime(), email: { enabled: emailEnabled() }, indexer, thresholds });
+
+  // email block: enabled (key present) is NO LONGER the green signal on its own —
+  // lastSendAgeSeconds (newest real-or-heartbeat provider acceptance) is. The
+  // checker greens bond_email only when a send happened inside freshnessThreshold.
+  let delivery = { lastSendAgeSeconds: null, lastHeartbeatAgeSeconds: null };
+  try { delivery = db.emailDeliveryStatus(); }
+  catch (err) { console.error('[health] emailDeliveryStatus failed:', err.message); }
+  const email = {
+    enabled: emailEnabled(),
+    provider: providerInUse(),
+    lastSendAgeSeconds: delivery.lastSendAgeSeconds,
+    lastHeartbeatAgeSeconds: delivery.lastHeartbeatAgeSeconds,
+    freshnessThresholdSeconds: EMAIL_FRESHNESS_THRESHOLD,
+  };
+
+  // notify block: outbox cursor (lastSeq = notification index) + per-chain lag
+  // from the chain head, so a stalled notifier is never a silent gap.
+  let notify = { lastSeq: 0, perChain: [] };
+  try { notify = notifyHealthFrom(db.notifyStatus(), indexer); }
+  catch (err) { console.error('[health] notifyStatus failed:', err.message); }
+
+  json(res, httpStatus, { status, uptime: process.uptime(), email, notify, indexer, thresholds });
 }
 
 function handleJudgeProfileGet(req, res) {
@@ -519,6 +563,23 @@ function handleBondGet(req, res, bondId) {
   json(res, 200, { bond, challenges });
 }
 
+// Read-only notification feed for the Telegram bot (pull model): events with
+// seq > `since`, oldest-first. `chains` (csv) filters to e.g. mainnet-only so
+// staging noise stays out of the public channel. Returns { events, lastSeq }
+// where lastSeq is the cursor to pass as `since` next time. No auth (read-only,
+// same surface as /health).
+function handleNotifyEvents(req, res) {
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  const since = Number(url.searchParams.get('since') || 0) || 0;
+  const limit = Number(url.searchParams.get('limit') || 50) || 50;
+  const chainsParam = url.searchParams.get('chains');
+  const chains = chainsParam ? chainsParam.split(',').map((s) => Number(s.trim())).filter(Number.isFinite) : null;
+  let events = [];
+  try { events = db.getNotifyEventsSince(since, { limit, chains }); } catch (_) { events = []; }
+  const lastSeq = events.length ? events[events.length - 1].seq : since;
+  json(res, 200, { events, lastSeq });
+}
+
 export function createApiServer() {
   return http.createServer(async (req, res) => {
     if (req.method === 'OPTIONS') {
@@ -546,6 +607,8 @@ export function createApiServer() {
         handleUnsubscribe(req, res);
       } else if (req.method === 'GET' && path === '/api/notify/health') {
         handleHealth(req, res);
+      } else if (req.method === 'GET' && path === '/api/notify/events') {
+        handleNotifyEvents(req, res);
       } else if (req.method === 'GET' && path === '/api/judges/profile') {
         handleJudgeProfileGet(req, res);
       } else if (req.method === 'GET' && path === '/api/judges/profiles') {

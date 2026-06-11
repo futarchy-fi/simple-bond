@@ -1,5 +1,6 @@
 import { startApiServer } from './api-server.mjs';
 import { startWatcher } from './watcher.mjs';
+import { startHeartbeat } from './heartbeat.mjs';
 import { assertBootConfig } from './preflight.mjs';
 import { registerProcessGuards } from './process-guards.mjs';
 
@@ -18,5 +19,9 @@ startApiServer({
   onListen: () => {
     console.log('[bond-notify] Starting combined API + worker mode');
     startWatcher();
+    // Email delivery heartbeat: sends a real email every ~6h so the status page
+    // can assert "green ⟺ a real send happened recently". No-op until a provider
+    // credential is configured (then it greens on a proven send).
+    startHeartbeat();
   },
 });
