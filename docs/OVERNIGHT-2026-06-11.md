@@ -34,12 +34,21 @@ relay.** Cheapest with no new vendor = Google Workspace SMTP (you already host
 kelvin@futarchy.fi there) — set `SMTP_HOST=smtp.gmail.com`, `SMTP_PORT=587`,
 `SMTP_USER`, `SMTP_PASS` (an app password). The mailer already supports it.
 
-## Parked on you (each ~1–3 min, can't be done autonomously)
+## Contract verification — DONE keyless (corrected from the earlier "parked")
+I had wrongly parked this on an Etherscan key. **Sourcify is keyless** and
+Etherscan displays its results, so I enabled it and verified **full_match**:
+- SimpleBondV7 **mainnet** `0x2e23a8…1759` ✅
+- SimpleBondV7 **sepolia** `0xA2aAD4…4276` ✅
+
+Not done: **SimpleBondV6 mainnet** `0x6B24…` — its on-chain bytecode diverges
+from the deploy-commit source at offset 3078 (a real code diff, not a
+key/tooling issue), so it needs the exact as-deployed May source. Full handoff:
+`docs/CONTRACT-VERIFICATION-2026-06-11.md`.
+
+## Parked on you (1 item, can't be done autonomously)
 - **Email delivery decision + credential.** Either a Google Workspace app password
   (recommended, no new vendor) or a Resend key. Drop into the secrets file; I do
   DNS/verify/deploy/live-test and the heartbeat goes green.
-- **Etherscan API key** (etherscan.io/myapikey, free) → I verify both mainnet
-  contracts' source.
 
 ## Observed, not mine to fix
 - 5 `read-only.spec.js` e2e cases fail on `--project local` — confirmed
