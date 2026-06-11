@@ -488,9 +488,13 @@ describe("SimpleBond v0.6 frontend surface", function () {
                     // active chain's bondVersion AND both pendingCount (v7) and
                     // challengeCount (v6) so the gate is version-correct.
                     // (`!claimMismatch` was inserted by the H3 claim-hash gate; the
-                    // capacity check still routes through window.hasChallengeCapacity.)
+                    // capacity check is hoisted to `_hasCapacity` — reused by the H1
+                    // capacity-exhausted notice — and canChallenge references it.)
                     expect(html()).to.match(
-                        /const canChallenge = isNonPoster && bondOpen && [^;]*window\.hasChallengeCapacity\(\{[^}]*\}\)/
+                        /const _hasCapacity = window\.hasChallengeCapacity\(\{[^}]*\}\)/
+                    );
+                    expect(html()).to.match(
+                        /const canChallenge = isNonPoster && bondOpen && !claimMismatch && _hasCapacity/
                     );
                     // The single call site passes bondVersion, pendingCount,
                     // challengeCount and maxChallenges.
@@ -884,6 +888,26 @@ describe("SimpleBond v0.6 frontend surface", function () {
     // other account's role error ("Only operator"). The handler must rebuild
     // provider+signer, exactly like the chainChanged handler always has.
     // Behavior is covered end-to-end by tests/e2e/account-switch-signer.spec.js.
+    // Release hardening (2026-06-11): M5 SRI on the ethers CDN tag, M6 ruling-
+    // window advisory, H1 capacity-exhausted transparency notice.
+    describe("release hardening (M5 SRI / M6 timing / H1 capacity) wiring", function () {
+        for (const [label, html] of [["frontend/index.html", () => mainHtml], ["frontend/v6/index.html", () => v6html]]) {
+            it(`${label}: M5 — ethers CDN tag carries SRI integrity + crossorigin`, function () {
+                expect(html()).to.match(/cdn\.jsdelivr\.net\/npm\/ethers@6\.16\.0[^>]*integrity="sha384-[A-Za-z0-9+/]+"/);
+                expect(html()).to.match(/ethers@6\.16\.0[^>]*crossorigin="anonymous"/);
+            });
+            it(`${label}: M6 — loads timing-warn.js and wires the live ruling-window advisory`, function () {
+                expect(html()).to.match(/<script src="\.{1,2}\/timing-warn\.js"><\/script>/);
+                expect(html()).to.include("window.timingWarning(");
+                expect(html()).to.include('id="cb-timing-warn"');
+            });
+            it(`${label}: H1 — renders the capacity-exhausted "can no longer be challenged" notice`, function () {
+                expect(html()).to.include("challengeCapacityFull");
+                expect(html()).to.include("This claim can no longer be challenged");
+            });
+        }
+    });
+
     describe("accountsChanged rebinds the signer (stale-signer regression) wiring", function () {
         // Old (buggy) shape: a SYNC handler that never touches the signer.
         const LEGACY_SYNC_HANDLER_RE = /_accountsHandler = \(accounts\) =>/;

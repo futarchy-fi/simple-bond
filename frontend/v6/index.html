@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>SimpleBond v0.6</title>
-<script src="https://cdn.jsdelivr.net/npm/ethers@6.16.0/dist/ethers.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/ethers@6.16.0/dist/ethers.umd.min.js" integrity="sha384-id0TslbJZjX9r2IGNL8B1MyE0pjkF0h8S+5bc8YV+VE+AQ7N1aOlGKYy+Dy3CD0V" crossorigin="anonymous"></script>
 <script src="../runtime-config.js"></script>
 <script src="./abi.js"></script>
 <script src="./manualJudgeV6.bytecode.js"></script>
@@ -20,6 +20,7 @@
 <script src="../rule-fee.js"></script>
 <script src="../bond-status.js"></script>
 <script src="../claim-verify.js"></script>
+<script src="../timing-warn.js"></script>
 <style>
   :root {
     --bg: #ffffff;
@@ -3220,6 +3221,7 @@
           <label>Ruling buffer</label>
           <div class="preset-row" id="rulingPresets">${presetsHtml(createState.rulingBuffer, rulingPresets, 'sec')}</div>
           <input id="cb-rb" type="number" min="0" value="${createState.rulingBuffer}" placeholder="seconds">
+          <div id="cb-timing-warn" style="margin-top:8px;"></div>
         </div>
         <div class="form-group">
           <label for="cb-max">${chain() && chain().bondVersion === 7 ? 'Max challenges pending at once' : 'Max challenges (total ever filed)'}</label>
@@ -3233,16 +3235,29 @@
           else b.classList.remove('active');
         });
       };
+      // M6: live ruling-window advisory. Updated in place (no stage re-render)
+      // so it never blows focus off the input the user is editing.
+      const refreshTimingWarn = () => {
+        const el = $('cb-timing-warn');
+        if (!el || typeof window.timingWarning !== 'function') return;
+        const w = window.timingWarning(createState.acceptanceDelay, createState.rulingBuffer);
+        if (!w) { el.innerHTML = ''; return; }
+        const cls = w.level === 'error' ? 'msg-error' : 'msg-warn';
+        el.innerHTML = `<div class="msg ${cls}">${escapeHtml(w.text)}</div>`;
+      };
       $('cb-ad').addEventListener('input', (e) => {
         createState.acceptanceDelay = Number(e.target.value || 0);
         updateNextBtn();
         refreshPresetActive('acceptPresets', createState.acceptanceDelay);
+        refreshTimingWarn();
       });
       $('cb-rb').addEventListener('input', (e) => {
         createState.rulingBuffer = Number(e.target.value || 0);
         updateNextBtn();
         refreshPresetActive('rulingPresets', createState.rulingBuffer);
+        refreshTimingWarn();
       });
+      refreshTimingWarn();
       $('cb-max').addEventListener('input', (e) => { createState.maxChallenges = Number(e.target.value || 0); updateNextBtn(); });
       document.querySelectorAll('#acceptPresets .preset').forEach(b => b.addEventListener('click', () => {
         createState.acceptanceDelay = Number(b.dataset.sec); renderStage(3); updateNextBtn();
@@ -3910,7 +3925,15 @@
       }
       const isNonPoster = signer && account && account.toLowerCase() !== b.poster.toLowerCase();
       const bondOpen = !b.settled && !b.closed;
-      const canChallenge = isNonPoster && bondOpen && !claimMismatch && window.hasChallengeCapacity({ bondVersion: chain() && chain().bondVersion, pendingCount: b.pendingCount, challengeCount, maxChallenges: b.maxChallenges });
+      const _hasCapacity = window.hasChallengeCapacity({ bondVersion: chain() && chain().bondVersion, pendingCount: b.pendingCount, challengeCount, maxChallenges: b.maxChallenges });
+      const canChallenge = isNonPoster && bondOpen && !claimMismatch && _hasCapacity;
+      // H1 transparency: on v0.6 the cap counts LIFETIME filings, so a bond can be
+      // open + unsettled yet permanently unchallengeable (poster spam-then-resolve).
+      // The Challenge card hides itself when !canChallenge; without this notice that
+      // capacity-exhausted state would be invisible. v0.7 caps on the live pending
+      // set, so this only fires for a genuinely full pending queue there.
+      const challengeCapacityFull = bondOpen && !claimMismatch && !_hasCapacity;
+      const isV7 = chain() && chain().bondVersion === 7;
       const _bs = bondStatus({ settled: b.settled, closed: b.closed, pendingCount: b.pendingCount, settleReason, challenges });
 
       // Refunds affordance — VERSION-AWARE.
@@ -4053,6 +4076,16 @@
           <div id="chStepper"></div>
           <button id="challengeBtn">Challenge bond (pins claim v${b.claimVersion})</button>
           <div id="challengeMsg"></div>
+        </div>` : ''}
+
+        ${challengeCapacityFull ? `
+        <div class="card">
+          <div class="msg msg-warn" style="text-align:left;">
+            <strong>⚠️ This claim can no longer be challenged.</strong>
+            ${isV7
+              ? `Its pending-challenge slots are full (${b.pendingCount}/${b.maxChallenges}). Capacity frees up as the judge resolves the pending challenges.`
+              : `It has reached its lifetime challenge limit (${challengeCount}/${b.maxChallenges} ever filed). On v0.6 this cap counts <em>all</em> challenges ever made — resolved ones never free a slot — so no further challenge is possible even though the bond is still open. Treat this claim's "truth bond" guarantee as <strong>not</strong> currently enforceable.`}
+          </div>
         </div>` : ''}
 
         <div class="card">
