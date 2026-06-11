@@ -22,6 +22,12 @@ jobs:
       - name: Run guardrails
         run: node scripts/lint-guardrails.mjs
 
+      # Fast fail-fast: parse the page's inline <script> (node --check). Catches
+      # the load-time-SyntaxError class (e.g. a duplicate const that blanks the
+      # dapp) in seconds, before the 10-min test/e2e jobs. Zero deps, no browser.
+      - name: Frontend inline-script parse gate
+        run: node scripts/check-inline-scripts.mjs
+
   test:
     name: Hardhat tests
     runs-on: ubuntu-latest
