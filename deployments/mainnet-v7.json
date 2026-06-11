@@ -17,5 +17,6 @@
       "blockNumber": 25288714
     }
   },
-  "note": "Deployed (NOT cut over): mainnet UI/indexer still serve v0.6. Tx 0xdccfc50e1443bc46ea916dfa19242dd48ca77da8928faffa774b0ad702f6583f; deploy script crashed post-broadcast on a publicnode RPC quirk (to:\"\" on pending creation tx), record written from the receipt."
+  "note": "Deployed (NOT cut over): mainnet UI/indexer still serve v0.6. Tx 0xdccfc50e1443bc46ea916dfa19242dd48ca77da8928faffa774b0ad702f6583f; deploy script crashed post-broadcast on a publicnode RPC quirk (to:\"\" on pending creation tx), record written from the receipt.",
+  "archiveStatus": "ARCHIVED 2026-06-11 (owner decision): deployed dormant, NOT cut over, holds no funds, nothing points at it. v0.6 remains the mainnet production line. Future-cutover candidate only — see docs/security/AUDIT-v7-2026-06.md."
 }

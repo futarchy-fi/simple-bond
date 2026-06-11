@@ -16,5 +16,6 @@
       "address": "0xA2aAD4DeAddc984ea359C5151683EA55eA824276",
       "blockNumber": 11026543
     }
-  }
+  },
+  "archiveStatus": "DORMANT 2026-06-11: v0.7 archived (owner decision); this staging core is the one remaining live v7 pointer pending a keep-as-testbed/flip-to-v6 decision."
 }

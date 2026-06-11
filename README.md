@@ -7,7 +7,17 @@ A truth-machine bond contract. Make a claim, back it with money, and let the wor
 
 **`v0.6` is live on Ethereum mainnet and is what [bond.futarchy.ai](https://bond.futarchy.ai) serves.** It was merged to `main` and deployed in May 2026: sUSDS-collateralized bonds, evolving claims, per-challenge concession, judge out-of-scope refunds, close/open, append-only profile registries. The mainnet addresses ship in `frontend/runtime-config.js` (`chains[1]`, `bondVersion: 6`). See `SPEC_V06.md`, `PLAN_V06.md`, `RELEASE_V06.md`, `CHANGELOG.md`.
 
-**Staging / Sepolia (chain 11155111) has been cut over to `v0.7` (`SimpleBondV7`, `bondVersion: 7`)** — this is what `staging.bond.futarchy.*` serves. `SimpleBondV7` is `v0.6` plus two UX-motivated mechanism changes: **C1** a pending-cap `maxChallenges` (the cap now bounds the live, currently-pending set instead of lifetime filings, so spam-then-reject can no longer permanently lock out challengers, with a hard `MAX_CHALLENGES_CEILING`) and **C2** a per-address pull-payment credit ledger with `claim(token)` (refunds become claimable credits instead of pushed transfers). The staging addresses ship in `frontend/runtime-config.js` (`chains[11155111]`) and `deployments/sepolia-v7.json`. See `SPEC_V07.md` for the full spec. **The mainnet `v0.7` cutover is NOT done** — it is a separate later gate; mainnet stays on `v0.6` until then.
+> **`v0.7` is ARCHIVED / dormant (owner decision, 2026-06-11).** `v0.6` is the
+> production line on every surface; `v0.7` (`SimpleBondV7`) was audited, deployed
+> dormant to both Sepolia (`0xA2aAD4DeAddc984ea359C5151683EA55eA824276`) and
+> Ethereum mainnet (`0x2e23a85285Bb191Be2bf7b74a8c180E25CA71759`, block 25288714,
+> **NOT cut over** — holds no funds, nothing points at it), and then parked. The
+> contract source, `SPEC_V07.md`, the deploy/cutover tooling and the full v7 test
+> suite stay in the repo as a future-cutover candidate — they are not deleted, and
+> the `MAINNET_V7_CONTRACT` indexer gate stays in place, unused. See
+> `docs/security/AUDIT-v7-2026-06.md` for the audit + the pre-cutover checklist.
+
+**Staging / Sepolia (chain 11155111) currently serves `v0.7` (`SimpleBondV7`, `bondVersion: 7`)** — this predates the archive decision and is the one remaining live v7 pointer; the future-cutover work would either keep it as the v7 testbed or flip it back to v6 to mirror production. `SimpleBondV7` is `v0.6` plus two UX-motivated mechanism changes: **C1** a pending-cap `maxChallenges` (the cap bounds the live, currently-pending set instead of lifetime filings, so spam-then-reject can no longer permanently lock out challengers, with a hard `MAX_CHALLENGES_CEILING`) and **C2** a per-address pull-payment credit ledger with `claim(token)` (refunds become claimable credits instead of pushed transfers). The staging addresses ship in `frontend/runtime-config.js` (`chains[11155111]`) and `deployments/sepolia-v7.json`. See `SPEC_V07.md` for the full spec.
 
 The previous `v0.5` line (Gnosis Chain, the original audit target) has been **retired from the live UI** — bond.futarchy.ai no longer points at Gnosis. Its contracts remain deployed on Gnosis but are not surfaced by the app. The notes below about Gnosis deployment are historical, kept for reference.
 
@@ -301,7 +311,8 @@ Mainnet (chain 1) stays on `v0.6` — its `v0.7` cutover is a separate later gat
 
 | Asset | Chain | Address |
 |-------|-------|---------|
-| SimpleBond v0.7 (`SimpleBondV7`) | Sepolia | `0xA2aAD4DeAddc984ea359C5151683EA55eA824276` |
+| SimpleBond v0.7 (`SimpleBondV7`) — staging, dormant | Sepolia | `0xA2aAD4DeAddc984ea359C5151683EA55eA824276` |
+| SimpleBond v0.7 (`SimpleBondV7`) — ARCHIVED, deployed-not-cut-over | Ethereum | `0x2e23a85285Bb191Be2bf7b74a8c180E25CA71759` |
 | JudgeProfileRegistryV6 (reused) | Sepolia | `0x5C182867862c061a32C7621c0e3529FF682bbF22` |
 | PosterProfileRegistry (reused) | Sepolia | `0x7644dfE83B1e1e9E466644557606Ff28916fCc15` |
 | ChallengerProfileRegistry (reused) | Sepolia | `0xA6c22430CB34AC5403D6f2a01BecD90c91e09C23` |
