@@ -3556,8 +3556,9 @@
       } catch (err) { challengerErr = friendlyError(err); log(`Challenger events failed: ${challengerErr}`, 'err'); }
     }
 
+    let idxJudge = null;
     if (myJudge) {
-      const idxJudge = await indexerBonds({ judge: myJudge });
+      idxJudge = await indexerBonds({ judge: myJudge });
       if (idxJudge) {
         judgeIds = idxJudge.map(b => b.bondId);
       } else {
@@ -3570,10 +3571,15 @@
       }
     }
 
+    // Fetch the sUSDS rate ONCE and share it across every row (was a per-row
+    // on-chain read). Rows render from the indexer payload below — no per-bond
+    // bonds()/settle-reason getLogs scan — so My Bonds paints as fast as Browse.
+    const sharedRate = await susdsRateForDisplay(c?.approvedToken);
+
     await Promise.all([
-      renderMySection('myPoster', 'myPosterCount', posterIds, 'poster', posterErr),
-      renderMySection('myChallenger', 'myChallengerCount', challengerIds, 'challenger', challengerErr),
-      renderMySection('myJudge', 'myJudgeCount', judgeIds, 'judge', judgeErr),
+      renderMySection('myPoster', 'myPosterCount', posterIds, 'poster', posterErr, idxPoster, sharedRate),
+      renderMySection('myChallenger', 'myChallengerCount', challengerIds, 'challenger', challengerErr, idxChallenger, sharedRate),
+      renderMySection('myJudge', 'myJudgeCount', judgeIds, 'judge', judgeErr, idxJudge, sharedRate),
     ]);
 
     // backlog #2 — GLOBAL claimable-credits indicator (v0.7 ONLY). On v0.6
@@ -3636,7 +3642,7 @@
     }
   }
 
-  async function renderMySection(containerId, countId, ids, role, loadError) {
+  async function renderMySection(containerId, countId, ids, role, loadError, idxBonds = null, sharedRate = null) {
     const el = $(containerId);
     if (!el) return;
     // RCA gap #3 — a load failure for this role's list (indexer unreachable AND
@@ -3659,6 +3665,39 @@
       el.innerHTML = `<div class="empty-state">${hint}</div>`;
       return;
     }
+    // FAST PATH: render straight from the indexer payload (idxBonds) — no
+    // per-row RPC. The read-model already carries settled/settleReason/amounts/
+    // pendingCount, so we skip bonds(), the per-row rate, and the
+    // deriveSettleReason getLogs scan that made settled bonds slow to load. Only
+    // a judge-with-pending hint still needs a live timing read. RPC is used ONLY
+    // in the fallback below, when the indexer was unreachable (idxBonds null).
+    if (idxBonds) {
+      const big = (v) => { try { return BigInt(v || '0'); } catch (_) { return 0n; } };
+      const byId = new Map(idxBonds.map(x => [Number(x.bondId), x]));
+      const fastRows = [];
+      for (const id of [...ids].sort((a, b) => b - a).slice(0, 50)) {
+        const ib = byId.get(id);
+        if (!ib) continue;
+        const b = {
+          settled: !!ib.settled, closed: !!ib.closed,
+          pendingCount: big(ib.pendingCount),
+          bondAmount: big(ib.bondAmount),
+          challengeAmount: big(ib.challengeAmount),
+          judge: ib.judge,
+        };
+        let hint = '';
+        if (role === 'poster' && b.pendingCount > 0n) hint = `${b.pendingCount} pending challenge${b.pendingCount > 1n ? 's' : ''} — review action`;
+        else if (role === 'challenger' && !b.settled) hint = 'Challenge active — check ruling window';
+        else if (role === 'judge' && b.pendingCount > 0n) hint = await judgeRowHint(bondReadContract(), id, b);
+        fastRows.push({ id, b, hint, rate: sharedRate, settleReason: ib.settleReason || null });
+      }
+      el.innerHTML = fastRows.map(myRowHtml).join('');
+      el.querySelectorAll('.bond-list-item').forEach(item => {
+        item.addEventListener('click', () => navigate('#view/' + item.dataset.bondid));
+      });
+      return;
+    }
+
     ids.sort((a, b) => b - a);
     const bc = bondReadContract();
     const rows = [];
