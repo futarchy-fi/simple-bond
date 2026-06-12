@@ -115,7 +115,7 @@ describe("mailer provider selection (SMTP / Resend / disabled)", function () {
       m._setTransportFactoryForTests(async () => ({
         sendMail: async (opts) => {
           calls++;
-          if (!opts.to || !opts.from.includes('SimpleBond')) throw new Error('bad envelope');
+          if (!opts.to || !opts.from.includes('ClaimBond')) throw new Error('bad envelope');
           return { messageId: '<smtp-test-1@mail.internal>' };
         },
       }));

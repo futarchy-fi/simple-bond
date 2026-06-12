@@ -17,7 +17,7 @@ const HEARTBEAT_INTERVAL_MS = parseInt(process.env.BOND_HEARTBEAT_INTERVAL_MS ||
 const HEARTBEAT_TO = process.env.BOND_HEARTBEAT_TO || 'bond-heartbeat@futarchy.ai';
 
 function heartbeatHtml(now) {
-  return `<p>SimpleBond delivery heartbeat.</p>
+  return `<p>ClaimBond delivery heartbeat.</p>
 <p>This automated message confirms the bond notification pipeline can send mail.
 Provider: <b>${providerInUse() || 'none'}</b>. Sent at ${now}.</p>`;
 }
@@ -36,7 +36,7 @@ export async function heartbeatOnce(nowIso) {
   const stamp = nowIso || new Date().toISOString();
   let msgId = null;
   try {
-    msgId = await sendEmail(HEARTBEAT_TO, 'SimpleBond delivery heartbeat', heartbeatHtml(stamp));
+    msgId = await sendEmail(HEARTBEAT_TO, 'ClaimBond delivery heartbeat', heartbeatHtml(stamp));
   } catch (err) {
     // sendEmail already swallows; belt-and-suspenders so a heartbeat never
     // crashes the interval.

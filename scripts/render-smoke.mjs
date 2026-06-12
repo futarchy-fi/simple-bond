@@ -62,7 +62,7 @@ function check(html) {
         await page.waitForTimeout(800); // let init run
         // App shell must have mounted: nav actions present in the rendered DOM.
         const bodyText = (await page.locator('body').innerText().catch(() => '')) || '';
-        const mounted = /Create bond/i.test(bodyText) && /Browse/i.test(bodyText);
+        const mounted = /Browse/i.test(bodyText) && /Judges/i.test(bodyText);
         const synErr = errors.find((e) => /SyntaxError|has already been declared|Unexpected/i.test(e));
         resolveCheck({ html, errors, mounted, synErr, bodyLen: bodyText.length });
       } catch (e) {
@@ -81,7 +81,7 @@ if (!target) { console.error(`no index.html under ${DIR}`); process.exit(2); }
 const r = await check(target);
 let ok = true;
 if (r.synErr) { console.error(`✗ render-smoke: load-time SyntaxError — ${r.synErr}`); ok = false; }
-if (!r.mounted) { console.error(`✗ render-smoke: app shell did NOT mount (no "Create bond"/"Browse" in rendered body; bodyLen=${r.bodyLen})`); ok = false; }
+if (!r.mounted) { console.error(`✗ render-smoke: app shell did NOT mount (no "Browse"/"Judges" nav in rendered body; bodyLen=${r.bodyLen})`); ok = false; }
 if (r.errors.length) { console.error(`  page errors:\n   ${r.errors.slice(0,6).join('\n   ')}`); }
 if (ok) console.log(`✓ render-smoke: app shell mounted, no load-time errors (rendered ${r.bodyLen} chars)`);
 process.exit(ok ? 0 : 1);
