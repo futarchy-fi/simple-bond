@@ -42,7 +42,7 @@ function layout(content) {
 <body style="font-family: Georgia, serif; max-width: 600px; margin: 0 auto; padding: 20px; color: #222;">
   ${content}
   <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0 15px;">
-  <p style="font-size: 12px; color: #999;">SimpleBond Notifications &mdash; <a href="${FRONTEND_BASE_URL}">${FRONTEND_LABEL}</a></p>
+  <p style="font-size: 12px; color: #999;">ClaimBond Notifications &mdash; <a href="${FRONTEND_BASE_URL}">${FRONTEND_LABEL}</a></p>
 </body>
 </html>`;
 }
@@ -53,10 +53,10 @@ export function verificationEmail(address, chainId) {
   const link = `${NOTIFY_BASE_URL}/api/notify/verify?token=${encodeURIComponent(token)}`;
 
   return {
-    subject: `Verify your SimpleBond notifications (${chain})`,
+    subject: `Verify your ClaimBond notifications (${chain})`,
     html: layout(`
       <h2>Confirm your email</h2>
-      <p>You requested notifications for SimpleBond events on <strong>${chain}</strong> for wallet <code>${address}</code>.</p>
+      <p>You requested notifications for ClaimBond events on <strong>${chain}</strong> for wallet <code>${address}</code>.</p>
       <p><a href="${link}" style="display: inline-block; padding: 10px 24px; background: #2563eb; color: white; text-decoration: none; border-radius: 6px;">Verify Email</a></p>
       <p style="font-size: 13px; color: #666;">If you didn't request this, ignore this email.</p>
     `),
@@ -91,7 +91,7 @@ export function eventEmail(eventType, bondId, chainId, metadata, address) {
   const desc = descriptions[eventType] || `Event: ${eventType}`;
 
   return {
-    subject: `[SimpleBond] ${eventType} — Bond #${bondId} (${chain})`,
+    subject: `[ClaimBond] ${eventType} — Bond #${bondId} (${chain})`,
     html: layout(`
       <h2>Bond #${bondId} on ${chain}</h2>
       <p>${desc}</p>

@@ -128,7 +128,7 @@ describe("heartbeat (heartbeatOnce)", function () {
       const mailer = await import('./backend/mailer.mjs');
       mailer._setTransportFactoryForTests(async () => ({
         sendMail: async (opts) => {
-          if (!opts.to || !opts.from.includes('SimpleBond')) throw new Error('bad envelope');
+          if (!opts.to || !opts.from.includes('ClaimBond')) throw new Error('bad envelope');
           return { messageId: '<hb-test-1@mail.internal>' };
         },
       }));

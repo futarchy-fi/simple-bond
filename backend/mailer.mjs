@@ -65,7 +65,7 @@ export function _setTransportFactoryForTests(f) {
 async function sendViaSmtp(to, subject, htmlBody) {
   if (!_transporter) _transporter = await _transportFactory();
   const info = await _transporter.sendMail({
-    from: `SimpleBond <${FROM_EMAIL}>`,
+    from: `ClaimBond <${FROM_EMAIL}>`,
     to,
     subject,
     html: htmlBody,
@@ -82,7 +82,7 @@ async function sendViaResend(to, subject, htmlBody) {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      from: `SimpleBond <${FROM_EMAIL}>`,
+      from: `ClaimBond <${FROM_EMAIL}>`,
       to: [to],
       subject,
       html: htmlBody,

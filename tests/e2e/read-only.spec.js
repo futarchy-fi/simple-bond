@@ -5,9 +5,9 @@
 const { test, expect } = require("@playwright/test");
 
 test.describe("read-only flows", () => {
-    test("A1 — site loads, title is SimpleBond v0.6, nav visible", async ({ page }) => {
+    test("A1 — site loads, title is ClaimBond, nav visible", async ({ page }) => {
         await page.goto("/");
-        await expect(page).toHaveTitle(/SimpleBond v0\.6/);
+        await expect(page).toHaveTitle(/ClaimBond/);
         // The rebuilt UI uses <button class="tab" data-route="…"> for nav.
         // 'view' is a per-bond detail page, not a tab.
         for (const route of ["create", "browse", "judges", "my"]) {
@@ -88,10 +88,10 @@ test.describe("read-only flows", () => {
         // Step 4 — Timing (defaults are valid)
         await page.waitForSelector("#cb-ad");
         await page.click("#wizNext");
-        // Step 5 — Review; the Create button must say 'Create bond' (no
+        // Step 5 — Review; the Create button must say 'Create Claim Bond' (no
         // 'Connect wallet to create' fallback).
         await expect(page.locator("#wizCreate")).toBeVisible();
-        await expect(page.locator("#wizCreate")).toHaveText(/^Create bond$/);
+        await expect(page.locator("#wizCreate")).toHaveText(/^Create Claim Bond$/);
     });
 
     test("A5 — /v6/smoke.html responds + has a 'Read nextBondId' button", async ({ page }) => {

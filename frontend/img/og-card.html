@@ -1,0 +1,42 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { width:1200px; height:630px; }
+  body {
+    font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Liberation Sans", sans-serif;
+    background: radial-gradient(120% 140% at 12% 0%, #1b2b47 0%, #0b1220 60%);
+    color:#f8fafc; padding:74px 80px; position:relative; overflow:hidden;
+  }
+  .glow { position:absolute; right:-180px; top:-180px; width:620px; height:620px;
+          background: radial-gradient(circle, rgba(245,158,11,.20), transparent 62%); }
+  .brand { display:flex; align-items:center; gap:20px; }
+  .mark { width:74px; height:74px; border-radius:18px; background:#0f172a;
+          display:flex; align-items:center; justify-content:center;
+          box-shadow: 0 0 0 1px rgba(245,158,11,.35); }
+  .wordmark { font-size:46px; font-weight:800; letter-spacing:-1px; }
+  .wordmark b { color:#f59e0b; font-weight:800; }
+  h1 { font-size:78px; line-height:1.04; font-weight:800; letter-spacing:-2.4px;
+       margin-top:86px; max-width:1010px; }
+  h1 .amber { color:#f59e0b; }
+  p.sub { font-size:33px; line-height:1.45; color:#cbd5e1; margin-top:30px; max-width:980px; }
+  .foot { position:absolute; left:80px; bottom:64px; display:flex; align-items:center; gap:22px; }
+  .pill { font-size:27px; font-weight:700; color:#0b1220; background:#f59e0b;
+          padding:11px 22px; border-radius:999px; letter-spacing:-.2px; }
+  .mech { font-size:26px; color:#94a3b8; font-weight:600; }
+</style></head>
+<body>
+  <div class="glow"></div>
+  <div class="brand">
+    <div class="mark">
+      <svg viewBox="0 0 64 64" width="46" height="46"><path d="M18 33 l9.5 9.5 L46 22" fill="none" stroke="#f59e0b" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </div>
+    <div class="wordmark">Claim<b>Bond</b></div>
+  </div>
+
+  <h1>Put money behind<br>your <span class="amber">claims</span>.</h1>
+  <p class="sub">Post a claim with a bond. Anyone can challenge it. A judge rules who's right — winner takes the pot.</p>
+
+  <div class="foot">
+    <span class="pill">bond.futarchy.ai</span>
+    <span class="mech">poster $X &nbsp;·&nbsp; challenger $Y &nbsp;→&nbsp; judge rules</span>
+  </div>
+</body></html>

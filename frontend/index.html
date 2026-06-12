@@ -3,7 +3,23 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SimpleBond v0.6</title>
+<title>ClaimBond — put money behind your claims</title>
+<meta name="description" content="Post a claim with a bond. Anyone can challenge it by staking against it; if you don't concede, a judge rules who's right — winner takes the pot.">
+<link rel="icon" type="image/svg+xml" href="/img/favicon.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
+<link rel="apple-touch-icon" href="/img/icon-180.png">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="ClaimBond">
+<meta property="og:title" content="ClaimBond — put money behind your claims">
+<meta property="og:description" content="Post a claim with a bond. Anyone can challenge it; if you don't concede, a judge rules who's right — winner takes the pot.">
+<meta property="og:url" content="https://bond.futarchy.ai/">
+<meta property="og:image" content="https://bond.futarchy.ai/img/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="ClaimBond — put money behind your claims">
+<meta name="twitter:description" content="Post a claim with a bond. Anyone can challenge it; if you don't concede, a judge rules who's right — winner takes the pot.">
+<meta name="twitter:image" content="https://bond.futarchy.ai/img/og.png">
 <script src="https://cdn.jsdelivr.net/npm/ethers@6.16.0/dist/ethers.umd.min.js" integrity="sha384-id0TslbJZjX9r2IGNL8B1MyE0pjkF0h8S+5bc8YV+VE+AQ7N1aOlGKYy+Dy3CD0V" crossorigin="anonymous"></script>
 <script src="./runtime-config.js"></script>
 <script src="./v6/abi.js"></script>
@@ -472,7 +488,7 @@
 <body>
 <div class="container">
   <header>
-    <h1>SimpleBond <small>v0.6</small></h1>
+    <h1>ClaimBond <small>v0.6</small></h1>
     <div class="header-spacer"></div>
     <div class="header-right">
       <select id="chainSelect" class="chain-select hidden"></select>
@@ -491,7 +507,7 @@
   </div>
 
   <nav class="tabs" id="tabs">
-    <button class="tab" data-route="create">Create bond</button>
+    <button class="tab" data-route="create">Create Claim Bond</button>
     <button class="tab" data-route="browse">Browse</button>
     <button class="tab" data-route="judges">Judges</button>
     <button class="tab" data-route="my">My Bonds</button>
@@ -998,7 +1014,7 @@
       ]);
       const tx = await susds.deposit(usdsAmount, account);
       await waitForTx(tx);
-      msg && (msg.innerHTML = `<div class="msg msg-success">Deposit complete. Click <strong>Create bond</strong> again.</div>`);
+      msg && (msg.innerHTML = `<div class="msg msg-success">Deposit complete. Click <strong>Create Claim Bond</strong> again.</div>`);
     } catch (err) {
       msg && (msg.innerHTML = `<div class="msg msg-error">${escapeHtml(friendlyError(err))}</div>`);
     } finally {
@@ -1436,7 +1452,7 @@
     overlay.innerHTML = `
       <div style="background: white; border-radius: 8px; max-width: 460px; padding: 24px; box-shadow: 0 12px 40px rgba(0,0,0,0.25);">
         <h3 style="margin: 0 0 8px; font-family: Georgia, serif;">You'll need a wallet</h3>
-        <p class="hint" style="font-size: 14px; line-height: 1.5;">SimpleBond signs your bond and challenge transactions with an Ethereum wallet you control. We recommend <strong>Rabby</strong> — clearer transaction previews than MetaMask, and a more honest UI overall. MetaMask works too.</p>
+        <p class="hint" style="font-size: 14px; line-height: 1.5;">ClaimBond signs your bond and challenge transactions with an Ethereum wallet you control. We recommend <strong>Rabby</strong> — clearer transaction previews than MetaMask, and a more honest UI overall. MetaMask works too.</p>
         <div class="row" style="margin: 14px 0 6px; gap: 8px; flex-wrap: wrap;">
           <a href="https://rabby.io" target="_blank" rel="noopener"><button class="primary">Install Rabby (recommended)</button></a>
           <a href="https://metamask.io/download/" target="_blank" rel="noopener"><button class="secondary">Install MetaMask</button></a>
@@ -2227,7 +2243,7 @@
     if (visible.length === 0) {
       container.innerHTML = banner + `<div class="empty-state">
         No bonds${rows.length ? ' match your filter' : ` yet on ${escapeHtml(c?.name || 'this chain')}`}.
-        ${rows.length ? '' : ' Be the first → <a href="#create">Create bond</a>'}
+        ${rows.length ? '' : ' Be the first → <a href="#create">Create Claim Bond</a>'}
       </div>`;
       return;
     }
@@ -2291,7 +2307,7 @@
 
       <details class="card" id="judgeOfferDetails" style="margin-top:24px;">
         <summary style="cursor:pointer;font-weight:600;font-family:Georgia,serif;font-size:16px;">Offer judging services</summary>
-        <p class="hint" style="margin:10px 0;">This is for anyone who wants to <strong>resolve disputes</strong> for SimpleBond claims (lawyers, fact-checkers, domain experts, prediction markets, etc.). Posters pin your profile id when creating a bond and you (or your judge contract) rule on challenges. Skip this whole section if you only want to post or challenge bonds.</p>
+        <p class="hint" style="margin:10px 0;">This is for anyone who wants to <strong>resolve disputes</strong> for ClaimBond claims (lawyers, fact-checkers, domain experts, prediction markets, etc.). Posters pin your profile id when creating a bond and you (or your judge contract) rule on challenges. Skip this whole section if you only want to post or challenge bonds.</p>
 
         <div class="judge-onboarding" id="judgeOnboardingCard">
           <h4 id="onboardTitle" style="margin:8px 0;">Set up your judge contract</h4>
@@ -3028,7 +3044,7 @@
           <div class="nav-spacer"></div>
           ${cur < stages.length - 1
             ? `<button id="wizNext" ${isStageValid(cur) ? '' : 'disabled'}>Continue</button>`
-            : `<button id="wizCreate">Create bond</button>`}
+            : `<button id="wizCreate">Create Claim Bond</button>`}
         </div>
         <div id="wizStepper"></div>
       </div>`;
@@ -3179,7 +3195,7 @@
             <button type="button" class="secondary" id="cb-use-default-judge">Use the default test judge</button>
             <a href="#judges" style="font-size:13px;align-self:center;">Browse all registered profiles</a>
           </div>
-          <div class="hint" style="margin-top:6px;">The <strong>default test judge</strong> (profile id 0) is the SimpleBond-operated <code>ManualJudgeV6</code>. Fine for early v0.6 experiments — rulings are made by us. For production claims, pick a profile from a judge you trust.</div>
+          <div class="hint" style="margin-top:6px;">The <strong>default test judge</strong> (profile id 0) is the ClaimBond-operated <code>ManualJudgeV6</code>. Fine for early v0.6 experiments — rulings are made by us. For production claims, pick a profile from a judge you trust.</div>
         </div>
         <div id="cb-judgeResolved" class="hint" style="margin-top:8px;"></div>`;
       $('cb-jpid').addEventListener('input', (e) => { createState.judgeProfileId = e.target.value; resolveJudgeFromProfile(); updateNextBtn(); });
@@ -3417,7 +3433,7 @@
       try { allowance = await erc20Contract(token).allowance(account, c.bondContract); } catch (_) {}
       allowanceCache[window.allowanceKey({ chainId: activeChainId, account, token, spender: c.bondContract })] = allowance;
       if (allowance < bondAmount) steps.push(`Approve ${meta.symbol}`);
-      steps.push('Create bond');
+      steps.push('Create Claim Bond');
       renderTxStepper(stepperEl, steps);
       let idx = 0;
       if (allowance < bondAmount) {
@@ -3811,7 +3827,7 @@
         <p style="margin-top:10px;"><a href="#browse">← Back to browse</a></p>`;
       return;
     }
-    view.innerHTML = `<div class="loading"><span class="spinner"></span>Loading bond #${escapeHtml(bondIdStr)}…</div>`;
+    view.innerHTML = `<div class="loading"><span class="spinner"></span>Loading Claim Bond #${escapeHtml(bondIdStr)}…</div>`;
 
     // 1) FIRST paint from the indexer point-read when available — claim text +
     //    each challenge (idx/challenger/status/content) render immediately with
@@ -3865,7 +3881,7 @@
 
     $('view').innerHTML = `
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
-        <h2 style="margin:0;">Bond #${bondId}</h2>
+        <h2 style="margin:0;">Claim Bond #${bondId}</h2>
         <span class="status-badge status-${_bs.cls}" title="${escapeHtml(_bs.title)}">${_bs.label}</span>
         <span style="color:var(--muted);font-size:13px;">claim v${claimVersion}</span>
       </div>
@@ -4041,7 +4057,7 @@
         ${banner ? `<div class="bond-banner" data-state="${banner.state}" data-role="${banner.viewerRole}">${escapeHtml(banner.headline)}</div>` : ''}
 
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
-          <h2 style="margin:0;">Bond #${bondId}</h2>
+          <h2 style="margin:0;">Claim Bond #${bondId}</h2>
           <span class="status-badge status-${_bs.cls}" title="${escapeHtml(_bs.title)}">${_bs.label}</span>
           <span style="color:var(--muted);font-size:13px;">claim v${b.claimVersion}</span>
         </div>
